@@ -222,8 +222,10 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
-# 미리보기 상한 — 서버 고정 (계획 §3.5와 동일 원칙) / hard server-side cap
+# 미리보기 기본·상한 — 기본 20, 요청으로 늘리되 서버 상한은 유지 (계획 §3.5 원칙 보존)
+# default 20; client may raise it, but the hard server cap stays
 TABLE_PREVIEW_LIMIT = 20
+TABLE_PREVIEW_MAX = 500
 
 
 @router.get("/{object_id}/preview")
@@ -231,6 +233,7 @@ def get_object_preview(
     object_id: int,
     filter_column: str | None = None,
     filter_value: str | None = Query(None, max_length=100),
+    limit: int = Query(TABLE_PREVIEW_LIMIT, ge=1, le=TABLE_PREVIEW_MAX),
     db: Session = Depends(get_db),
     login_id: str = Depends(get_current_user),
 ) -> dict:
@@ -256,7 +259,7 @@ def get_object_preview(
 
     preview = FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
     rows = preview.rows(
-        qname, column_specs, TABLE_PREVIEW_LIMIT,
+        qname, column_specs, limit,
         filter_column=filter_column, filter_value=filter_value,
     )
 
@@ -278,7 +281,7 @@ def get_object_preview(
         "columns": [c.name for c in columns],
         "rows": rows,
         "masked_columns": masked,
-        "limit": TABLE_PREVIEW_LIMIT,
+        "limit": limit,
         "filter": (
             {"column": filter_column, "value": filter_value} if filter_column else None
         ),

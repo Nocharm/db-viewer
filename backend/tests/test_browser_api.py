@@ -126,3 +126,17 @@ def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture):
             .where(Base.metadata.tables["audit_logs"].c.action == "table_preview")
         ).all()
     assert len(audits) == 1 and rel["src_object"] in audits[0].detail
+
+
+def test_preview_limit_is_adjustable_with_hard_cap(client, load_fixture):
+    _seed(client, load_fixture)
+    obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+
+    default = client.get(f"/api/objects/{obj['id']}/preview").json()
+    assert default["limit"] == 20 and len(default["rows"]) <= 20
+
+    wide = client.get(f"/api/objects/{obj['id']}/preview?limit=50").json()
+    assert wide["limit"] == 50 and len(wide["rows"]) == 50
+
+    # 서버 상한(500) 초과는 422 — 상한 원칙 유지 / hard cap enforced
+    assert client.get(f"/api/objects/{obj['id']}/preview?limit=1000").status_code == 422
