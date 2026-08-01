@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **정지점 10: JoinValidator 추상화 + Fake** — 계획 §4.3 Protocol 그대로. ColumnRef는 텍스트 식별자(스냅샷 독립), cardinality는 "타깃 distinct==row_count(유니크)" 판정. Fake는 픽스처 값 집합으로 실 연산하며 기대 관계 전수와 일치 검증. live 모드는 팩토리에서 차단(보안 승인 게이트, 정지점 18 해제). 픽스처 수정: 부모 키 값 집합 row_count를 유니크 의미(=distinct)로 — 아니면 실제 FK가 N:M으로 오판.
 - **정지점 8·9: sqlglot 파서 + JOIN 추출 — Phase 2 완료** — 파서는 실패를 상태로 격리(ok/partial/unsupported/parse_failed — sqlglot의 조용한 Command 폴백도 parse_failed로 잡음). PIVOT은 컬럼 매핑 부재로 unsupported 고정, APPLY는 해석 가능한 범위만 추출. 중첩 뷰는 컬럼 lineage를 재귀 조립해 direct/derived 승격, 카탈로그 set 행은 보존(보강 원칙 — 회귀로 강제). view_joins 적재는 픽스처 기대와 전체 일치. 파싱 지표는 `/api/snapshots/{id}/parse-stats` + 프론트 `/parsing` 관리 화면. 픽스처 수정 1건: JOIN 뷰 출력 컬럼명 중복은 불법 T-SQL이라 parent 측 비충돌 선택으로 변경.
 - **정지점 7: n8n W1 워크플로 — Phase 1 완료** — `tools/build_n8n_workflow.py`가 n8n/sql/*.sql을 단일 소스로 워크플로 JSON 생성(테스트가 커밋본==재생성본 강제 → 쿼리 드리프트 차단). 07 쿼리는 n8n MSSQL 노드의 단일 rowset 제약에 맞춰 kind 판별 컬럼으로 통합. Code 노드는 기계적 그룹핑만(가공·판단은 ingest 담당 — 계획 §2 경계 준수). deps 조립 규칙: 07 컬럼 단위 우선, 06은 미해석 참조·DMV 실패 뷰만 보강(중복 적재 방지).
 - **정지점 6(프론트): ERD 뷰어** — Next.js 15 + React Flow + elkjs(bundled — 메인 엔트리는 web-worker require로 번들 깨짐) + Tailwind v4. 앵커 검색→1-hop 확장, 뷰 기본 접힘(펼치면 lineage 점선 노출), 40노드 임계치 확인 모달(이미 초과 상태에선 재확인 안 함), design-app.md 토큰 CSS 변수화. 순수 로직(엣지 스타일·병합·크기 추정·ELK 결정성) vitest 12건 + 빌드·lint 통과. 스모크: 픽스처 시드 후 프록시 경유 검색 확인(브라우저 확장 미연결로 시각 확인은 보류).

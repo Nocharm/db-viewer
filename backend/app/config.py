@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     # Tuning: lineage 재귀 상한 — 초과 시 depth_exceeded 플래그 (계획 §1.3)
     lineage_depth_limit: int = 10
 
+    # Environment: FakeJoinValidator가 읽는 픽스처 디렉터리 / fixture dir for the fake validator
+    fixture_dir: str = "fixtures"
+
+    # Tuning: 저카디널리티 검증 제외 임계 (계획 §3.3) / low-cardinality exclusion threshold
+    low_cardinality_min_distinct: int = 50
+    # Tuning: 공통 도메인 블랙리스트 — 이름 기반 콜드스타트 방어 (계획 §3.3)
+    low_cardinality_blacklist: list[str] = [
+        "USE_YN", "DEL_YN", "STATUS_CD", "TYPE_CD", "KIND_CD", "UNIT_CD",
+    ]
+
 
 @lru_cache
 def get_settings() -> Settings:

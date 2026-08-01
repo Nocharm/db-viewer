@@ -279,11 +279,14 @@ class _Gen:
             rel["containment"] = round(len(src & tgt) / len(src), 4)
             rel["orphan_count"] = len(src - tgt)
 
-        row_counts = {self.qname(t): t["row_count"] for t in self.tables}
+        # 부모 키는 유니크(row_count == distinct) — 카디널리티 판정(§3.2)의 전제
+        # parent keys are unique; child columns repeat values (1:N from the child side)
+        parent_keys = {(r["tgt_object"], r["tgt_column"]) for r in self.relations}
         for (obj, col), vals in sorted(values.items()):
+            is_parent = (obj, col) in parent_keys
             self.value_sets.append({
                 "object": obj, "column": col,
-                "row_count": max(row_counts.get(obj) or 0, len(vals)),
+                "row_count": len(vals) if is_parent else max(len(vals) * 3, 30),
                 "distinct_count": len(vals), "values": vals,
             })
 
