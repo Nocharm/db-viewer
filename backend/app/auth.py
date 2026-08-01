@@ -4,6 +4,7 @@ bpm 패턴 이식: 현재 사용자는 문자열 login_id(preferred_username), �
 라우터 단위 Depends, AUTH_ENABLED=false면 X-Dev-User 헤더 신뢰(개발·테스트 전용).
 """
 
+import secrets
 from functools import lru_cache
 
 import jwt
@@ -74,6 +75,9 @@ def require_whitelisted(
 
 
 def require_sysadmin(login_id: str = Depends(get_current_user)) -> str:
+    # auth OFF는 개발·테스트 전용 모드라 게이트 전체가 의도적으로 열린다 (bpm 동일).
+    # 운영 배포는 AUTH_ENABLED=true가 전제 — README 인증 절 참조.
+    # the dev-only flag opens every gate by design; production requires AUTH_ENABLED=true
     if get_settings().auth_enabled and not is_sysadmin(login_id):
         raise HTTPException(status_code=403, detail={"message": "system admin only"})
     return login_id
@@ -85,7 +89,9 @@ def require_ingest_access(
     """n8n 머신 호출용 — API 키 방식 (bpm에는 없어 신규 설계). / machine-caller gate."""
     settings = get_settings()
     if settings.ingest_api_key:
-        if x_api_key == settings.ingest_api_key:
+        # 상수 시간 비교 — 타이밍 부채널 방지 / constant-time compare, no timing oracle
+        supplied = (x_api_key or "").encode()
+        if secrets.compare_digest(supplied, settings.ingest_api_key.encode()):
             return "ingest-key"
         raise HTTPException(status_code=401, detail={"message": "invalid or missing X-API-Key"})
     if not settings.auth_enabled:
