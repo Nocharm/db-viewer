@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **정지점 12: 히스토리 + confidence** — 설계 결정: 이력·관계는 계획 DDL의 column_id FK 대신 **텍스트 식별자**로 저장(스냅샷 삭제 cascade에 이력이 소실되고 스냅샷 간 연속성이 끊기는 문제). confidence = 마지막 containment × 관측수 가중(1회 0.6→3회 1.0) × 규모 가중(5천 행 기준), 패턴 4종(stable_confirmed/stable_with_orphans/drop_alert/small_sample_only) — §3.4 표 그대로 단위 테스트. T2 관측이 columns.distinct_count를 채워 이후 저카디널리티 필터가 실동작. 검증·확정 관계는 그래프에 inferred/confirmed 엣지로 노출(confidence·last_verified_at 포함). confirmed는 재검증으로 강등되지 않음.
 - **정지점 11: 후보 스코어링 + 저카디널리티 필터** — §3.1 가중치(뷰 JOIN 100 > 명명 40/32 > PK 20, 타입·길이는 필터). 키 보너스는 단독 신호 금지(전 PK가 후보로 뜨는 노이즈 방지). 제외 사유(blacklist/low_distinct/computed/not_a_table)를 API로 노출해 UI 배지 대응. UQ 컬럼 멤버십은 계획 DDL에 저장처가 없어 "인덱스 존재" 근사는 is_pk만 사용. 픽스처 회귀: 뷰 JOIN에 등장한 real_no_fk 관계가 최상위 후보로 부상.
 - **정지점 10: JoinValidator 추상화 + Fake** — 계획 §4.3 Protocol 그대로. ColumnRef는 텍스트 식별자(스냅샷 독립), cardinality는 "타깃 distinct==row_count(유니크)" 판정. Fake는 픽스처 값 집합으로 실 연산하며 기대 관계 전수와 일치 검증. live 모드는 팩토리에서 차단(보안 승인 게이트, 정지점 18 해제). 픽스처 수정: 부모 키 값 집합 row_count를 유니크 의미(=distinct)로 — 아니면 실제 FK가 N:M으로 오판.
 - **정지점 8·9: sqlglot 파서 + JOIN 추출 — Phase 2 완료** — 파서는 실패를 상태로 격리(ok/partial/unsupported/parse_failed — sqlglot의 조용한 Command 폴백도 parse_failed로 잡음). PIVOT은 컬럼 매핑 부재로 unsupported 고정, APPLY는 해석 가능한 범위만 추출. 중첩 뷰는 컬럼 lineage를 재귀 조립해 direct/derived 승격, 카탈로그 set 행은 보존(보강 원칙 — 회귀로 강제). view_joins 적재는 픽스처 기대와 전체 일치. 파싱 지표는 `/api/snapshots/{id}/parse-stats` + 프론트 `/parsing` 관리 화면. 픽스처 수정 1건: JOIN 뷰 출력 컬럼명 중복은 불법 T-SQL이라 parent 측 비충돌 선택으로 변경.

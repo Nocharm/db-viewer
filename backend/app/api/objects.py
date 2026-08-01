@@ -13,6 +13,7 @@ from app.models import (
     CatalogConstraint,
     CatalogObject,
     FkColumn,
+    Relation,
     Snapshot,
     ViewDep,
     ViewLineageFlat,
@@ -117,6 +118,28 @@ def _load_lineage_edges(db: Session, snapshot_id: int) -> tuple[list[dict], dict
     return list(edges.values()), flags
 
 
+def _load_relation_edges(db: Session, qname_to_id: dict[str, int]) -> list[dict]:
+    """검증·확정 관계를 현재 스냅샷 객체에 매핑 / map textual relations onto this snapshot."""
+    edges = []
+    for rel in db.execute(
+        select(Relation).where(Relation.status.in_(["validated", "confirmed"]))
+    ).scalars():
+        src, tgt = qname_to_id.get(rel.src_object), qname_to_id.get(rel.tgt_object)
+        if src is None or tgt is None:
+            continue  # 이번 스냅샷에 없는 객체 / object absent from this snapshot
+        edges.append({
+            "id": f"rel-{rel.id}",
+            "kind": "confirmed" if rel.status == "confirmed" else "inferred",
+            "src_object_id": src, "tgt_object_id": tgt,
+            "columns": [{"src_column": rel.src_column, "tgt_column": rel.tgt_column}],
+            "confidence": rel.confidence, "cardinality": rel.cardinality,
+            "last_verified_at": (
+                rel.last_verified_at.isoformat() if rel.last_verified_at else None
+            ),
+        })
+    return edges
+
+
 @router.get("/{object_id}/graph")
 def get_object_graph(
     object_id: int,
@@ -129,11 +152,19 @@ def get_object_graph(
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     sid = anchor.snapshot_id
 
+    qname_to_id = {
+        f"{schema}.{name}": oid
+        for oid, schema, name in db.execute(
+            select(CatalogObject.id, CatalogObject.schema, CatalogObject.name)
+            .where(CatalogObject.snapshot_id == sid)
+        )
+    }
     fk_edges = _load_fk_edges(db, sid)
     lineage_edges, lineage_flags = _load_lineage_edges(db, sid)
+    relation_edges = _load_relation_edges(db, qname_to_id)
 
     adjacency: dict[int, set[int]] = {}
-    for e in fk_edges + lineage_edges:
+    for e in fk_edges + lineage_edges + relation_edges:
         adjacency.setdefault(e["src_object_id"], set()).add(e["tgt_object_id"])
         adjacency.setdefault(e["tgt_object_id"], set()).add(e["src_object_id"])
 
@@ -149,7 +180,7 @@ def get_object_graph(
                 frontier.append((neighbor, dist + 1))
 
     edges = [
-        e for e in fk_edges + lineage_edges
+        e for e in fk_edges + lineage_edges + relation_edges
         if e["src_object_id"] in included and e["tgt_object_id"] in included
     ]
 
