@@ -50,6 +50,40 @@ def test_to_user_fields_maps_and_assigns_role():
     assert fields["org_path"] == "Div B/Team A"
 
 
+def test_ldap_filter_escaping_is_rfc4515():
+    from app.ad.client import escape_filter_value
+
+    assert escape_filter_value("hong.gil") == "hong.gil"
+    # 백슬래시 먼저 — 아니면 이중 이스케이프 / backslash first or it double-escapes
+    assert escape_filter_value("a\\b") == "a\\5cb"
+    assert escape_filter_value("*)(uid=*") == "\\2a\\29\\28uid=\\2a"
+    assert escape_filter_value("x\x00y") == "x\\00y"
+
+
+def test_login_sync_is_throttled_per_user(client, monkeypatch):
+    from app.ad import service as ad_service
+    from app.api import me as me_module
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "ldap_url", "ldaps://ad.example:636")
+    monkeypatch.setattr(settings, "ldap_bind_dn", "cn=svc")
+    monkeypatch.setattr(settings, "ldap_bind_credentials", "pw")
+    monkeypatch.setattr(settings, "ldap_user_search_base", "dc=example")
+    monkeypatch.setattr(settings, "dbv_sysadmins", "admin.sys")
+    monkeypatch.setattr(me_module, "_last_sync_at", {})
+
+    calls: list[str] = []
+    monkeypatch.setattr(ad_service, "sync_one", lambda db, login_id: calls.append(login_id))
+
+    from app import auth as auth_module
+
+    client.app.dependency_overrides[auth_module.get_current_user] = lambda: "admin.sys"
+    assert client.get("/api/me").status_code == 200
+    assert client.get("/api/me").status_code == 200
+    assert calls == ["admin.sys"]  # 두 번째 호출은 스로틀 / second call throttled
+
+
 # ── 게이트 동작 ──
 
 

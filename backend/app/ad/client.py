@@ -1,5 +1,7 @@
 """Blocking LDAP I/O. / LDAP 접속·조회 (bpm 패턴 — 동기 엔드포인트라 threadpool 위임 불필요)."""
 
+import ssl
+
 from ldap3 import Connection, Server, Tls
 
 from app.ad.org import RawUser
@@ -11,10 +13,20 @@ _ATTRIBUTES = [
 ]
 
 
+def _make_tls() -> Tls:
+    # 인증서 검증 필수 — ldap3 기본값(CERT_NONE)은 MITM에 무방비 (보안 리뷰 반영)
+    # certificate validation is mandatory; ldap3's default is CERT_NONE
+    ca_bundle = get_settings().ldap_ca_bundle or None
+    return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_bundle)
+
+
 def _connect() -> Connection:
     settings = get_settings()
     use_ssl = settings.ldap_url.lower().startswith("ldaps://")
-    server = Server(settings.ldap_url, use_ssl=use_ssl, tls=Tls() if use_ssl else None)
+    needs_tls = use_ssl or settings.ldap_start_tls
+    server = Server(
+        settings.ldap_url, use_ssl=use_ssl, tls=_make_tls() if needs_tls else None
+    )
     conn = Connection(
         server, user=settings.ldap_bind_dn,
         password=settings.ldap_bind_credentials, auto_bind=False,
@@ -23,6 +35,17 @@ def _connect() -> Connection:
         conn.start_tls()
     conn.bind()
     return conn
+
+
+def escape_filter_value(value: str) -> str:
+    """RFC 4515 필터 이스케이프 — 백슬래시 먼저 / LDAP filter escaping, backslash first."""
+    return (
+        value.replace("\\", "\\5c")
+        .replace("*", "\\2a")
+        .replace("(", "\\28")
+        .replace(")", "\\29")
+        .replace("\x00", "\\00")
+    )
 
 
 def _to_raw(entry) -> RawUser:
@@ -46,8 +69,7 @@ def _to_raw(entry) -> RawUser:
 
 
 def fetch_user(login_id: str) -> RawUser | None:
-    # 필터 인젝션 방지 / sanitize against LDAP filter injection
-    safe = login_id.replace("(", "").replace(")", "").replace("*", "")
+    safe = escape_filter_value(login_id)
     settings = get_settings()
     conn = _connect()
     try:

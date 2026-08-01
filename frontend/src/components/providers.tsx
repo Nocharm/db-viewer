@@ -32,8 +32,10 @@ function buildOidcConfig() {
     authority: process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "",
     client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? "",
     redirect_uri: window.location.origin,
-    // 평문 HTTP에선 crypto.subtle 불가 — keycloak-login.ts와 동일 설정 유지 필수
-    disablePKCE: true,
+    // 평문 HTTP(insecure context)에선 crypto.subtle이 없어 PKCE 자체가 불가.
+    // secure context면 자동으로 PKCE 활성 — HTTPS 전환 시 코드 수정 불필요.
+    // keycloak-login.ts와 반드시 동일 판정이어야 토큰 교환이 깨지지 않는다.
+    disablePKCE: !window.isSecureContext,
     onSigninCallback: () => {
       window.history.replaceState({}, document.title, window.location.pathname);
     },

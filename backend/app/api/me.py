@@ -1,6 +1,7 @@
 """Current-user endpoint with login-time AD sync. / 현재 사용자 + 로그인 시 단건 동기화 (bpm 패턴)."""
 
 import logging
+import time
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -13,6 +14,10 @@ from app.models import AppUser, LoginWhitelist
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["me"])
+
+# 사용자별 동기화 스로틀 — /api/me 반복 호출로 AD를 두들기지 못하게 (보안 리뷰)
+# per-user sync throttle so /api/me cannot storm the AD server
+_last_sync_at: dict[str, float] = {}
 
 
 @router.get("/api/me")
@@ -29,7 +34,10 @@ def get_me(
     )
 
     # 로그인 시 단건 AD 동기화 — 실패해도 로그인은 막지 않는다 / never block login on sync
-    if settings.auth_enabled and settings.ldap_enabled and whitelisted:
+    now = time.monotonic()
+    due = now - _last_sync_at.get(login_id, 0.0) >= settings.ldap_sync_min_interval
+    if settings.auth_enabled and settings.ldap_enabled and whitelisted and due:
+        _last_sync_at[login_id] = now
         from app.ad import service as ad_service
 
         try:

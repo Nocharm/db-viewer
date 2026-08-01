@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **보안 리뷰 반영(인증)** — ① LDAP TLS 인증서 검증 강제(ldap3 기본 CERT_NONE → CERT_REQUIRED + `LDAP_CA_BUNDLE`, StartTLS에도 적용), ② LDAP 필터 이스케이프를 RFC 4515로(백슬래시 우선), ③ /api/me 로그인 동기화에 사용자별 5분 스로틀(AD 부하 공격 차단), ④ PKCE는 하드코드 비활성 대신 `!window.isSecureContext` 자동 판정 — HTTPS 전환 시 수정 없이 복원(평문 HTTP에선 crypto.subtle 부재로 불가피, bpm 동일 제약).
 - **인증: Keycloak + LDAP + 화이트리스트** — bpm 패턴 이식(react-oidc-context/PyJWT·JWKS/ldap3, 라우터 단위 Depends, AUTH_ENABLED 플래그 쌍, 렌더 단계 토큰 주입, disablePKCE=HTTP 제약). bpm에 없는 것 2건 신설: ① 화이트리스트 로그인 게이트(테이블+관리 API+/admin 화면, sysadmin 우회, 감사 기록) — 요구사항, ② n8n 머신용 `X-API-Key` ingest 게이트(auth ON이면 키 필수). AD 동기화: 로그인 시 단건 + 관리자 전체 동기화(5분 스로틀, 빈 스캔 전삭제 방지, source=local 보존). 미등록 사용자는 전 API 403 + 안내 화면.
 - **정찰 워크플로(W0) + 배포 구성** — 정찰 6종을 n8n 임포트 JSON으로(`w0_recon_queries.json`, 수동 트리거 → 종합 리포트 노드가 권한 차단·DMV 실패를 warnings로 자동 표시). [6]은 TOP 1 뷰를 골라 TRY/CATCH로 DMV 즉시 호출하는 단일 배치로 재구성. 배포: compose(postgres+backend+frontend), 외부 노출은 frontend 6678 단일 포트(UI+/api 프록시 — n8n도 이 주소로 POST), 네트워크 172.48.0.0/16(요청값 — RFC1918 아님 주의 명기), Next standalone + non-root 이미지.
 - **정지점 15: AI 엔드포인트 — Phase 5 완료** — AI 클라이언트도 어댑터 뒤(무연결 원칙): 인터페이스가 메타데이터 타입만 받아 원본 값 유출 경로를 구조적으로 차단, 실 프로바이더 연결은 연결 단계 결정 사항. 제안은 candidate/ai로만 적재(중복·기존 FK 제거, 재실행 멱등) → 검증 큐 직행, **confirm에 검증 선행 가드 추가**(candidate 확정 시 400 — §5.2 금지 이행). 자연어 탐색(프론트 `?` 프리픽스), 요약은 qname 캐시 → 그래프 노드 ai_summary → 노드 툴팁+AI 배지. ai_suggested 엣지는 검증 전에도 노출하되 명확히 구분(§5.3).

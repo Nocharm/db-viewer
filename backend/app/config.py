@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     ldap_user_search_base: str = ""
     ldap_start_tls: bool = False
     ldap_user_filter: str = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=*))"
+    # 사내 CA 번들 경로 — 비우면 시스템 신뢰 저장소 사용 (검증 자체는 항상 필수)
+    ldap_ca_bundle: str = ""
+    # 로그인 시 단건 동기화 스로틀(초) — /api/me로 AD를 두들기지 못하게 (보안 리뷰)
+    ldap_sync_min_interval: int = 300
 
     def sysadmin_login_ids(self) -> set[str]:
         return {x.strip() for x in self.dbv_sysadmins.split(",") if x.strip()}
