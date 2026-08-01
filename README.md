@@ -8,7 +8,7 @@ MSSQL 시스템 카탈로그에서 스키마를 수집하고, 뷰를 역추적�
 
 ## 상태
 
-Phase 1 진행 중 — 서비스 DB 스키마·마이그레이션 완료. 로드맵·정지점은 `docs/step0-proposal.md`와 `PROGRESS.md` 참고.
+Phase 1~5 **무연결(fixture) 구현 완료** — 카탈로그 수집/lineage/ERD, sqlglot 파싱, T2 검증·confidence·확정, T3 탐색 스캔, AI 제안까지 Fake 어댑터 기반으로 전 기능 동작. 남은 것은 연결 단계(정지점 16~18): 정찰 쿼리 실행 → replay 덤프 → `MssqlJoinValidator` + live 전환(사내 보안 승인 필요). 로드맵·결정 이력은 `docs/step0-proposal.md`와 `PROGRESS.md` 참고.
 
 ## 개발
 
