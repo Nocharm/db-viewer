@@ -38,5 +38,12 @@ END
 CLOSE view_cursor;
 DEALLOCATE view_cursor;
 
-SELECT * FROM @results;   -- rowset 1 → deps (referenced_column 채워짐)
-SELECT * FROM @failures;  -- rowset 2 → unresolved_objects
+-- n8n MSSQL 노드는 단일 rowset만 반환 → kind 컬럼으로 두 결과를 합친다
+-- n8n's MSSQL node returns a single rowset; merge both with a kind discriminator
+SELECT 'dep' AS kind, view_object_id, referenced_object_id, referenced_database,
+       referenced_name, referenced_column, is_resolved,
+       CAST(NULL AS nvarchar(400)) AS reason
+FROM @results
+UNION ALL
+SELECT 'failure', object_id, NULL, NULL, NULL, NULL, NULL, reason
+FROM @failures;
