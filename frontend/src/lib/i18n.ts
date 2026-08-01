@@ -34,6 +34,7 @@ export const MESSAGES = {
   "detail.columns": { ko: "컬럼", en: "Columns" },
   "detail.columnsHint": { ko: "클릭하면 ERD에서 조인 검증", en: "click to validate joins in the ERD" },
   "detail.usingViews": { ko: "이 테이블을 사용하는 뷰", en: "Views using this table" },
+  "detail.baseTables": { ko: "구성 테이블 (lineage)", en: "Base tables (lineage)" },
   "detail.similar": { ko: "유사 테이블 (컬럼명 일치율)", en: "Similar tables (column match)" },
   "detail.none": { ko: "없음", en: "None" },
   "detail.noSimilar": { ko: "일치율 30% 이상 없음", en: "No match above 30%" },
@@ -160,6 +161,11 @@ export const MESSAGES = {
   "collect.recent": { ko: "최근 수집 잡", en: "Recent jobs" },
   "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
   "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
+
+  "ai.generateSummary": { ko: "AI 요약 생성", en: "Generate AI summary" },
+  "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
+  "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
+  "ai.working": { ko: "생성 중…", en: "Generating…" },
 
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },

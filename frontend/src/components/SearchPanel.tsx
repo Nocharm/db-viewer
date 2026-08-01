@@ -123,7 +123,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
               }}
               data-testid={`SearchPanel-item-${item.id}`}
             >
-              <span className="erd-node__type mr-1.5">
+              <span className={`obj-chip mr-1.5 ${item.type === "view" ? "obj-chip--view" : ""}`}>
                 {item.type === "view" ? "VIEW" : "TBL"}
               </span>
               {item.schema}.{item.name}

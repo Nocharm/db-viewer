@@ -13,7 +13,7 @@ import { PreviewSection } from "@/components/browser/PreviewSection";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import {
-  fetchAllTables,
+  fetchAllObjects,
   fetchColumnsIndex,
   fetchJoinKeys,
   fetchObjectDetail,
@@ -44,6 +44,7 @@ function HomeInner() {
   const [joinKeys, setJoinKeys] = useState<JoinKeyItem[]>([]);
   const [selectedKey, setSelectedKey] = useState<JoinKeyItem | null>(null);
   const [category, setCategory] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<"all" | "table" | "view">("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
@@ -54,7 +55,7 @@ function HomeInner() {
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetchAllTables()
+    fetchAllObjects()
       .then((res) => setTables(res.items))
       .catch((e) => setError(e.message));
     fetchJoinKeys()
@@ -98,21 +99,27 @@ function HomeInner() {
     if (table) selectTable(table);
   }, [tables, selectTable]);
 
+  // 타입 필터(전체|테이블|뷰)가 카테고리 집계에도 반영된다 / type filter feeds the counts
+  const typedObjects = useMemo(
+    () => (typeFilter === "all" ? tables : tables.filter((t) => t.type === typeFilter)),
+    [tables, typeFilter],
+  );
+
   const categories = useMemo<CategoryEntry[]>(() => {
     const counts = new Map<string, number>();
-    for (const table of tables) {
+    for (const table of typedObjects) {
       const code = deriveCategoryCode(table.name);
       counts.set(code, (counts.get(code) ?? 0) + 1);
     }
     return [...counts.entries()]
       .map(([code, count]) => ({ code, label: categoryLabel(code), count }))
       .sort((a, b) => a.label.localeCompare(b.label, "ko"));
-  }, [tables]);
+  }, [typedObjects]);
 
   const listItems = useMemo<TableListItem[]>(() => {
     const keyIds = selectedKey ? new Set(selectedKey.table_ids) : null;
     const items: TableListItem[] = [];
-    for (const table of tables) {
+    for (const table of typedObjects) {
       if (category !== null && deriveCategoryCode(table.name) !== category) continue;
       if (keyIds !== null && !keyIds.has(table.id)) continue;
       const match = matchTable(query, {
@@ -123,7 +130,7 @@ function HomeInner() {
       if (match.matched) items.push({ table, match });
     }
     return items;
-  }, [tables, category, selectedKey, query, columnsIndex]);
+  }, [typedObjects, category, selectedKey, query, columnsIndex]);
 
   // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
   const loadPreview = useCallback(
@@ -180,7 +187,9 @@ function HomeInner() {
             items={listItems}
             selectedId={selected?.id ?? null}
             query={query}
+            typeFilter={typeFilter}
             onQuery={setQuery}
+            onTypeFilter={setTypeFilter}
             onSelect={selectTable}
           />
           <section className="card min-w-0 flex-1 overflow-hidden">

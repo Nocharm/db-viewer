@@ -15,7 +15,9 @@ interface Props {
   items: TableListItem[];
   selectedId: number | null;
   query: string;
+  typeFilter: "all" | "table" | "view";
   onQuery: (value: string) => void;
+  onTypeFilter: (value: "all" | "table" | "view") => void;
   onSelect: (table: ObjectSummary) => void;
 }
 
@@ -30,14 +32,22 @@ function Highlight({ text, range }: { text: string; range: [number, number] | nu
   );
 }
 
-export function TableList({ items, selectedId, query, onQuery, onSelect }: Props) {
+const TYPE_FILTERS = [
+  { value: "all", labelKey: "erd.typeAll" },
+  { value: "table", labelKey: "erd.typeTable" },
+  { value: "view", labelKey: "erd.typeView" },
+] as const;
+
+export function TableList({
+  items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect,
+}: Props) {
   const { t } = useI18n();
   return (
     <aside
       className="card flex w-80 shrink-0 flex-col"
       data-testid="TableList-root"
     >
-      <div className="p-3">
+      <div className="p-3 pb-2">
         <input
           className="w-full rounded-lg border px-3.5 py-2 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--border-light)" }}
@@ -46,6 +56,19 @@ export function TableList({ items, selectedId, query, onQuery, onSelect }: Props
           onChange={(e) => onQuery(e.target.value)}
           data-testid="TableList-filterInput"
         />
+        {/* 타입 필터 — 뷰도 1급 시민 / views browse like tables */}
+        <div className="mt-2 flex gap-1.5">
+          {TYPE_FILTERS.map(({ value, labelKey }) => (
+            <button
+              key={value}
+              className={`pressable key-chip ${typeFilter === value ? "key-chip--selected" : ""}`}
+              onClick={() => onTypeFilter(value)}
+              data-testid={`TableList-typeChip-${value}`}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="scroll-area min-h-0 flex-1 pb-3">
         {items.map(({ table, match }) => (
@@ -57,6 +80,9 @@ export function TableList({ items, selectedId, query, onQuery, onSelect }: Props
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate font-mono text-xs">
+                <span className={`obj-chip mr-1.5 ${table.type === "view" ? "obj-chip--view" : ""}`}>
+                  {table.type === "view" ? "V" : "T"}
+                </span>
                 <Highlight text={table.name} range={match.nameRange} />
               </span>
               {match.matchedColumn && (

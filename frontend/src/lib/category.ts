@@ -8,9 +8,13 @@ export const CATEGORY_LABELS: Record<string, string> = {
   SYS: "시스템", LOG: "로그", APV: "결재", EXT: "인터페이스",
 };
 
-/** T_/TB_ 스타일 접두어 제거 후 첫 토큰이 카테고리 코드 / strip style prefix, take first token. */
+/** T_/TB_/뷰(V_·V_SUM_·V_RPT_) 접두어 제거 후 첫 토큰이 카테고리 코드.
+ * Strip style and view prefixes, then the first token is the category code. */
 export function deriveCategoryCode(tableName: string): string {
-  const stripped = tableName.replace(/^TB_/, "").replace(/^T_/, "");
+  const stripped = tableName
+    .replace(/^TB_/, "")
+    .replace(/^T_/, "")
+    .replace(/^V_(SUM_|RPT_)?/, "");
   const code = stripped.split("_")[0];
   return code in CATEGORY_LABELS ? code : "ETC";
 }

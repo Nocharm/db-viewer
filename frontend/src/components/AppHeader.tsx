@@ -126,7 +126,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
          style={{ color: "var(--ink)" }}
          data-testid="AppHeader-homeLink">
         <span className="logo-mark" aria-hidden />
-        db-viewer
+        DB-viewer
       </a>
       <nav className="flex items-center gap-1">
         {LINKS.map(({ href, key }) => {

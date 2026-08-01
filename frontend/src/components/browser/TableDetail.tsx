@@ -5,7 +5,13 @@
 import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { runJoinCheck, type JoinCheckItem, type ObjectDetail } from "@/lib/api";
+import {
+  explainViewAi,
+  generateAiSummary,
+  runJoinCheck,
+  type JoinCheckItem,
+  type ObjectDetail,
+} from "@/lib/api";
 
 interface Props {
   detail: ObjectDetail | null;
@@ -69,13 +75,26 @@ export function TableDetail({
   const [checkResults, setCheckResults] = useState<JoinCheckItem[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  // AI 산출물은 상세 응답을 덮지 않고 로컬로 겹친다 / AI outputs overlay locally
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
-  // 테이블 전환 시 검증 결과 초기화 / reset results when the table changes
+  // 테이블 전환 시 검증·AI 상태 초기화 / reset per-table state on switch
   useEffect(() => {
     setCheckResults(null);
     setChecking(false);
     setCheckError(null);
+    setAiSummary(null);
+    setAiExplanation(null);
+    setAiBusy(false);
   }, [detail?.id]);
+
+  const runAi = (task: () => Promise<void>) => {
+    if (aiBusy) return;
+    setAiBusy(true);
+    task().catch((e) => setCheckError(e.message)).finally(() => setAiBusy(false));
+  };
 
   const runCheck = (targetId?: number) => {
     if (!detail || checking) return;
@@ -135,19 +154,54 @@ export function TableDetail({
             style={{ color: "var(--ink)" }}>
           {detail.name}
         </h2>
-        <span className="badge badge--muted">{detail.type === "view" ? "VIEW" : "TABLE"}</span>
-        {detail.ai_summary && <span className="badge badge--ai">AI</span>}
+        <span className="badge badge--muted"
+              style={detail.type === "view" ? { color: "var(--obj-view)" } : undefined}>
+          {detail.type === "view" ? "VIEW" : "TABLE"}
+        </span>
+        {(aiSummary ?? detail.ai_summary) && <span className="badge badge--ai">AI</span>}
       </div>
       <p className="mb-2 text-sm" style={{ color: "var(--slate)" }}>
         {detail.row_count !== null && `${detail.row_count.toLocaleString()} rows · `}
         {detail.column_count} columns
       </p>
-      {detail.ai_summary && (
-        <p className="mb-5 max-w-2xl text-sm leading-relaxed"
+      {(aiSummary ?? detail.ai_summary) && (
+        <p className="mb-2 max-w-2xl text-sm leading-relaxed"
            style={{ color: "var(--slate)" }}>
-          {detail.ai_summary}
+          {aiSummary ?? detail.ai_summary}
         </p>
       )}
+      {aiExplanation && (
+        <p className="mb-2 max-w-2xl text-sm leading-relaxed"
+           style={{ color: "var(--slate)" }}
+           data-testid="TableDetail-aiExplanation">
+          <span className="badge badge--ai mr-1.5">AI</span>
+          {aiExplanation}
+        </p>
+      )}
+      <div className="mb-5 flex gap-2">
+        <button
+          className="icon-button"
+          disabled={aiBusy}
+          onClick={() => runAi(async () => {
+            setAiSummary((await generateAiSummary(detail.id)).summary);
+          })}
+          data-testid="TableDetail-aiSummaryButton"
+        >
+          {aiBusy ? t("ai.working") : t("ai.generateSummary")}
+        </button>
+        {detail.type === "view" && (
+          <button
+            className="icon-button"
+            disabled={aiBusy}
+            onClick={() => runAi(async () => {
+              setAiExplanation((await explainViewAi(detail.id)).explanation);
+            })}
+            data-testid="TableDetail-aiExplainButton"
+          >
+            {aiBusy ? t("ai.working") : t("ai.explainView")}
+          </button>
+        )}
+      </div>
 
       <div className="mb-7 flex gap-3">
         <button
@@ -231,6 +285,28 @@ export function TableDetail({
         )}
 
         <div className="grid grid-cols-2 gap-5">
+          {/* 뷰의 구성 테이블 — lineage 역추적 / base tables a view resolves to */}
+          {detail.type === "view" && (
+            <section className="panel-section" data-testid="TableDetail-baseTables">
+              <div className="panel-section__title">
+                {t("detail.baseTables")} ({detail.base_tables.length})
+              </div>
+              {detail.base_tables.length === 0 && (
+                <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.none")}</p>
+              )}
+              <ul className="space-y-1.5">
+                {detail.base_tables.map((base) => (
+                  <li key={base.id} className="flex items-center gap-2 text-sm">
+                    <span className="truncate text-xs">
+                      <TableRef name={base.name} onSelect={onSelectTable} />
+                    </span>
+                    <span className="badge badge--muted">depth {base.min_depth}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="panel-section" data-testid="TableDetail-usingViews">
             <div className="panel-section__title">
               {t("detail.usingViews")} ({detail.using_views.length})
@@ -248,6 +324,7 @@ export function TableDetail({
             </ul>
           </section>
 
+          {detail.type === "table" && (
           <section className="panel-section" data-testid="TableDetail-similarTables">
             <div className="panel-section__title">{t("detail.similar")}</div>
             {detail.similar_tables.length === 0 && (
@@ -284,7 +361,9 @@ export function TableDetail({
               ))}
             </ul>
           </section>
+          )}
 
+          {detail.type === "table" && (
           <section className="panel-section">
             <div className="panel-section__title">
               {t("detail.fk")} ({t("detail.fkOut")} {detail.fk_out.length} · {t("detail.fkIn")} {detail.fk_in.length})
@@ -305,6 +384,7 @@ export function TableDetail({
               ))}
             </ul>
           </section>
+          )}
 
           <section className="panel-section" data-testid="TableDetail-relations">
             <div className="panel-section__title">{t("detail.relations")} ({detail.relations.length})</div>
