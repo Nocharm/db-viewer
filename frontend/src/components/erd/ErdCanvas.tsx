@@ -15,8 +15,10 @@ import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { useI18n } from "@/components/i18n";
+import { PreviewTable } from "@/components/PreviewTable";
 import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
+import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 import { getEdgeVisual } from "@/lib/edge-style";
 import { planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph, MAX_VISIBLE_COLUMNS } from "@/lib/layout";
@@ -82,6 +84,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   // 우클릭 미리보기 — 하단 와이드 카드 / preview data for the bottom card
   const [preview, setPreview] = useState<TablePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewObjectId, setPreviewObjectId] = useState<number | null>(null);
+  const [previewHeight, setPreviewHeight] = useState(256); // px — 드래그로 조절
+  const [previewHidden, setPreviewHidden] = useState<string[]>([]);
+  const [previewSort, setPreviewSort] = useState<SortSpec | null>(null);
   const [pending, setPending] = useState<MergePlan | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
@@ -207,13 +213,36 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     [graph, hiddenNodes],
   );
 
-  const openPreview = useCallback((nodeId: number) => {
+  const openPreview = useCallback((nodeId: number, limit?: number) => {
     setPreviewLoading(true);
-    fetchObjectPreview(nodeId)
-      .then(setPreview)
+    setPreviewObjectId(nodeId);
+    fetchObjectPreview(nodeId, undefined, limit)
+      .then((res) => {
+        setPreview(res);
+        // 다른 테이블로 전환 시 컬럼 상태 초기화 / reset per-table view state
+        setPreviewHidden([]);
+        setPreviewSort(null);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setPreviewLoading(false));
   }, []);
+
+  // 카드 상단 드래그로 높이 조절 / drag the card's top edge to resize
+  const startPreviewResize = useCallback((event: React.PointerEvent) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = previewHeight;
+    const onMove = (e: PointerEvent) => {
+      const next = startHeight + (startY - e.clientY);
+      setPreviewHeight(Math.min(Math.max(next, 140), window.innerHeight * 0.7));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [previewHeight]);
 
   // ── 호버 강조 / hover emphasis ──
   const buildEdgeEmphasis = useCallback((edgeId: string) => {
@@ -467,19 +496,27 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         </div>
       )}
 
-      {/* 하단 와이드 미리보기 카드 — 그래프 위에 부유 / bottom floating preview card */}
+      {/* 하단 와이드 미리보기 카드 — 상단 드래그로 높이 조절 / resizable bottom preview card */}
       {(preview || previewLoading) && (
         <div
-          className="absolute bottom-3 left-3 right-3 z-20 flex max-h-64 flex-col rounded-xl border"
-          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
+          className="absolute bottom-3 left-3 right-3 z-20 flex flex-col rounded-xl border"
+          style={{
+            borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+            height: previewHeight,
+          }}
           data-testid="ErdCanvas-previewCard"
         >
-          <div className="flex items-center gap-2 px-4 py-2">
+          <div
+            className="h-2 shrink-0 cursor-row-resize rounded-t-xl"
+            onPointerDown={startPreviewResize}
+            title="드래그로 높이 조절"
+            data-testid="ErdCanvas-previewResizeHandle"
+          />
+          <div className="flex items-center gap-2 px-4 pb-2">
             <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
               {t("preview.title")}
               {preview && <span className="ml-1.5 font-mono">{preview.object}</span>}
             </span>
-            {preview && <span className="badge badge--muted">TOP {preview.limit}</span>}
             {preview && preview.masked_columns.length > 0 && (
               <span className="badge badge--muted">
                 {t("preview.masked")} {preview.masked_columns.length}{t("preview.maskedSuffix")}
@@ -490,37 +527,55 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                 {t("common.loading")}
               </span>
             )}
-            <button className="icon-button ml-auto" onClick={() => setPreview(null)}
+            <select
+              className="ml-auto rounded border px-1.5 py-0.5 text-xs"
+              style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
+              title={t("preview.limitTitle")}
+              value={preview?.limit ?? 20}
+              onChange={(e) => previewObjectId !== null
+                && openPreview(previewObjectId, Number(e.target.value))}
+              data-testid="ErdCanvas-previewLimitSelect"
+            >
+              {[20, 50, 100, 200, 500].map((option) => (
+                <option key={option} value={option}>TOP {option}</option>
+              ))}
+            </select>
+            <button
+              className="icon-button"
+              disabled={!preview}
+              onClick={() => {
+                if (!preview) return;
+                const visible = preview.columns.filter((c) => !previewHidden.includes(c));
+                const blob = new Blob(
+                  [buildCsv(visible, sortRows(preview.rows, previewSort))],
+                  { type: "text/csv;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = url;
+                anchor.download = `${preview.object.replace(".", "_")}_preview.csv`;
+                anchor.click();
+                URL.revokeObjectURL(url);
+              }}
+              data-testid="ErdCanvas-previewCsvButton"
+            >
+              {t("preview.csv")}
+            </button>
+            <button className="icon-button" onClick={() => setPreview(null)}
                     data-testid="ErdCanvas-previewCloseButton">
               ✕
             </button>
           </div>
           {preview && (
-            <div className="scroll-area min-h-0 overflow-auto border-t"
+            <div className="scroll-area min-h-0 flex-1 overflow-auto border-t"
                  style={{ borderColor: "var(--hairline)" }}>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="sticky top-0 text-left"
-                      style={{ background: "var(--surface-card)" }}>
-                    {preview.columns.map((column) => (
-                      <th key={column} className="whitespace-nowrap px-3 py-1.5 font-mono font-medium">
-                        {column}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.map((row, index) => (
-                    <tr key={index} className="border-t" style={{ borderColor: "var(--hairline)" }}>
-                      {preview.columns.map((column) => (
-                        <td key={column} className="whitespace-nowrap px-3 py-1">
-                          {String(row[column] ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <PreviewTable
+                data={preview}
+                hidden={previewHidden}
+                sort={previewSort}
+                onToggleHidden={(column) => setPreviewHidden((cur) =>
+                  cur.includes(column) ? cur.filter((c) => c !== column) : [...cur, column])}
+                onSort={setPreviewSort}
+              />
             </div>
           )}
         </div>

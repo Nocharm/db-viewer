@@ -290,12 +290,14 @@ export interface TablePreview {
 export function fetchObjectPreview(
   objectId: number,
   filter?: { column: string; value: string },
+  limit?: number,
 ): Promise<TablePreview> {
   const params = new URLSearchParams();
   if (filter?.column && filter.value) {
     params.set("filter_column", filter.column);
     params.set("filter_value", filter.value);
   }
+  if (limit !== undefined) params.set("limit", String(limit));
   const suffix = params.size > 0 ? `?${params}` : "";
   return getJson(`/api/objects/${objectId}/preview${suffix}`);
 }

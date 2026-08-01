@@ -1,0 +1,38 @@
+import { describe, expect, it } from "vitest";
+
+import { buildCsv, countUniqueValues, sortRows } from "./preview-utils";
+
+const ROWS = [
+  { QTY: 20, NM: "b" },
+  { QTY: 3, NM: "a" },
+  { QTY: null, NM: "c" },
+  { QTY: 100, NM: "a" },
+];
+
+describe("sortRows", () => {
+  it("sorts numerically when values are numbers, nulls last, without mutating", () => {
+    const sorted = sortRows(ROWS, { column: "QTY", dir: "asc" });
+    expect(sorted.map((r) => r.QTY)).toEqual([3, 20, 100, null]); // 문자열 정렬이면 100<20
+    expect(ROWS[0].QTY).toBe(20); // 원본 불변
+    const desc = sortRows(ROWS, { column: "NM", dir: "desc" });
+    expect(desc[0].NM).toBe("c");
+  });
+});
+
+describe("countUniqueValues", () => {
+  it("counts by value, descending", () => {
+    expect(countUniqueValues(ROWS, "NM")).toEqual([
+      { value: "a", count: 2 },
+      { value: "b", count: 1 },
+      { value: "c", count: 1 },
+    ]);
+  });
+});
+
+describe("buildCsv", () => {
+  it("quotes cells with commas/quotes and prepends a BOM", () => {
+    const csv = buildCsv(["A", "B"], [{ A: 'say "hi", ok', B: 1 }]);
+    expect(csv.startsWith("﻿")).toBe(true); // 엑셀 한글 인코딩 대응
+    expect(csv).toContain('"say ""hi"", ok",1');
+  });
+});
