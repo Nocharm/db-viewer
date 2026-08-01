@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **정지점 6(프론트): ERD 뷰어** — Next.js 15 + React Flow + elkjs(bundled — 메인 엔트리는 web-worker require로 번들 깨짐) + Tailwind v4. 앵커 검색→1-hop 확장, 뷰 기본 접힘(펼치면 lineage 점선 노출), 40노드 임계치 확인 모달(이미 초과 상태에선 재확인 안 함), design-app.md 토큰 CSS 변수화. 순수 로직(엣지 스타일·병합·크기 추정·ELK 결정성) vitest 12건 + 빌드·lint 통과. 스모크: 픽스처 시드 후 프록시 경유 검색 확인(브라우저 확장 미연결로 시각 확인은 보류).
 - **정지점 6(백엔드): 조회 API** — objects 검색 / 앵커 N-hop 그래프(depth≤3 강제, 전체 그래프 반환 없음) / 뷰 lineage / 스냅샷 목록·diff. FK diff는 이름이 아니라 (src, tgt, 컬럼페어) 시그니처로 매칭(자동 생성 이름 변동 대비). 그래프 응답에 lineage_flag·unresolved_dep_count 포함해 UI 배지 데이터 제공. 레이아웃 엔진은 ELK 선정(결정적 배치·계층 표현·가변 노드 크기 — d3-force는 비결정성으로 기각).
 - **정지점 5: lineage 재귀 엔진** — 순수 도메인 함수(경로 기반 순환 감지, 깊이 상한, 메모이제이션, 플래그 전파 — cycle이 depth_exceeded보다 우선). view-deps ingest 완료 시 동기 실행해 `view_lineage_flat` 적재. 픽스처 기대치와 전체 집합 동일성 검증 통과(중첩 뷰의 부모 전체 집합 상속 포함). 혼합 케이스(테이블 직접 참조 + 순환 참조)는 해석 행 유지 + 플래그 행 추가로 결정. `LINEAGE_DEPTH_LIMIT` 튜닝 설정 추가.
 - **정지점 4: 수집 SQL + ingest** — FastAPI 앱 + `/api/ingest/catalog`·`/api/ingest/view-deps` (픽스처 포맷 = 계약). is_pk는 key_constraints에서 파생, 미해석 참조는 텍스트 식별자 보존, 에러는 승인된 `{"error": {code, message, context}}` 규약. 스키마 추가 2건(0002): `objects.definition`(Phase 2 파싱 입력 영속화 — raw POST는 재조회 불가), `objects.dmv_unresolved`. 수집 T-SQL 7종은 `n8n/sql/` — 07은 커서 + TRY/CATCH로 객체별 개별 호출(일괄 CROSS APPLY 전체 실패 방지).

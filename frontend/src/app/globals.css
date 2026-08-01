@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* 디자인 토큰 — rules/frontend/DESIGN-cohere.md + design-app.md (라이트 전용, 승인 결정) */
+:root {
+  --canvas: #ffffff;
+  --ink: #212121;
+  --primary: #17171c;
+  --soft-stone: #eeece7;
+  --hairline: #d9d9dd;
+  --border-light: #e5e7eb;
+  --muted: #93939f;
+  --slate: #75758a;
+  --focus-blue: #4c6ee6;
+  --action-blue: #1863dc;
+  --deep-green: #003c33;
+  --error: #b30000;
+
+  /* 신뢰도 색 — dataviz validator 검증 완료 (design-app.md §색상 검증 기록) */
+  --rel-confirmed: #00926a;
+  --rel-inferred: #1863dc;
+  --rel-ai: #9b60aa;
+  --rel-unresolved: #b30000;
+  --rel-lineage: #93939f;
+
+  --font-body: "Unica77 Cohere Web", Inter, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: CohereMono, ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+/* ── ERD 노드 (flat 원칙 — 그림자 금지, 보더로 상태 표현) ── */
+.erd-node {
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  width: 260px;
+  overflow: hidden;
+}
+.erd-node--view {
+  background: var(--soft-stone);
+}
+.erd-node--selected {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 1px;
+}
+.erd-node:hover {
+  border-color: var(--ink);
+}
+.erd-node__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.26px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--hairline);
+}
+.erd-node__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.erd-node__row--pk {
+  font-weight: 600;
+}
+.erd-node__type {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.erd-node__meta {
+  padding: 4px 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ── 배지 (erd-badge 토큰) ── */
+.badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+.badge--unresolved {
+  background: color-mix(in srgb, var(--rel-unresolved) 12%, white);
+  color: var(--rel-unresolved);
+}
+.badge--ai {
+  background: color-mix(in srgb, var(--rel-ai) 12%, white);
+  color: var(--rel-ai);
+}
+.badge--muted {
+  background: color-mix(in srgb, var(--muted) 16%, white);
+  color: var(--slate);
+}
+.badge--confirmed {
+  background: color-mix(in srgb, var(--rel-confirmed) 12%, white);
+  color: var(--rel-confirmed);
+}
+
+.icon-button {
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--canvas);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+  color: var(--slate);
+}
+.icon-button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
