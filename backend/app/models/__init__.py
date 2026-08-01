@@ -11,7 +11,7 @@ from app.models.catalog import (
     ViewJoin,
     ViewLineageFlat,
 )
-from app.models.jobs import ScanJob, ScanResult
+from app.models.jobs import CollectJob, ScanJob, ScanResult
 from app.models.relations import AiSummary, AuditLog, JoinValidationHistory, Relation
 from app.models.users import AppUser, LoginWhitelist
 
@@ -20,6 +20,7 @@ __all__ = [
     "AppUser",
     "AuditLog",
     "LoginWhitelist",
+    "CollectJob",
     "ScanJob",
     "ScanResult",
     "Base",

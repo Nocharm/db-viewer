@@ -61,6 +61,8 @@ class CatalogPayload(BaseModel):
     key_constraints: list[RawKeyConstraint] = []
     foreign_keys: list[RawForeignKey] = []
     view_definitions: list[RawViewDefinition] = []
+    # 버튼 트리거 수집 잡 연동 — n8n이 webhook body를 그대로 되돌려준다 / echoed from the trigger
+    collect_job_id: int | None = None
 
 
 class RawDep(BaseModel):
@@ -83,3 +85,4 @@ class ViewDepsPayload(BaseModel):
     snapshot_id: int
     deps: list[RawDep]
     unresolved_objects: list[RawUnresolvedObject] = []
+    collect_job_id: int | None = None

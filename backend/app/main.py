@@ -11,6 +11,7 @@ from fastapi import Depends
 from app.api import (
     admin,
     ai,
+    collect,
     columns,
     ingest,
     join_check,
@@ -50,6 +51,8 @@ def create_app() -> FastAPI:
     # me는 토큰만, admin은 자체 sysadmin 게이트 / me needs only a token
     app.include_router(me.router)
     app.include_router(admin.router)
+    # 수집 트리거는 관리 작업 — 라우터 자체가 sysadmin 게이트를 갖는다
+    app.include_router(collect.router)
 
     # 승인된 에러 규약: {"error": {code, message, context}} / approved error envelope
     @app.exception_handler(StarletteHTTPException)

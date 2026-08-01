@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Environment: FakeJoinValidator가 읽는 픽스처 디렉터리 / fixture dir for the fake validator
     fixture_dir: str = "fixtures"
 
+    # Environment: n8n webhook 베이스 URL — 버튼 트리거 수집용 (예: http://182.199.63.71:5678/webhook)
+    # 비우면 replay·live에서 수집 트리거가 503 / empty disables collect triggers outside fixture
+    n8n_webhook_base: str = ""
+
     # Tuning: T3 탐색 스캔 (계획 §4) / exploratory scan tuning
     scan_max_concurrent: int = 2
     scan_full_recheck_top: int = 20   # 풀 재검증 상위 후보 수 / top-K full recheck

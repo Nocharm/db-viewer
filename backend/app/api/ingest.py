@@ -1,5 +1,8 @@
 """Ingest endpoints — the mock boundary where n8n (or fixtures) POST raw JSON. / n8n·픽스처가 raw JSON을 밀어넣는 mock 경계."""
 
+import json
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
@@ -11,6 +14,7 @@ from app.models import (
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
+    CollectJob,
     FkColumn,
     Snapshot,
     ViewDep,
@@ -24,6 +28,26 @@ router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
 def _bad_request(message: str, context: dict) -> HTTPException:
     return HTTPException(status_code=400, detail={"message": message, "context": context})
+
+
+def update_collect_job(
+    db: Session, job_id: int | None, stage: str,
+    snapshot_id: int | None = None, counts: dict | None = None,
+) -> None:
+    """수집 잡 단계 갱신 — n8n·픽스처 러너 공통 콜백 지점 / stage callback for collect jobs."""
+    if job_id is None:
+        return
+    job = db.get(CollectJob, job_id)
+    if job is None:
+        return  # 알 수 없는 잡 id는 무시 — ingest 자체를 막지 않는다 / never block ingest
+    job.stage = stage
+    if snapshot_id is not None:
+        job.snapshot_id = snapshot_id
+    if counts is not None:
+        merged = json.loads(job.counts) if job.counts else {}
+        merged.update(counts)
+        job.counts = json.dumps(merged)
+    job.updated_at = datetime.now(UTC)
 
 
 @router.post("/catalog")
@@ -80,14 +104,14 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
             .values(definition=vd.definition)
         )
 
-    return {
-        "snapshot_id": snapshot.id,
-        "counts": {
-            "objects": len(obj_rows), "columns": len(col_rows),
-            "key_constraints": len(payload.key_constraints),
-            "foreign_keys": len(payload.foreign_keys),
-        },
+    counts = {
+        "objects": len(obj_rows), "columns": len(col_rows),
+        "key_constraints": len(payload.key_constraints),
+        "foreign_keys": len(payload.foreign_keys),
     }
+    update_collect_job(db, payload.collect_job_id, "catalog_done",
+                       snapshot_id=snapshot.id, counts=counts)
+    return {"snapshot_id": snapshot.id, "counts": counts}
 
 
 @router.post("/view-deps")
@@ -162,7 +186,9 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
     phase2_counts = run_phase2(db, snapshot.id)
 
     snapshot.status = "ready"
-    return {"snapshot_id": snapshot.id, "counts": {
+    counts = {
         "deps": len(rows), "unresolved_objects": len(payload.unresolved_objects),
         "lineage_rows": len(lineage_rows), **phase2_counts,
-    }}
+    }
+    update_collect_job(db, payload.collect_job_id, "ready", counts=counts)
+    return {"snapshot_id": snapshot.id, "counts": counts}

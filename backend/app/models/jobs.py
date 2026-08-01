@@ -45,6 +45,33 @@ class ScanJob(Base):
     )
 
 
+class CollectJob(Base):
+    """Button-triggered catalog collection with stage progress. / 버튼 트리거 수집 잡."""
+
+    __tablename__ = "collect_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # step: 단계별 수동 진행 / full: 원버튼 전체 파이프라인
+    mode: Mapped[str] = mapped_column(String(8))
+    stage: Mapped[str] = mapped_column(String(20))
+    # 스냅샷 삭제와 수명 분리 — FK 없이 참조만 / plain reference, survives snapshot deletes
+    snapshot_id: Mapped[int | None] = mapped_column(Integer)
+    # ingest 응답 counts를 JSON 문자열로 보존 / ingest counts as a JSON string
+    counts: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "stage IN ('catalog_running', 'catalog_done', 'deps_running', 'ready', 'failed')",
+            name="ck_collect_jobs_stage",
+        ),
+        CheckConstraint("mode IN ('step', 'full')", name="ck_collect_jobs_mode"),
+    )
+
+
 class ScanResult(Base):
     """Ranked scan hits — sample pass plus full recheck. / 스캔 상위 결과 (샘플 + 풀 재검증)."""
 

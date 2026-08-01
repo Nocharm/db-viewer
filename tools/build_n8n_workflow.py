@@ -14,6 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = REPO_ROOT / "n8n" / "sql"
 OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
 RECON_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
+W1A_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1a_collect_catalog.json"
+W1B_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1b_collect_viewdeps.json"
 
 # (노드 이름, 정찰 SQL 파일) — 연결 단계 정지점 16 / recon queries, connection step 16
 RECON_SQL_NODES = [
@@ -112,6 +114,30 @@ return [{ json: {
 """
 
 
+# 단계 워크플로용 SQL 분할 — 1단계 카탈로그(01-05) / 2단계 뷰 의존(06-07)
+CATALOG_SQL_NODES = SQL_NODES[:5]
+VIEW_DEPS_SQL_NODES = SQL_NODES[5:]
+
+# webhook body(collect_job_id)를 그대로 되돌려 FastAPI 잡 단계가 갱신되게 한다
+# echo collect_job_id from the webhook body so the backend can track stages
+BUILD_CATALOG_JS_W1A = BUILD_CATALOG_JS.replace(
+    "return [{ json: {",
+    "const trigger = $('Webhook').first().json.body ?? {};\n"
+    "return [{ json: {\n"
+    "  collect_job_id: trigger.collect_job_id ?? null,",
+)
+
+BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
+    "const snapshotId = $('POST catalog').first().json.snapshot_id;",
+    "// 단계 실행은 스냅샷 id를 트리거 본문으로 받는다 / snapshot id arrives via the webhook\n"
+    "const trigger = $('Webhook').first().json.body ?? {};\n"
+    "const snapshotId = trigger.snapshot_id;",
+).replace(
+    "return [{ json: {",
+    "return [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,",
+)
+
+
 def _node(name: str, node_type: str, position: list[int], parameters: dict,
           credentials: dict | None = None, type_version: float = 1) -> dict:
     node = {
@@ -183,6 +209,93 @@ def build_workflow() -> dict:
     }
 
 
+def _post_ingest_node(name: str, endpoint: str, position: list[int]) -> dict:
+    return _node(name, "n8n-nodes-base.httpRequest", position, {
+        "method": "POST",
+        "url": f"={{{{ $env.DB_VIEWER_API_BASE }}}}{endpoint}",
+        "sendBody": True, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "sendHeaders": True,
+        "headerParameters": {"parameters": [
+            {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+        ]},
+    }, type_version=4.2)
+
+
+def _chain(nodes: list[dict]) -> dict:
+    order = [n["name"] for n in nodes]
+    return {
+        src: {"main": [[{"node": dst, "type": "main", "index": 0}]]}
+        for src, dst in zip(order, order[1:])
+    }
+
+
+def build_collect_catalog_workflow() -> dict:
+    """W1a — 버튼 트리거 1단계: 카탈로그 수집 webhook / webhook-triggered catalog step."""
+    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
+    nodes = [
+        _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
+            "httpMethod": "POST", "path": "dbv-collect-catalog",
+            # 즉시 응답 — 진행 상태는 FastAPI 잡 폴링이 담당 / respond immediately
+            "responseMode": "onReceived",
+        }, type_version=2),
+    ]
+    for i, (name, filename) in enumerate(CATALOG_SQL_NODES):
+        nodes.append(_node(
+            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
+            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
+            credentials=mssql_cred, type_version=1.1,
+        ))
+    nodes += [
+        _node("Build catalog payload", "n8n-nodes-base.code", [220 * 6, 0],
+              {"jsCode": BUILD_CATALOG_JS_W1A}, type_version=2),
+        _post_ingest_node("POST catalog", "/api/ingest/catalog", [220 * 7, 0]),
+    ]
+    return {
+        "name": "W1a collect catalog (webhook)",
+        "nodes": nodes,
+        "connections": _chain(nodes),
+        "settings": {"executionOrder": "v1"},
+        "meta": {
+            "notes": "버튼 트리거 1단계 — FastAPI /api/collect/catalog가 이 webhook을 호출한다. "
+                     "collect_job_id를 페이로드로 되돌려 잡 단계가 갱신된다. "
+                     "N8N_WEBHOOK_BASE(백엔드)와 이 워크플로의 webhook 경로가 일치해야 한다.",
+        },
+    }
+
+
+def build_collect_viewdeps_workflow() -> dict:
+    """W1b — 버튼 트리거 2단계: 뷰 의존 수집 webhook / webhook-triggered view-deps step."""
+    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
+    nodes = [
+        _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
+            "httpMethod": "POST", "path": "dbv-collect-viewdeps",
+            "responseMode": "onReceived",
+        }, type_version=2),
+    ]
+    for i, (name, filename) in enumerate(VIEW_DEPS_SQL_NODES):
+        nodes.append(_node(
+            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
+            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
+            credentials=mssql_cred, type_version=1.1,
+        ))
+    nodes += [
+        _node("Build view-deps payload", "n8n-nodes-base.code", [220 * 3, 0],
+              {"jsCode": BUILD_VIEW_DEPS_JS_W1B}, type_version=2),
+        _post_ingest_node("POST view-deps", "/api/ingest/view-deps", [220 * 4, 0]),
+    ]
+    return {
+        "name": "W1b collect view-deps (webhook)",
+        "nodes": nodes,
+        "connections": _chain(nodes),
+        "settings": {"executionOrder": "v1"},
+        "meta": {
+            "notes": "버튼 트리거 2단계 — FastAPI /api/collect/view-deps가 snapshot_id·collect_job_id를 "
+                     "webhook body로 전달한다. 1단계(catalog_done) 이후에만 호출된다.",
+        },
+    }
+
+
 def build_recon_workflow() -> dict:
     """정찰 워크플로 — 수동 트리거, 6종 쿼리 → 종합 리포트 1건 / manual recon run."""
     mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
@@ -220,12 +333,15 @@ def build_recon_workflow() -> dict:
 
 def main() -> None:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(build_workflow(), ensure_ascii=False, indent=2) + "\n")
-    print(f"wrote {OUT_PATH}")
-    RECON_OUT_PATH.write_text(
-        json.dumps(build_recon_workflow(), ensure_ascii=False, indent=2) + "\n"
-    )
-    print(f"wrote {RECON_OUT_PATH}")
+    outputs = [
+        (OUT_PATH, build_workflow()),
+        (RECON_OUT_PATH, build_recon_workflow()),
+        (W1A_OUT_PATH, build_collect_catalog_workflow()),
+        (W1B_OUT_PATH, build_collect_viewdeps_workflow()),
+    ]
+    for path, workflow in outputs:
+        path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2) + "\n")
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":

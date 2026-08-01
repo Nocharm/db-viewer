@@ -1,0 +1,236 @@
+{
+  "name": "W1a collect catalog (webhook)",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dbv-collect-catalog",
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "name": "01 objects",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- objects: 테이블·뷰 + 행수 / tables & views with row counts\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\nSELECT o.object_id,\n       s.name AS [schema],\n       o.name,\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\n       ps.row_count\nFROM sys.objects o\nJOIN sys.schemas s ON o.schema_id = s.schema_id\nOUTER APPLY (\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\n    SELECT SUM(p.row_count) AS row_count\n    FROM sys.dm_db_partition_stats p\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\n) ps\nWHERE o.type IN ('U', 'V');\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "02 columns",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\nSELECT c.object_id,\n       c.name,\n       c.column_id AS ordinal,\n       t.name AS data_type,\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\n       c.is_nullable,\n       c.is_computed\nFROM sys.columns c\nJOIN sys.types t ON c.user_type_id = t.user_type_id\nJOIN sys.objects o ON c.object_id = o.object_id\nWHERE o.type IN ('U', 'V');\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "03 key constraints",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nORDER BY kc.name, ic.key_ordinal;\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "04 foreign keys",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- FK 제약 + 컬럼 페어 / foreign keys with column pairs\n-- W1이 행을 {name, src_object_id, tgt_object_id, columns: [{src_column, tgt_column}]}로 그룹핑\nSELECT fk.name,\n       fk.parent_object_id AS src_object_id,\n       fk.referenced_object_id AS tgt_object_id,\n       sc.name AS src_column,\n       tc.name AS tgt_column,\n       fkc.constraint_column_id\nFROM sys.foreign_keys fk\nJOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id\nJOIN sys.columns sc\n  ON fkc.parent_object_id = sc.object_id AND fkc.parent_column_id = sc.column_id\nJOIN sys.columns tc\n  ON fkc.referenced_object_id = tc.object_id AND fkc.referenced_column_id = tc.column_id\nORDER BY fk.name, fkc.constraint_column_id;\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "05 view definitions",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 뷰 DDL / view definitions → catalog.json view_definitions[]\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\nSELECT v.object_id,\n       m.definition\nFROM sys.views v\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id;\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "Build catalog payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nconst trigger = $('Webhook').first().json.body ?? {};\nreturn [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,\n  source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',\n  collected_at: new Date().toISOString(),\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  foreign_keys: Object.values(fks),\n  view_definitions: viewDefs,\n} }];\n"
+      }
+    },
+    {
+      "name": "POST catalog",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/catalog",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "01 objects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "01 objects": {
+      "main": [
+        [
+          {
+            "node": "02 columns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 columns": {
+      "main": [
+        [
+          {
+            "node": "03 key constraints",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 key constraints": {
+      "main": [
+        [
+          {
+            "node": "04 foreign keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04 foreign keys": {
+      "main": [
+        [
+          {
+            "node": "05 view definitions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05 view definitions": {
+      "main": [
+        [
+          {
+            "node": "Build catalog payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build catalog payload": {
+      "main": [
+        [
+          {
+            "node": "POST catalog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "notes": "버튼 트리거 1단계 — FastAPI /api/collect/catalog가 이 webhook을 호출한다. collect_job_id를 페이로드로 되돌려 잡 단계가 갱신된다. N8N_WEBHOOK_BASE(백엔드)와 이 워크플로의 webhook 경로가 일치해야 한다."
+  }
+}
