@@ -202,6 +202,36 @@ export function fetchObjectDetail(objectId: number): Promise<ObjectDetail> {
   return getJson(`/api/objects/${objectId}/detail`);
 }
 
+export interface JoinCheckItem {
+  target_object: string;
+  src_column: string;
+  tgt_column: string;
+  score: number;
+  signals: Record<string, number>;
+  status: "checked" | "no_data";
+  containment?: number;
+  orphan_count?: number;
+  cardinality?: string;
+  confidence?: number;
+  pattern?: string;
+}
+
+export interface JoinCheckResult {
+  object: string;
+  target: string | null;
+  checked: JoinCheckItem[];
+  no_data: JoinCheckItem[];
+  observed_at: string;
+}
+
+/** 테이블 단위 조인 가능성 검증 — 타깃 미지정 시 상위 후보 일괄 / table-level join check. */
+export function runJoinCheck(
+  objectId: number, targetObjectId?: number,
+): Promise<JoinCheckResult> {
+  return postJson(`/api/objects/${objectId}/join-check`,
+    targetObjectId === undefined ? {} : { target_object_id: targetObjectId });
+}
+
 export interface TablePreview {
   object: string;
   columns: string[];
