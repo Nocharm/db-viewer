@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppHeader } from "@/components/AppHeader";
 import { fetchParseStats, fetchSnapshots, type ParseStats } from "@/lib/api";
 
 export default function ParsingPage() {
@@ -22,14 +23,25 @@ export default function ParsingPage() {
       .catch((e) => setError(e.message));
   }, []);
 
+  let content: React.ReactNode = null;
   if (error) {
-    return (
+    content = (
       <p className="p-6" style={{ color: "var(--error)" }} data-testid="ParsingPage-errorText">
         {error}
       </p>
     );
+  } else if (!stats) {
+    content = <p className="p-6" style={{ color: "var(--muted)" }}>불러오는 중…</p>;
   }
-  if (!stats) return <p className="p-6" style={{ color: "var(--muted)" }}>불러오는 중…</p>;
+  if (content) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden">
+        <AppHeader />
+        {content}
+      </div>
+    );
+  }
+  if (!stats) return null;
 
   const tiles: [string, number | string][] = [
     ["전체 뷰", stats.total_views],
@@ -42,8 +54,11 @@ export default function ParsingPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-4xl p-6" data-testid="ParsingPage-root">
-      <h1 className="erd-node__header mb-4 !border-0 !p-0">파싱 지표 — 스냅샷 #{stats.snapshot_id}</h1>
+    <div className="flex h-screen flex-col overflow-hidden">
+      <AppHeader />
+      <div className="scroll-area min-h-0 flex-1">
+        <div className="mx-auto max-w-4xl p-6" data-testid="ParsingPage-root">
+          <h1 className="erd-node__header mb-4 !border-0 !p-0">파싱 지표 — 스냅샷 #{stats.snapshot_id}</h1>
       <div className="mb-6 grid grid-cols-4 gap-3">
         {tiles.map(([label, value]) => (
           <div key={label} className="rounded-lg border p-3"
@@ -77,6 +92,8 @@ export default function ParsingPage() {
           )}
         </tbody>
       </table>
+        </div>
+      </div>
     </div>
   );
 }

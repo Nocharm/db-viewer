@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppHeader } from "@/components/AppHeader";
 import { useMe } from "@/components/providers";
 import {
   addWhitelist,
@@ -30,9 +31,12 @@ export default function AdminPage() {
 
   if (me && me.auth_enabled && !me.is_sysadmin) {
     return (
-      <p className="p-6" style={{ color: "var(--error)" }} data-testid="AdminPage-forbidden">
-        시스템 관리자 전용 화면입니다.
-      </p>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <AppHeader />
+        <p className="p-6" style={{ color: "var(--error)" }} data-testid="AdminPage-forbidden">
+          시스템 관리자 전용 화면입니다.
+        </p>
+      </div>
     );
   }
 
@@ -47,8 +51,11 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl p-6" data-testid="AdminPage-root">
-      <h1 className="erd-node__header mb-4 !border-0 !p-0">관리 콘솔</h1>
+    <div className="flex h-screen flex-col overflow-hidden">
+      <AppHeader />
+      <div className="scroll-area min-h-0 flex-1">
+        <div className="mx-auto max-w-3xl p-6" data-testid="AdminPage-root">
+          <h1 className="erd-node__header mb-4 !border-0 !p-0">관리 콘솔</h1>
 
       <section className="mb-6">
         <div className="mb-2 flex items-center gap-2">
@@ -138,6 +145,8 @@ export default function AdminPage() {
                      data-testid="AdminPage-message">{message}</p>}
       {error && <p className="text-sm" style={{ color: "var(--error)" }}
                    data-testid="AdminPage-errorText">{error}</p>}
+        </div>
+      </div>
     </div>
   );
 }

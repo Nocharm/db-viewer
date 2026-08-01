@@ -1,96 +1,130 @@
 "use client";
 
-/** 메인 화면 — 검색 + ERD 캔버스 + 컬럼 패널 / search, canvas, column panel. */
+/** 메인 — 테이블 브라우저: 조인키 필터 → 카테고리 → 테이블 → 상세·미리보기. / table browser home. */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { ColumnPanel, type SelectedColumn } from "@/components/ColumnPanel";
-import { ErdCanvas } from "@/components/erd/ErdCanvas";
-import { LogoutButton } from "@/components/logout-button";
-import { useMe } from "@/components/providers";
-import { SearchPanel } from "@/components/SearchPanel";
-import { searchObjects } from "@/lib/api";
+import { AppHeader } from "@/components/AppHeader";
+import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
+import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
+import { TableDetail } from "@/components/browser/TableDetail";
+import { TableList } from "@/components/browser/TableList";
+import {
+  fetchAllTables,
+  fetchJoinKeys,
+  fetchObjectDetail,
+  fetchObjectPreview,
+  type JoinKeyItem,
+  type ObjectDetail,
+  type TablePreview,
+} from "@/lib/api";
+import { categoryLabel, deriveCategoryCode } from "@/lib/category";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function Home() {
-  const me = useMe();
-  const [anchor, setAnchor] = useState<ObjectSummary | null>(null);
-  const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(null);
-  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const router = useRouter();
+  const [tables, setTables] = useState<ObjectSummary[]>([]);
+  const [joinKeys, setJoinKeys] = useState<JoinKeyItem[]>([]);
+  const [selectedKey, setSelectedKey] = useState<JoinKeyItem | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<ObjectSummary | null>(null);
+  const [detail, setDetail] = useState<ObjectDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [preview, setPreview] = useState<TablePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSelectColumn = useCallback(
-    (columnId: number, columnName: string, objectQname: string) =>
-      setSelectedColumn({ id: columnId, name: columnName, object: objectQname }),
-    [],
-  );
-
-  // 빈 캔버스 가이드 칩 → 검색 후 정확 일치 앵커 선택 / quick-start chip resolves an anchor
-  const handleQuickStart = useCallback((name: string) => {
-    void searchObjects(name).then((res) => {
-      const hit = res.items.find((i) => i.name === name) ?? res.items[0];
-      if (hit) setAnchor(hit);
-    });
+  useEffect(() => {
+    fetchAllTables()
+      .then((res) => setTables(res.items))
+      .catch((e) => setError(e.message));
+    fetchJoinKeys()
+      .then((res) => setJoinKeys(res.items))
+      .catch(() => undefined); // 키 집계 실패는 브라우징을 막지 않는다
   }, []);
 
+  const categories = useMemo<CategoryEntry[]>(() => {
+    const counts = new Map<string, number>();
+    for (const table of tables) {
+      const code = deriveCategoryCode(table.name);
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([code, count]) => ({ code, label: categoryLabel(code), count }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+  }, [tables]);
+
+  const filtered = useMemo(() => {
+    const keyIds = selectedKey ? new Set(selectedKey.table_ids) : null;
+    const term = query.trim().toUpperCase();
+    return tables.filter((table) =>
+      (category === null || deriveCategoryCode(table.name) === category)
+      && (keyIds === null || keyIds.has(table.id))
+      && (term === "" || table.name.toUpperCase().includes(term)));
+  }, [tables, category, selectedKey, query]);
+
+  const handleSelect = useCallback((table: ObjectSummary) => {
+    setSelected(table);
+    setPreview(null);
+    setDetail(null);
+    setDetailLoading(true);
+    fetchObjectDetail(table.id)
+      .then(setDetail)
+      .catch((e) => setError(e.message))
+      .finally(() => setDetailLoading(false));
+  }, []);
+
+  const handlePreview = useCallback(() => {
+    if (!selected) return;
+    setPreviewLoading(true);
+    fetchObjectPreview(selected.id)
+      .then(setPreview)
+      .catch((e) => setError(e.message))
+      .finally(() => setPreviewLoading(false));
+  }, [selected]);
+
+  const handleOpenErd = useCallback(() => {
+    if (!selected) return;
+    router.push(`/erd?anchor=${selected.id}&label=${selected.schema}.${selected.name}`);
+  }, [router, selected]);
+
   return (
-    <div className="flex h-screen flex-col">
-      <header
-        className="flex items-center gap-3 border-b px-4 py-2"
-        style={{ borderColor: "var(--hairline)" }}
-      >
-        <h1 className="erd-node__header !border-0 !p-0">db-viewer</h1>
-        <span className="text-sm" style={{ color: "var(--muted)" }}>
-          {anchor ? `${anchor.schema}.${anchor.name}` : "테이블을 검색해 시작하세요"}
-        </span>
-        <button
-          className="icon-button ml-auto"
-          onClick={() => {
-            import("@/lib/api").then(({ suggestRelationsAi }) =>
-              suggestRelationsAi().then((res) =>
-                setAiNotice(`AI 제안 ${res.created}건 생성 — 검증 큐에서 확인`)));
-          }}
-          data-testid="Home-aiSuggestButton"
-        >
-          AI 관계 제안
-        </button>
-        {aiNotice && (
-          <span className="text-sm" style={{ color: "var(--slate)" }}
-                data-testid="Home-aiNotice">
-            {aiNotice}
+    <div className="flex h-screen flex-col overflow-hidden">
+      <AppHeader>
+        {error && (
+          <span className="text-sm" style={{ color: "var(--error)" }}
+                data-testid="Home-errorText">
+            {error}
           </span>
         )}
-        <a
-          className="text-sm underline"
-          style={{ color: "var(--action-blue)" }}
-          href="/parsing"
-          data-testid="Home-parsingLink"
-        >
-          파싱 지표
-        </a>
-        {(me?.is_sysadmin || me?.auth_enabled === false) && (
-          <a className="text-sm underline" style={{ color: "var(--action-blue)" }}
-             href="/admin" data-testid="Home-adminLink">
-            관리
-          </a>
-        )}
-        {me && (
-          <span className="text-sm" style={{ color: "var(--slate)" }}
-                data-testid="Home-userName">
-            {me.name}
-          </span>
-        )}
-        {me?.auth_enabled && <LogoutButton />}
-      </header>
+      </AppHeader>
+      <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
       <main className="flex min-h-0 flex-1">
-        <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />
+        <CategoryList
+          categories={categories}
+          selected={category}
+          totalCount={tables.length}
+          onSelect={setCategory}
+        />
+        <TableList
+          tables={filtered}
+          selectedId={selected?.id ?? null}
+          query={query}
+          onQuery={setQuery}
+          onSelect={handleSelect}
+        />
         <section className="min-w-0 flex-1">
-          <ErdCanvas
-            anchorId={anchor?.id ?? null}
-            onSelectColumn={handleSelectColumn}
-            onQuickStart={handleQuickStart}
+          <TableDetail
+            detail={detail}
+            loading={detailLoading}
+            preview={preview}
+            previewLoading={previewLoading}
+            onPreview={handlePreview}
+            onOpenErd={handleOpenErd}
           />
         </section>
-        <ColumnPanel column={selectedColumn} onClose={() => setSelectedColumn(null)} />
       </main>
     </div>
   );

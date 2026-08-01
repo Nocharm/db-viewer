@@ -49,6 +49,18 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [error, setError] = useState<string | null>(null);
   const { setCenter } = useReactFlow();
   const centeredAnchorRef = useRef<number | null>(null);
+  // fresh 마운트에선 ReactFlow 초기화 전 setCenter가 무시된다 — init까지 보류
+  // setCenter before ReactFlow init is lost on fresh mounts; defer until onInit
+  const flowReadyRef = useRef(false);
+  const pendingCenterRef = useRef<{ x: number; y: number } | null>(null);
+
+  const centerOn = useCallback((x: number, y: number) => {
+    if (!flowReadyRef.current) {
+      pendingCenterRef.current = { x, y };
+      return;
+    }
+    void setCenter(x, y, { zoom: 0.75, duration: 300 });
+  }, [setCenter]);
 
   const applyIncoming = useCallback((incoming: GraphResponse, current: GraphResponse | null) => {
     const plan = planMerge(current, incoming);
@@ -163,10 +175,9 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         const anchorPos = posMap.get(graph.anchor_id);
         const anchorSize = sized.find((s) => s.id === graph.anchor_id);
         if (anchorPos && anchorSize) {
-          void setCenter(
+          centerOn(
             anchorPos.x + anchorSize.width / 2,
             anchorPos.y + anchorSize.height / 2,
-            { zoom: 0.75, duration: 300 },
           );
         }
       }
@@ -174,7 +185,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn, setCenter]);
+  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn, centerOn]);
 
   return (
     <div className="relative h-full w-full" data-testid="ErdCanvas-root">
@@ -184,6 +195,14 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         nodeTypes={nodeTypes}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
+        onInit={() => {
+          flowReadyRef.current = true;
+          const pending = pendingCenterRef.current;
+          if (pending) {
+            pendingCenterRef.current = null;
+            void setCenter(pending.x, pending.y, { zoom: 0.75 });
+          }
+        }}
       >
         <Background color="var(--hairline)" />
         <Controls />

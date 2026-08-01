@@ -122,8 +122,131 @@ body {
   padding: 3px 6px;
   cursor: pointer;
   color: var(--slate);
+  transition: background-color 0.18s ease-in-out, color 0.18s ease-in-out,
+    border-color 0.18s ease-in-out, transform 0.12s ease-in-out;
 }
 .icon-button:hover {
   border-color: var(--ink);
   color: var(--ink);
+  background: var(--soft-stone);
+}
+.icon-button:active {
+  transform: scale(0.96);
+}
+
+/* ── 스크롤바: 평소 숨김, 호버·스크롤 시 표시 / hidden until hover-scroll ── */
+.scroll-area {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scroll-area:hover,
+.scroll-area:focus-within {
+  scrollbar-color: var(--hairline) transparent;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.scroll-area:hover::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+}
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ── 인터랙션 공통: ease-in-out + 클릭 효과 / shared hover-press affordance ── */
+.pressable {
+  cursor: pointer;
+  transition: background-color 0.18s ease-in-out, color 0.18s ease-in-out,
+    border-color 0.18s ease-in-out, transform 0.12s ease-in-out,
+    box-shadow 0.18s ease-in-out;
+}
+.pressable:hover {
+  background: var(--soft-stone);
+}
+.pressable:active {
+  transform: scale(0.985);
+}
+
+/* ── 조인키 칩 ── */
+.key-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 30px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--canvas);
+  color: var(--ink);
+}
+.key-chip--selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary, #fff);
+}
+.key-chip__count {
+  font-size: 10px;
+  color: var(--muted);
+}
+.key-chip--selected .key-chip__count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── 좌측 목록 행 ── */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 13px;
+  text-align: left;
+  border-left: 2px solid transparent;
+}
+.list-row--selected {
+  background: var(--soft-stone);
+  border-left-color: var(--action-blue);
+  font-weight: 500;
+}
+
+/* ── 상세 패널 섹션 ── */
+.panel-section {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.panel-section__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22px;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 8px;
+}
+
+/* ── 일치율 게이지 ── */
+.rate-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  overflow: hidden;
+}
+.rate-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--rel-confirmed);
+  transition: width 0.3s ease-in-out;
 }

@@ -1,15 +1,21 @@
 """Object search and anchor-based graph expansion. / 객체 검색 + 앵커 N-hop 그래프 조회."""
 
 from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
+from app.adapters.table_preview import FakeTablePreview
+from app.auth import get_current_user
+from app.config import get_settings
 from app.db import get_db
 from app.models import (
     AiSummary,
+    AuditLog,
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
@@ -44,7 +50,7 @@ def search_objects(
     q: str = "",
     type_filter: Literal["table", "view"] | None = Query(None, alias="type"),
     snapshot_id: int | None = None,
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     db: Session = Depends(get_db),
 ) -> dict:
     snapshot = resolve_snapshot(db, snapshot_id)
@@ -73,6 +79,180 @@ def search_objects(
         for obj, col_count in db.execute(stmt)
     ]
     return {"snapshot_id": snapshot.id, "items": items}
+
+
+@router.get("/{object_id}/detail")
+def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
+    """테이블 브라우저 우측 패널 데이터 — 사용 뷰·유사 테이블·관계 요약 / detail panel payload."""
+    obj = db.get(CatalogObject, object_id)
+    if obj is None:
+        raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
+    qname = f"{obj.schema}.{obj.name}"
+
+    columns = db.execute(
+        select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
+        .order_by(CatalogColumn.ordinal)
+    ).scalars().all()
+
+    # 이 테이블을 사용하는 뷰 / views whose lineage lands on this table
+    base_view = aliased(CatalogObject)
+    using_views = [
+        {"id": vid, "name": f"{schema}.{name}", "min_depth": depth}
+        for vid, schema, name, depth in db.execute(
+            select(base_view.id, base_view.schema, base_view.name,
+                   func.min(ViewLineageFlat.depth))
+            .join(ViewLineageFlat, ViewLineageFlat.view_object_id == base_view.id)
+            .where(ViewLineageFlat.base_object_id == obj.id)
+            .group_by(base_view.id, base_view.schema, base_view.name)
+            .order_by(func.min(ViewLineageFlat.depth), base_view.name)
+        )
+    ]
+
+    # 유사 테이블 — 컬럼명 일치율 |공통|/|내 컬럼| / column-name match rate
+    own_columns = {c.name for c in columns}
+    similar = []
+    if own_columns and obj.type == "table":
+        peer_columns: dict[int, set[str]] = {}
+        peer_names: dict[int, str] = {}
+        for peer_id, schema, name, column_name in db.execute(
+            select(CatalogObject.id, CatalogObject.schema, CatalogObject.name,
+                   CatalogColumn.name)
+            .join(CatalogColumn, CatalogColumn.object_id == CatalogObject.id)
+            .where(CatalogObject.snapshot_id == obj.snapshot_id,
+                   CatalogObject.type == "table", CatalogObject.id != obj.id)
+        ):
+            peer_columns.setdefault(peer_id, set()).add(column_name)
+            peer_names[peer_id] = f"{schema}.{name}"
+        for peer_id, cols in peer_columns.items():
+            common = own_columns & cols
+            rate = len(common) / len(own_columns)
+            if rate >= 0.3:
+                similar.append({
+                    "id": peer_id, "name": peer_names[peer_id],
+                    "match_rate": round(rate, 3), "common_columns": len(common),
+                })
+        similar.sort(key=lambda s: (-s["match_rate"], s["name"]))
+        similar = similar[:8]
+
+    # FK 요약 / FK in-out summary
+    src_col, tgt_col = aliased(CatalogColumn), aliased(CatalogColumn)
+    fk_out = [
+        f"{schema}.{name}"
+        for schema, name in db.execute(
+            select(CatalogObject.schema, CatalogObject.name).distinct()
+            .join(tgt_col, tgt_col.object_id == CatalogObject.id)
+            .join(FkColumn, FkColumn.tgt_column_id == tgt_col.id)
+            .join(src_col, FkColumn.src_column_id == src_col.id)
+            .where(src_col.object_id == obj.id)
+        )
+    ]
+    fk_in = [
+        f"{schema}.{name}"
+        for schema, name in db.execute(
+            select(CatalogObject.schema, CatalogObject.name).distinct()
+            .join(src_col, src_col.object_id == CatalogObject.id)
+            .join(FkColumn, FkColumn.src_column_id == src_col.id)
+            .join(tgt_col, FkColumn.tgt_column_id == tgt_col.id)
+            .where(tgt_col.object_id == obj.id)
+        )
+    ]
+
+    # 추론·확정 관계 (텍스트 식별자 매칭) / inferred and confirmed relations
+    relations = [
+        {
+            "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
+            "src_column": rel.src_column, "tgt_column": rel.tgt_column,
+            "status": rel.status, "confidence": rel.confidence,
+            "cardinality": rel.cardinality,
+        }
+        for rel in db.execute(
+            select(Relation).where(
+                Relation.status.in_(["validated", "confirmed"]),
+                (Relation.src_object == qname) | (Relation.tgt_object == qname),
+            )
+        ).scalars()
+    ]
+
+    summary = db.execute(
+        select(AiSummary.summary).where(AiSummary.object_qname == qname)
+    ).scalar_one_or_none()
+
+    fk_column_ids = {
+        cid for (cid,) in db.execute(
+            select(FkColumn.src_column_id).join(src_col, FkColumn.src_column_id == src_col.id)
+            .where(src_col.object_id == obj.id)
+        )
+    } | {
+        cid for (cid,) in db.execute(
+            select(FkColumn.tgt_column_id).join(tgt_col, FkColumn.tgt_column_id == tgt_col.id)
+            .where(tgt_col.object_id == obj.id)
+        )
+    }
+
+    return {
+        "id": obj.id, "name": qname, "type": obj.type, "row_count": obj.row_count,
+        "column_count": len(columns),
+        "ai_summary": summary,
+        "columns": [
+            {"id": c.id, "name": c.name, "data_type": c.data_type, "is_pk": c.is_pk,
+             "is_join_key": c.is_pk or c.id in fk_column_ids}
+            for c in columns
+        ],
+        "using_views": using_views,
+        "similar_tables": similar,
+        "fk_out": sorted(fk_out), "fk_in": sorted(fk_in),
+        "relations": relations,
+    }
+
+
+# 미리보기 상한 — 서버 고정 (계획 §3.5와 동일 원칙) / hard server-side cap
+TABLE_PREVIEW_LIMIT = 20
+
+
+@router.get("/{object_id}/preview")
+def get_object_preview(
+    object_id: int,
+    db: Session = Depends(get_db),
+    login_id: str = Depends(get_current_user),
+) -> dict:
+    """TOP 20 미리보기 — 무캐시·마스킹·감사 (원본 값 반출 지점, 계획 §3.5 원칙 준용)."""
+    obj = db.get(CatalogObject, object_id)
+    if obj is None:
+        raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
+    settings = get_settings()
+    if settings.source_mode == "live":
+        # 연결 단계(정지점 18)에서 pyodbc SELECT TOP 20으로 교체 / swapped at connection stage
+        raise HTTPException(501, {"message": "live table preview lands at connection step 18"})
+
+    qname = f"{obj.schema}.{obj.name}"
+    columns = db.execute(
+        select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
+        .order_by(CatalogColumn.ordinal)
+    ).scalars().all()
+    column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
+
+    preview = FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
+    rows = preview.rows(qname, column_specs, TABLE_PREVIEW_LIMIT)
+
+    masked = [c.name for c in columns if c.masking_policy]
+    if masked:
+        masked_set = set(masked)
+        rows = [
+            {k: ("●●●" if k in masked_set else v) for k, v in row.items()}
+            for row in rows
+        ]
+
+    now = datetime.now(UTC)
+    db.add(AuditLog(action="table_preview", detail=f"{qname} ({len(rows)} rows)",
+                    requested_by=login_id, requested_at=now))
+    return {
+        "object": qname,
+        "columns": [c.name for c in columns],
+        "rows": rows,
+        "masked_columns": masked,
+        "limit": TABLE_PREVIEW_LIMIT,
+        "observed_at": now.isoformat(),
+    }
 
 
 def _load_fk_edges(db: Session, snapshot_id: int) -> list[dict]:

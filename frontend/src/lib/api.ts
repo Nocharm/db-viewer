@@ -165,6 +165,55 @@ export function fetchParseStats(snapshotId: number): Promise<ParseStats> {
   return getJson(`/api/snapshots/${snapshotId}/parse-stats`);
 }
 
+export interface JoinKeyItem {
+  key: string;
+  table_count: number;
+  usage: number;
+  table_ids: number[];
+}
+
+export function fetchJoinKeys(): Promise<{ items: JoinKeyItem[] }> {
+  return getJson("/api/join-keys");
+}
+
+export function fetchAllTables(): Promise<SearchResponse> {
+  return getJson("/api/objects?type=table&limit=1000");
+}
+
+export interface ObjectDetail {
+  id: number;
+  name: string;
+  type: "table" | "view";
+  row_count: number | null;
+  column_count: number;
+  ai_summary: string | null;
+  columns: { id: number; name: string; data_type: string; is_pk: boolean; is_join_key: boolean }[];
+  using_views: { id: number; name: string; min_depth: number }[];
+  similar_tables: { id: number; name: string; match_rate: number; common_columns: number }[];
+  fk_out: string[];
+  fk_in: string[];
+  relations: {
+    other: string; src_column: string; tgt_column: string;
+    status: string; confidence: number | null; cardinality: string | null;
+  }[];
+}
+
+export function fetchObjectDetail(objectId: number): Promise<ObjectDetail> {
+  return getJson(`/api/objects/${objectId}/detail`);
+}
+
+export interface TablePreview {
+  object: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  masked_columns: string[];
+  limit: number;
+}
+
+export function fetchObjectPreview(objectId: number): Promise<TablePreview> {
+  return getJson(`/api/objects/${objectId}/preview`);
+}
+
 export function suggestRelationsAi(): Promise<{ suggested: number; created: number }> {
   return postJson("/api/ai/suggest-relations", {});
 }
