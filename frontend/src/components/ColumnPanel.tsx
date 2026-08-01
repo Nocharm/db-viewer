@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/components/i18n";
 import {
   confirmRelation,
+  explainValidationAi,
   fetchCandidates,
   fetchHistory,
   runContainment,
@@ -53,6 +54,7 @@ export function ColumnPanel({ column, onClose }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiText, setAiText] = useState<string | null>(null);
 
   useEffect(() => {
     setCandidates(null);
@@ -62,6 +64,7 @@ export function ColumnPanel({ column, onClose }: Props) {
     setHistory([]);
     setConfirmed(false);
     setError(null);
+    setAiText(null);
     if (column) {
       fetchCandidates(column.id).then(setCandidates).catch((e) => setError(e.message));
     }
@@ -207,6 +210,23 @@ export function ColumnPanel({ column, onClose }: Props) {
               <div className="text-xs" style={{ color: "var(--muted)" }}>
                 last verified {new Date(result.observed_at).toLocaleString()}
               </div>
+              <button
+                className="icon-button mt-1.5"
+                disabled={busy}
+                onClick={() => selected && run(async () =>
+                  setAiText((await explainValidationAi(
+                    column.id, selected.column_id)).explanation))}
+                data-testid="ColumnPanel-aiExplainButton"
+              >
+                {t("ai.explainValidation")}
+              </button>
+              {aiText && (
+                <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--slate)" }}
+                   data-testid="ColumnPanel-aiExplanation">
+                  <span className="badge badge--ai mr-1">AI</span>
+                  {aiText}
+                </p>
+              )}
             </div>
           )}
 

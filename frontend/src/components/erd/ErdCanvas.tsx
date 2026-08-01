@@ -15,7 +15,7 @@ import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { useI18n } from "@/components/i18n";
-import { fetchGraph } from "@/lib/api";
+import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { getEdgeVisual } from "@/lib/edge-style";
 import { planMerge, type MergePlan } from "@/lib/graph-merge";
@@ -79,6 +79,9 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [hiddenNodes, setHiddenNodes] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
+  // 우클릭 미리보기 — 하단 와이드 카드 / preview data for the bottom card
+  const [preview, setPreview] = useState<TablePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, setPending] = useState<MergePlan | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
@@ -147,6 +150,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         setHiddenNodes(new Set());
         setMenu(null);
         setEmphasis(null);
+        setPreview(null);
         manualPosRef.current = new Map(); // 새 캔버스 — 수동 배치 초기화
         applyIncoming(incoming, null);
       })
@@ -202,6 +206,14 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     () => (graph?.nodes ?? []).filter((n) => hiddenNodes.has(n.id)),
     [graph, hiddenNodes],
   );
+
+  const openPreview = useCallback((nodeId: number) => {
+    setPreviewLoading(true);
+    fetchObjectPreview(nodeId)
+      .then(setPreview)
+      .catch((e) => setError(e.message))
+      .finally(() => setPreviewLoading(false));
+  }, []);
 
   // ── 호버 강조 / hover emphasis ──
   const buildEdgeEmphasis = useCallback((edgeId: string) => {
@@ -405,6 +417,11 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           {menu.type === "node" && menu.nodeId !== null ? (
             <>
               <button className="pressable erd-menu__item"
+                      onClick={() => { openPreview(menu.nodeId as number); setMenu(null); }}
+                      data-testid="ErdCanvas-previewItem">
+                {t("detail.preview")}
+              </button>
+              <button className="pressable erd-menu__item"
                       onClick={() => { hideNode(menu.nodeId as number); setMenu(null); }}
                       data-testid="ErdCanvas-hideNodeItem">
                 {t("erd.hideTable")}
@@ -446,6 +463,65 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                 </button>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {/* 하단 와이드 미리보기 카드 — 그래프 위에 부유 / bottom floating preview card */}
+      {(preview || previewLoading) && (
+        <div
+          className="absolute bottom-3 left-3 right-3 z-20 flex max-h-64 flex-col rounded-xl border"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
+          data-testid="ErdCanvas-previewCard"
+        >
+          <div className="flex items-center gap-2 px-4 py-2">
+            <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+              {t("preview.title")}
+              {preview && <span className="ml-1.5 font-mono">{preview.object}</span>}
+            </span>
+            {preview && <span className="badge badge--muted">TOP {preview.limit}</span>}
+            {preview && preview.masked_columns.length > 0 && (
+              <span className="badge badge--muted">
+                {t("preview.masked")} {preview.masked_columns.length}{t("preview.maskedSuffix")}
+              </span>
+            )}
+            {previewLoading && (
+              <span className="text-xs" style={{ color: "var(--muted)" }}>
+                {t("common.loading")}
+              </span>
+            )}
+            <button className="icon-button ml-auto" onClick={() => setPreview(null)}
+                    data-testid="ErdCanvas-previewCloseButton">
+              ✕
+            </button>
+          </div>
+          {preview && (
+            <div className="scroll-area min-h-0 overflow-auto border-t"
+                 style={{ borderColor: "var(--hairline)" }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="sticky top-0 text-left"
+                      style={{ background: "var(--surface-card)" }}>
+                    {preview.columns.map((column) => (
+                      <th key={column} className="whitespace-nowrap px-3 py-1.5 font-mono font-medium">
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, index) => (
+                    <tr key={index} className="border-t" style={{ borderColor: "var(--hairline)" }}>
+                      {preview.columns.map((column) => (
+                        <td key={column} className="whitespace-nowrap px-3 py-1">
+                          {String(row[column] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
