@@ -27,7 +27,9 @@ npm test                                     # vitest 단위 테스트
 ```
 
 서비스 DB는 PostgreSQL 16 (마이그레이션: `alembic upgrade head`). 로컬 설정은 `.env.example`를 `.env`로 복사.
-픽스처로 시작하려면: `python tools/fixture_gen.py --out fixtures` 후 `catalog.json`·`view_deps.json`을 ingest API로 POST.
+픽스처로 시작하려면: `python tools/seed_fixtures.py --base <앱주소> --api-key <INGEST_API_KEY>`.
+
+**UI/UX 로컬 리뷰**: `docs/ui-review.md` — Docker 없이 모든 시각 상태를 프라이밍(`tools/seed_ui_states.py`)해 확인.
 
 ## 배포
 

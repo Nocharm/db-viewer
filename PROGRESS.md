@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **UI/UX 로컬 리뷰 킷** — 로컬 검증 범위를 프론트 UI/UX로 확정(통신 검증은 서버 배포 후). `tools/seed_ui_states.py`가 API로 전 시각 상태 프라이밍(확정 ✓·고/저신뢰 inferred·AI 제안·요약·화이트리스트) — 실행 중 스택에 적용해 실측 확인(HR_APRV 앵커에 confirmed/fk/ai_suggested 혼재). 체크리스트 15항목은 `docs/ui-review.md`(seed 42 기준 검색어 명시). Docker 킷(local-test.md)은 배포 리허설용으로 유지.
 - **로컬 리허설 킷** — `docker-compose.local.yml` 오버레이: 로컬 Keycloak(realm·클라이언트·테스트 유저 2명 자동 임포트, `keycloak.local` alias로 브라우저·백엔드 issuer 일치) + `--profile collect`로 MSSQL(시드 스키마: FK/무FK 관계·중첩 뷰) + n8n(W0/W1 리허설, env 자동 주입). LDAP은 AD 전용 속성이라 로컬 대체 불가 → 끔(동기화만 비활성, 단위 테스트가 커버). `tools/seed_fixtures.py` CLI 신설(픽스처 없으면 즉석 생성). 검증: compose config·realm JSON·스크립트 — Docker 데몬 미기동이라 전체 기동은 사용자 실행 필요(runbook: docs/local-test.md).
 - **인증 마무리** — /parsing 페이지의 raw fetch를 인증 공용 클라이언트로 교체(auth ON에서 401 나던 격차), 로그인 기록 추가(audit_logs action=login, KST 하루 1건 중복 제거 — bpm 패턴). 스모크 재기동으로 실검증: dev 모드 /api/me·whitelist CRUD·ingest 재시드·프론트 프록시 전부 정상. 서브넷 172.48.0.0/16 사용자 확정.
 - **보안 리뷰 반영(인증)** — ① LDAP TLS 인증서 검증 강제(ldap3 기본 CERT_NONE → CERT_REQUIRED + `LDAP_CA_BUNDLE`, StartTLS에도 적용), ② LDAP 필터 이스케이프를 RFC 4515로(백슬래시 우선), ③ /api/me 로그인 동기화에 사용자별 5분 스로틀(AD 부하 공격 차단), ④ PKCE는 하드코드 비활성 대신 `!window.isSecureContext` 자동 판정 — HTTPS 전환 시 수정 없이 복원(평문 HTTP에선 crypto.subtle 부재로 불가피, bpm 동일 제약).
