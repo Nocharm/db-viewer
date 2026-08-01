@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
-from app.domain import ingest_mapping
+from app.domain import ingest_mapping, lineage
 from app.models import (
     CatalogColumn,
     CatalogConstraint,
@@ -13,6 +14,7 @@ from app.models import (
     FkColumn,
     Snapshot,
     ViewDep,
+    ViewLineageFlat,
 )
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
 
@@ -97,13 +99,15 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             detail={"message": "snapshot not found", "context": {"snapshot_id": payload.snapshot_id}},
         )
 
-    oid_map = {
-        raw: svc
-        for svc, raw in db.execute(
-            select(CatalogObject.id, CatalogObject.object_id)
-            .where(CatalogObject.snapshot_id == snapshot.id)
-        )
-    }
+    oid_map: dict[int, int] = {}
+    view_svc_ids: set[int] = set()
+    for svc, raw, obj_type in db.execute(
+        select(CatalogObject.id, CatalogObject.object_id, CatalogObject.type)
+        .where(CatalogObject.snapshot_id == snapshot.id)
+    ):
+        oid_map[raw] = svc
+        if obj_type == "view":
+            view_svc_ids.add(svc)
 
     rows = []
     for dep in payload.deps:
@@ -135,7 +139,26 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             update(CatalogObject).where(CatalogObject.id == svc).values(dmv_unresolved=True)
         )
 
+    # 재귀 해석 → view_lineage_flat 적재 (UI가 읽는 유일한 lineage 테이블)
+    # resolve recursively and persist the only lineage table the UI reads
+    deps_by_view: dict[int, list[lineage.DepTuple]] = {v: [] for v in view_svc_ids}
+    for row in rows:
+        if row["is_resolved"]:
+            ref = row["referenced_object_id"]
+            deps_by_view[row["view_object_id"]].append(
+                (ref, ref in view_svc_ids, row["referenced_column"])
+            )
+    lineage_rows = lineage.resolve_lineage(
+        deps_by_view, depth_limit=get_settings().lineage_depth_limit
+    )
+    if lineage_rows:
+        db.execute(
+            insert(ViewLineageFlat),
+            [{**r, "snapshot_id": snapshot.id} for r in lineage_rows],
+        )
+
     snapshot.status = "ready"
     return {"snapshot_id": snapshot.id, "counts": {
         "deps": len(rows), "unresolved_objects": len(payload.unresolved_objects),
+        "lineage_rows": len(lineage_rows),
     }}

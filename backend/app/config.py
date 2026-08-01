@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # live는 보안 승인 후 명시적으로만 켠다 (Phase 3 게이트) / live only after security approval
     source_mode: Literal["fixture", "replay", "live"] = "fixture"
 
+    # Tuning: lineage 재귀 상한 — 초과 시 depth_exceeded 플래그 (계획 §1.3)
+    lineage_depth_limit: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:
