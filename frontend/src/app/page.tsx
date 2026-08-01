@@ -9,7 +9,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
-import { PreviewSection } from "@/components/browser/PreviewSection";
+import {
+  PreviewSection,
+  type PreviewTabState,
+  type RefetchOptions,
+} from "@/components/browser/PreviewSection";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import {
@@ -20,7 +24,6 @@ import {
   fetchObjectPreview,
   type JoinKeyItem,
   type ObjectDetail,
-  type TablePreview,
 } from "@/lib/api";
 import { categoryLabel, deriveCategoryCode } from "@/lib/category";
 import { matchTable } from "@/lib/search";
@@ -49,8 +52,10 @@ function HomeInner() {
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [preview, setPreview] = useState<TablePreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // 미리보기 다중 탭 — 같은 테이블은 탭 활성화로만 (중복 열기 차단)
+  const [previewTabs, setPreviewTabs] = useState<PreviewTabState[]>([]);
+  const [activePreviewId, setActivePreviewId] = useState<number | null>(null);
+  const [splitPreviewId, setSplitPreviewId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
@@ -68,11 +73,11 @@ function HomeInner() {
   }, []);
 
   // URL(?table=) → 선택 동기화 — 뒤로가기·딥링크 지원 / sync selection from the URL
+  // 미리보기 탭은 선택과 독립 수명 — 테이블을 바꿔도 탭은 유지된다
   useEffect(() => {
     if (!tableParam || tables.length === 0) {
       setSelected(null);
       setDetail(null);
-      setPreview(null);
       return;
     }
     const id = Number(tableParam);
@@ -81,7 +86,6 @@ function HomeInner() {
     if (!table) return;
     setSelected(table);
     setDetail(null);
-    setPreview(null);
     setDetailLoading(true);
     fetchObjectDetail(table.id)
       .then(setDetail)
@@ -133,23 +137,53 @@ function HomeInner() {
   }, [typedObjects, category, selectedKey, query, columnsIndex]);
 
   // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
-  const loadPreview = useCallback(
-    (filter?: { column: string; value: string }, scrollTo = false) => {
-      if (!selected) return;
-      setPreviewLoading(true);
-      fetchObjectPreview(selected.id, filter)
-        .then((res) => {
-          setPreview(res);
-          if (scrollTo) {
-            setTimeout(() => previewRef.current?.scrollIntoView(
-              { behavior: "smooth", block: "start" }), 60);
-          }
-        })
-        .catch((e) => setError(e.message))
-        .finally(() => setPreviewLoading(false));
-    },
-    [selected],
-  );
+  const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
+    setPreviewTabs((cur) => cur.map((tab) =>
+      tab.id === id ? { ...tab, loading: true } : tab));
+    const filter = opts.filterColumn && opts.filterValue
+      ? { column: opts.filterColumn, value: opts.filterValue }
+      : undefined;
+    fetchObjectPreview(id, filter, opts.limit)
+      .then((res) => setPreviewTabs((cur) => cur.map((tab) =>
+        tab.id === id ? { ...tab, data: res, loading: false } : tab)))
+      .catch((e) => {
+        setError(e.message);
+        setPreviewTabs((cur) => cur.map((tab) =>
+          tab.id === id ? { ...tab, loading: false } : tab));
+      });
+  }, []);
+
+  // 미리보기 열기 — 이미 열려 있으면 탭 활성화만 (중복 열기 차단)
+  const openPreview = useCallback(() => {
+    if (!selected) return;
+    const id = selected.id;
+    const exists = previewTabs.some((tab) => tab.id === id);
+    if (!exists) {
+      setPreviewTabs((cur) => [...cur, {
+        id, qname: `${selected.schema}.${selected.name}`,
+        data: null, loading: true, hidden: [], sort: null,
+      }]);
+      refetchPreview(id, {});
+    }
+    setActivePreviewId(id);
+    setTimeout(() => previewRef.current?.scrollIntoView(
+      { behavior: "smooth", block: "start" }), 60);
+  }, [selected, previewTabs, refetchPreview]);
+
+  const closePreview = useCallback((id: number) => {
+    setPreviewTabs((cur) => {
+      const next = cur.filter((tab) => tab.id !== id);
+      setActivePreviewId((act) => (act === id ? next[next.length - 1]?.id ?? null : act));
+      setSplitPreviewId((split) => (split === id ? null : split));
+      return next;
+    });
+  }, []);
+
+  const patchPreview = useCallback(
+    (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort">>) => {
+      setPreviewTabs((cur) => cur.map((tab) =>
+        tab.id === id ? { ...tab, ...patch } : tab));
+    }, []);
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
@@ -196,21 +230,25 @@ function HomeInner() {
             <TableDetail
               detail={detail}
               loading={detailLoading}
-              previewLoading={previewLoading}
-              onPreview={() => loadPreview(undefined, true)}
+              previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
+              onPreview={openPreview}
               onOpenErd={handleOpenErd}
               onSelectTable={selectByQname}
               onOpenColumn={handleOpenColumn}
             />
           </section>
         </main>
-        {preview && (
+        {previewTabs.length > 0 && (
           <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
-              preview={preview}
-              loading={previewLoading}
-              onSearch={(column, value) => loadPreview({ column, value })}
-              onClear={() => loadPreview(undefined)}
+              tabs={previewTabs}
+              activeId={activePreviewId}
+              splitId={splitPreviewId}
+              onActivate={setActivePreviewId}
+              onClose={closePreview}
+              onSplitPick={setSplitPreviewId}
+              onRefetch={refetchPreview}
+              onPatch={patchPreview}
             />
           </div>
         )}
