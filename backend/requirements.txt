@@ -6,3 +6,5 @@ psycopg[binary]==3.2.3
 pydantic-settings==2.7.0
 fastapi==0.115.6
 uvicorn==0.32.1
+# Phase 2 뷰 DDL 파싱 — 계획 명시 (dialect=tsql) / mandated by the plan for view parsing
+sqlglot==25.34.0

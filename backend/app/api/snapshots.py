@@ -81,6 +81,41 @@ def _load_fk_signatures(db: Session, snapshot_id: int) -> dict[tuple, str]:
     }
 
 
+@router.get("/{snapshot_id}/parse-stats")
+def get_parse_stats(snapshot_id: int, db: Session = Depends(get_db)) -> dict:
+    """파싱 성공률 지표 + 실패 목록 (계획 §2.2 관리 화면용) / parse-rate metric and failure list."""
+    if db.get(Snapshot, snapshot_id) is None:
+        raise HTTPException(404, {"message": "snapshot not found",
+                                  "context": {"snapshot_id": snapshot_id}})
+    views = db.execute(
+        select(CatalogObject)
+        .where(CatalogObject.snapshot_id == snapshot_id, CatalogObject.type == "view")
+    ).scalars().all()
+
+    counts = {"ok": 0, "partial": 0, "unsupported": 0, "parse_failed": 0, "no_definition": 0}
+    failed = []
+    for v in views:
+        if v.definition is None:
+            counts["no_definition"] += 1
+            continue
+        counts[v.parse_status] += 1
+        if v.parse_status in ("parse_failed", "unsupported"):
+            failed.append({
+                "id": v.id, "name": f"{v.schema}.{v.name}",
+                "status": v.parse_status, "error": v.parse_error,
+            })
+
+    with_definition = len(views) - counts["no_definition"]
+    return {
+        "snapshot_id": snapshot_id,
+        "total_views": len(views),
+        "counts": counts,
+        # 성공률 = ok / definition 보유 뷰 / success rate over views with a definition
+        "success_rate": round(counts["ok"] / with_definition, 4) if with_definition else None,
+        "failed_views": failed[:100],
+    }
+
+
 @router.get("/{snapshot_a}/diff/{snapshot_b}")
 def diff_snapshots(snapshot_a: int, snapshot_b: int, db: Session = Depends(get_db)) -> dict:
     """a → b 스키마 드리프트 / schema drift from snapshot a to b."""

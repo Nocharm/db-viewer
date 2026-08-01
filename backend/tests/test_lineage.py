@@ -90,11 +90,12 @@ def test_full_fixture_matches_expected_phase1(client, migrated_engine, load_fixt
             for row in conn.execute(sa.select(obj_t.c.id, obj_t.c.schema, obj_t.c.name))
         }
         vlf = Base.metadata.tables["view_lineage_flat"]
+        # Phase 2가 direct/derived 행을 보강하므로 set 행만 비교 / phase-1 rows only
         actual = {
             (names[r.view_object_id],
              names[r.base_object_id] if r.base_object_id else None,
              r.base_column, r.depth, r.flag)
-            for r in conn.execute(sa.select(vlf))
+            for r in conn.execute(sa.select(vlf).where(vlf.c.mapping_kind == "set"))
         }
 
     expected = {

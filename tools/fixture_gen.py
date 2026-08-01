@@ -414,7 +414,11 @@ class _Gen:
             parent = self.table_by_oid(rel["tgt_object_id"])
             rel["in_view_join"] = True
             c_cols = [n for n in self.col_names(child["object_id"])[:4] if n != rel["src_column"]][:3]
-            p_cols = [n for n in self.col_names(parent["object_id"])[:3] if n != rel["tgt_column"]][:2]
+            # 출력 컬럼명 중복은 실제 T-SQL에서 불법 — parent 측은 겹치지 않는 이름만
+            # duplicate output names are illegal T-SQL; pick non-colliding parent columns
+            used_names = set(c_cols) | {rel["src_column"]}
+            p_cols = [n for n in self.col_names(parent["object_id"])[:6]
+                      if n != rel["tgt_column"] and n not in used_names][:2]
             join_type = rng.choice(["inner", "left"])
             kw = "JOIN" if join_type == "inner" else "LEFT JOIN"
             sel = ", ".join([f"c.{n}" for n in c_cols + [rel["src_column"]]] + [f"p.{n}" for n in p_cols])

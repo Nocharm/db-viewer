@@ -8,6 +8,7 @@ from app.models.catalog import (
     FkColumn,
     Snapshot,
     ViewDep,
+    ViewJoin,
     ViewLineageFlat,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "FkColumn",
     "Snapshot",
     "ViewDep",
+    "ViewJoin",
     "ViewLineageFlat",
 ]

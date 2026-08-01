@@ -21,6 +21,14 @@ export default function Home() {
         <span className="text-sm" style={{ color: "var(--muted)" }}>
           {anchor ? `${anchor.schema}.${anchor.name}` : "테이블을 검색해 시작하세요"}
         </span>
+        <a
+          className="ml-auto text-sm underline"
+          style={{ color: "var(--action-blue)" }}
+          href="/parsing"
+          data-testid="Home-parsingLink"
+        >
+          파싱 지표
+        </a>
       </header>
       <main className="flex min-h-0 flex-1">
         <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />

@@ -17,6 +17,7 @@ from app.models import (
     ViewLineageFlat,
 )
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
+from app.services.phase2 import run_phase2
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -157,8 +158,11 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             [{**r, "snapshot_id": snapshot.id} for r in lineage_rows],
         )
 
+    # Phase 2 — 뷰 DDL 파싱·컬럼 정밀 lineage·JOIN 추출 / parse DDL, augment lineage
+    phase2_counts = run_phase2(db, snapshot.id)
+
     snapshot.status = "ready"
     return {"snapshot_id": snapshot.id, "counts": {
         "deps": len(rows), "unresolved_objects": len(payload.unresolved_objects),
-        "lineage_rows": len(lineage_rows),
+        "lineage_rows": len(lineage_rows), **phase2_counts,
     }}

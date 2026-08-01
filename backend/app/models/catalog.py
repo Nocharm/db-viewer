@@ -61,9 +61,16 @@ class CatalogObject(Base):
     definition: Mapped[str | None] = mapped_column(Text)
     # dm_sql_referenced_entities 실패 격리 플래그 (계획 §1.1) / DMV failure isolation flag
     dmv_unresolved: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # Phase 2 파싱 상태 — NULL = 미파싱(테이블·definition 없음) / parse isolation status
+    parse_status: Mapped[str | None] = mapped_column(String(16))
+    parse_error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         CheckConstraint("type IN ('table', 'view')", name="ck_objects_type"),
+        CheckConstraint(
+            "parse_status IN ('ok', 'partial', 'unsupported', 'parse_failed')",
+            name="ck_objects_parse_status",
+        ),
         UniqueConstraint("snapshot_id", "object_id", name="uq_objects_snapshot_object"),
         Index("ix_objects_snapshot_schema_name", "snapshot_id", "schema", "name"),
     )
@@ -132,6 +139,34 @@ class FkColumn(Base):
     tgt_column_id: Mapped[int] = mapped_column(
         ForeignKey("columns.id", ondelete="CASCADE", name="fk_fk_columns_tgt_column_id"),
         primary_key=True,
+    )
+
+
+class ViewJoin(Base):
+    """JOIN condition extracted from a view — top relation signal (계획 §2.1). / 뷰에서 추출한 JOIN 조건."""
+
+    __tablename__ = "view_joins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("snapshots.id", ondelete="CASCADE", name="fk_view_joins_snapshot_id")
+    )
+    view_object_id: Mapped[int] = mapped_column(
+        ForeignKey("objects.id", ondelete="CASCADE", name="fk_view_joins_view_object_id")
+    )
+    left_column_id: Mapped[int] = mapped_column(
+        ForeignKey("columns.id", ondelete="CASCADE", name="fk_view_joins_left_column_id")
+    )
+    right_column_id: Mapped[int] = mapped_column(
+        ForeignKey("columns.id", ondelete="CASCADE", name="fk_view_joins_right_column_id")
+    )
+    join_type: Mapped[str] = mapped_column(String(16))
+    # 같은 뷰 안에서 같은 페어가 반복 등장한 횟수 / repetitions of the pair within one view
+    occurrence_count: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (
+        Index("ix_view_joins_snapshot_view", "snapshot_id", "view_object_id"),
+        Index("ix_view_joins_columns", "left_column_id", "right_column_id"),
     )
 
 
