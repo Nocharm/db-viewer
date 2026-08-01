@@ -11,10 +11,13 @@ from app.models.catalog import (
     ViewJoin,
     ViewLineageFlat,
 )
+from app.models.jobs import ScanJob, ScanResult
 from app.models.relations import AuditLog, JoinValidationHistory, Relation
 
 __all__ = [
     "AuditLog",
+    "ScanJob",
+    "ScanResult",
     "Base",
     "CatalogColumn",
     "CatalogConstraint",

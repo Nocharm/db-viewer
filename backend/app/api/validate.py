@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 from app.adapters import create_join_validator
 from app.config import get_settings
 from app.db import get_db
-from app.domain.confidence import Observation, compute_confidence
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
-from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory, Relation
+from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
+from app.services.observations import record_observation
 
 router = APIRouter(prefix="/api/validate", tags=["validate"])
 
@@ -69,45 +69,10 @@ def run_containment(
         ) from e
 
     now = datetime.now(UTC)
-    db.add(JoinValidationHistory(
-        src_object=src_ref.object_qname, src_column=src_ref.column,
-        tgt_object=tgt_ref.object_qname, tgt_column=tgt_ref.column,
-        containment=result.containment, orphan_count=result.orphan_count,
-        cardinality=result.cardinality, src_row_count=result.src_row_count,
-        observed_at=now, triggered_by=req.triggered_by,
-    ))
     # 관측치로 컬럼 통계 채움 — 이후 저카디널리티 필터가 동작한다 (계획 §1.2·§3.3)
     src_col.distinct_count = result.src_distinct
     tgt_col.distinct_count = result.tgt_distinct
-    db.flush()
-
-    history = db.execute(
-        select(JoinValidationHistory).where(_pair_filter(src_ref, tgt_ref))
-    ).scalars().all()
-    conf = compute_confidence([
-        Observation(h.containment, h.src_row_count, h.observed_at) for h in history
-    ])
-
-    relation = db.execute(
-        select(Relation).where(
-            Relation.src_object == src_ref.object_qname,
-            Relation.src_column == src_ref.column,
-            Relation.tgt_object == tgt_ref.object_qname,
-            Relation.tgt_column == tgt_ref.column,
-        )
-    ).scalar_one_or_none()
-    if relation is None:
-        relation = Relation(
-            src_object=src_ref.object_qname, src_column=src_ref.column,
-            tgt_object=tgt_ref.object_qname, tgt_column=tgt_ref.column,
-            status="validated", origin="rule", created_at=now,
-        )
-        db.add(relation)
-    elif relation.status != "confirmed":
-        relation.status = "validated"  # 확정은 검증으로 강등되지 않는다 / confirm never demoted
-    relation.confidence = conf.confidence
-    relation.cardinality = result.cardinality
-    relation.last_verified_at = now
+    conf = record_observation(db, src_ref, tgt_ref, result, req.triggered_by, now)
 
     return {
         "src": str(src_ref), "tgt": str(tgt_ref),

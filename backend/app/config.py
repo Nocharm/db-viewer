@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # Environment: FakeJoinValidator가 읽는 픽스처 디렉터리 / fixture dir for the fake validator
     fixture_dir: str = "fixtures"
 
+    # Tuning: T3 탐색 스캔 (계획 §4) / exploratory scan tuning
+    scan_max_concurrent: int = 2
+    scan_full_recheck_top: int = 20   # 풀 재검증 상위 후보 수 / top-K full recheck
+    scan_min_containment: float = 0.9  # 이 이상만 관계로 영구 기록 / persistence threshold
+    scan_night_start_hour: int = 20
+    scan_night_end_hour: int = 6
+
     # Tuning: 저카디널리티 검증 제외 임계 (계획 §3.3) / low-cardinality exclusion threshold
     low_cardinality_min_distinct: int = 50
     # Tuning: 공통 도메인 블랙리스트 — 이름 기반 콜드스타트 방어 (계획 §3.3)

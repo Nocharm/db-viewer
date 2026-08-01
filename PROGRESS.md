@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **정지점 14: 탐색 스캔(T3) — Phase 4 완료** — 202+폴링(승인 응답 규약), 2-pass 구조(1차 리콜→상위 K 풀 재검증 — 샘플 값은 확정에 미사용, 별도 컬럼 기록), 임계(0.9) 이상만 관계·이력 영구 기록. 동시 실행 수 제한 + 야간 실행은 not_before + 폴링 기동(별도 스케줄러 데몬 없이 — 운영에선 n8n/cron 폴링). 관측 기록 로직은 T2와 공용 서비스로 추출. 백그라운드 실패는 잡 error에 격리 + 구조화 로그.
 - **정지점 13: 미리보기·감사·확정 — Phase 3(Fake) 완료** — preview는 TOP 20 서버 고정·무캐시·컬럼 단위 마스킹(●●●)·감사 로그 필수. confirm은 검증 선행 강제(관계 없으면 404), 재검증에도 confirmed 유지, 그래프에 ✓ confirmed 엣지. 프론트 ColumnPanel: 컬럼 클릭 → 후보(신호 배지) → T2 검증(containment·cardinality·confidence·패턴 라벨) → 미리보기 → 확정, N:M은 교차 관계 배지.
 - **정지점 12: 히스토리 + confidence** — 설계 결정: 이력·관계는 계획 DDL의 column_id FK 대신 **텍스트 식별자**로 저장(스냅샷 삭제 cascade에 이력이 소실되고 스냅샷 간 연속성이 끊기는 문제). confidence = 마지막 containment × 관측수 가중(1회 0.6→3회 1.0) × 규모 가중(5천 행 기준), 패턴 4종(stable_confirmed/stable_with_orphans/drop_alert/small_sample_only) — §3.4 표 그대로 단위 테스트. T2 관측이 columns.distinct_count를 채워 이후 저카디널리티 필터가 실동작. 검증·확정 관계는 그래프에 inferred/confirmed 엣지로 노출(confidence·last_verified_at 포함). confirmed는 재검증으로 강등되지 않음.
 - **정지점 11: 후보 스코어링 + 저카디널리티 필터** — §3.1 가중치(뷰 JOIN 100 > 명명 40/32 > PK 20, 타입·길이는 필터). 키 보너스는 단독 신호 금지(전 PK가 후보로 뜨는 노이즈 방지). 제외 사유(blacklist/low_distinct/computed/not_a_table)를 API로 노출해 UI 배지 대응. UQ 컬럼 멤버십은 계획 DDL에 저장처가 없어 "인덱스 존재" 근사는 is_pk만 사용. 픽스처 회귀: 뷰 JOIN에 등장한 real_no_fk 관계가 최상위 후보로 부상.
