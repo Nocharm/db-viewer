@@ -433,6 +433,43 @@ input::placeholder {
   cursor: grabbing;
 }
 
+/* 호버 강조 — 매칭 컬럼 행 / hover-emphasized matching column row */
+.erd-node__row--hl {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--stat-ink);
+  font-weight: 600;
+}
+
+/* 컨텍스트 메뉴 (숨기기·복원) / node and pane context menus */
+.erd-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.erd-menu__item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--body-text);
+}
+.erd-menu__item:hover {
+  background: var(--soft-stone);
+}
+.erd-menu__label {
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .react-flow__controls {
   box-shadow: none;
   border: 1px solid var(--hairline);

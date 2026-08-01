@@ -1,8 +1,9 @@
 "use client";
 
-/** ERD 커스텀 노드 — 기본 접힘, 더블클릭 토글 / collapsed-by-default node card. */
+/** ERD 커스텀 노드 — 기본 접힘, 더블클릭 토글, 컬럼 행 엣지 핸들 / node card with column handles. */
 
-import { Handle, Position } from "@xyflow/react";
+import { useEffect } from "react";
+import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
 
 import { useI18n } from "@/components/i18n";
@@ -13,6 +14,8 @@ export interface TableNodeData extends Record<string, unknown> {
   node: GraphNode;
   expanded: boolean;
   isAnchor: boolean;
+  /** 호버 강조된 매칭 컬럼명 / matching columns to highlight on hover */
+  highlightColumns: string[] | null;
   onExpandNeighbors: (id: number) => void;
   onToggleNode: (id: number) => void;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
@@ -20,13 +23,23 @@ export interface TableNodeData extends Record<string, unknown> {
 
 export type TableFlowNode = Node<TableNodeData, "tableNode">;
 
-export function TableNode({ data }: NodeProps<TableFlowNode>) {
+// 핸들은 지름 1px 투명 — 선 정렬용 좌표만 제공 / invisible coordinate-only handles
+const HANDLE_STYLE = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1 } as const;
+
+export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
   const { t } = useI18n();
-  const { node, expanded, isAnchor } = data;
+  const updateNodeInternals = useUpdateNodeInternals();
+  const { node, expanded, isAnchor, highlightColumns } = data;
   const isView = node.type === "view";
   const collapsed = !expanded;
   const visibleColumns = node.columns.slice(0, MAX_VISIBLE_COLUMNS);
   const hiddenCount = node.columns.length - visibleColumns.length;
+  const highlight = highlightColumns ? new Set(highlightColumns) : null;
+
+  // 접기/펼치기로 핸들 구성이 바뀌면 React Flow에 재측정 통지 / re-measure handles on toggle
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, expanded, updateNodeInternals]);
 
   return (
     <div
@@ -38,8 +51,8 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
       onDoubleClick={() => data.onToggleNode(node.id)}
       data-testid={`ErdCanvas-node-${node.id}`}
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
 
       <div className="erd-node__header" title={node.ai_summary ?? undefined}>
         <span className="erd-node__type">{isView ? "VIEW" : "TBL"}</span>
@@ -72,11 +85,20 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
           {visibleColumns.map((col) => (
             <div
               key={col.id}
-              className={`erd-node__row cursor-pointer hover:bg-black/5 ${col.is_pk ? "erd-node__row--pk" : ""}`}
+              className={[
+                "erd-node__row relative cursor-pointer hover:bg-black/5",
+                col.is_pk ? "erd-node__row--pk" : "",
+                highlight?.has(col.name) ? "erd-node__row--hl" : "",
+              ].join(" ")}
               onClick={() =>
                 data.onSelectColumn(col.id, col.name, `${node.schema}.${node.name}`)}
               data-testid={`ErdNode-columnRow-${col.id}`}
             >
+              {/* 매칭 컬럼 행에 선이 직접 붙는다 / edges dock at the matching row */}
+              <Handle type="target" position={Position.Left} id={`t-${col.name}`}
+                      style={HANDLE_STYLE} />
+              <Handle type="source" position={Position.Right} id={`s-${col.name}`}
+                      style={HANDLE_STYLE} />
               <span className="truncate">
                 {col.is_pk ? "🔑 " : ""}
                 {col.name}
