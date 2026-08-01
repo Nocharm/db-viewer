@@ -232,6 +232,34 @@ export function runJoinCheck(
     targetObjectId === undefined ? {} : { target_object_id: targetObjectId });
 }
 
+export interface CollectJob {
+  job_id: number;
+  mode: "step" | "full";
+  stage: "catalog_running" | "catalog_done" | "deps_running" | "ready" | "failed";
+  snapshot_id: number | null;
+  counts: Record<string, number>;
+  triggered_by: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function triggerCollectCatalog(): Promise<CollectJob> {
+  return postJson("/api/collect/catalog", {});
+}
+
+export function triggerCollectViewDeps(jobId: number): Promise<CollectJob> {
+  return postJson("/api/collect/view-deps", { job_id: jobId });
+}
+
+export function triggerCollectFull(): Promise<CollectJob> {
+  return postJson("/api/collect/full", {});
+}
+
+export function fetchCollectJobs(): Promise<{ items: CollectJob[] }> {
+  return getJson("/api/collect/jobs");
+}
+
 export interface TablePreview {
   object: string;
   columns: string[];

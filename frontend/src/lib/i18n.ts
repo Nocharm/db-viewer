@@ -137,6 +137,23 @@ export const MESSAGES = {
   "panel.noCandidates": { ko: "후보 없음", en: "No candidates" },
   "panel.history": { ko: "검증 이력", en: "Validation history" },
 
+  "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
+  "collect.hint": {
+    ko: "n8n에 수집을 트리거하고 단계 진행을 추적합니다 (로컬은 픽스처 리플레이)",
+    en: "Triggers n8n collection and tracks stages (local replays fixtures)",
+  },
+  "collect.step1": { ko: "1단계: 카탈로그 수집", en: "Step 1: collect catalog" },
+  "collect.step2": { ko: "2단계: 뷰 의존·파싱", en: "Step 2: view deps & parsing" },
+  "collect.full": { ko: "전체 실행", en: "Run all" },
+  "collect.stageCatalogRunning": { ko: "카탈로그 수집 중", en: "Collecting catalog" },
+  "collect.stageCatalogDone": { ko: "카탈로그 적재 완료", en: "Catalog loaded" },
+  "collect.stageDepsRunning": { ko: "뷰 의존·파싱 중", en: "Parsing view deps" },
+  "collect.stageReady": { ko: "완료", en: "Ready" },
+  "collect.failed": { ko: "실패", en: "Failed" },
+  "collect.recent": { ko: "최근 수집 잡", en: "Recent jobs" },
+  "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
+  "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
+
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },
 } as const;

@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 
 import { AppHeader } from "@/components/AppHeader";
+import { CollectPanel } from "@/components/admin/CollectPanel";
 import { useMe } from "@/components/providers";
 import {
   addWhitelist,
@@ -55,7 +56,11 @@ export default function AdminPage() {
       <AppHeader />
       <div className="scroll-area min-h-0 flex-1">
         <div className="mx-auto max-w-3xl p-6" data-testid="AdminPage-root">
-          <h1 className="erd-node__header mb-4 !border-0 !p-0">관리 콘솔</h1>
+          <h1 className="mb-5 text-2xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+            관리 콘솔
+          </h1>
+
+      <CollectPanel />
 
       <section className="mb-6">
         <div className="mb-2 flex items-center gap-2">
