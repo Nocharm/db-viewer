@@ -8,11 +8,26 @@ MSSQL 시스템 카탈로그에서 스키마를 수집하고, 뷰를 역추적�
 
 ## 상태
 
-프로젝트 초기화 단계. 상세 설계·스캐폴딩은 진행 예정 — setup/실행 방법은 코드가 생기는 시점에 이 문서에 채운다.
+Phase 1 진행 중 — 서비스 DB 스키마·마이그레이션 완료. 로드맵·정지점은 `docs/step0-proposal.md`와 `PROGRESS.md` 참고.
+
+## 개발
+
+```bash
+cd backend
+uv venv .venv && uv pip install --python .venv/bin/python -r requirements-dev.txt
+.venv/bin/python -m pytest tests -q          # 테스트
+.venv/bin/ruff check app alembic tests       # 린트
+```
+
+서비스 DB는 PostgreSQL 16 (마이그레이션: `alembic upgrade head`). 로컬 설정은 `.env.example`를 `.env`로 복사.
 
 ## 디렉터리
 
 ```
-rules/    # 코딩·작업 규칙 (CLAUDE.md에서 import)
-docs/     # 프로젝트 문서
+backend/       # FastAPI 백엔드
+  app/models/  # 서비스 DB 스키마 (SQLAlchemy)
+  alembic/     # 마이그레이션
+  tests/
+rules/         # 코딩·작업 규칙 (CLAUDE.md에서 import)
+docs/          # 프로젝트 문서 (step0-proposal 등)
 ```

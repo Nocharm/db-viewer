@@ -1,0 +1,6 @@
+# Service DB stack: PostgreSQL 16 + SQLAlchemy 2.0 + Alembic (정지점 2 승인)
+# psycopg[binary]: PG 드라이버, 로컬 빌드 없이 설치 / PG driver without local build
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pydantic-settings==2.7.0
