@@ -13,6 +13,7 @@ import {
 import type { Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { useI18n } from "@/components/i18n";
 import { fetchGraph } from "@/lib/api";
 import { getEdgeVisual } from "@/lib/edge-style";
 import { planMerge, type MergePlan } from "@/lib/graph-merge";
@@ -41,8 +42,10 @@ export function ErdCanvas(props: Props) {
 }
 
 function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
+  const { t } = useI18n();
   const [graph, setGraph] = useState<GraphResponse | null>(null);
-  const [expandedViews, setExpandedViews] = useState<Set<number>>(new Set());
+  // 모든 노드 기본 접힘 — 앵커만 자동 펼침 / everything folded; only the anchor auto-expands
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   const [pending, setPending] = useState<MergePlan | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
@@ -87,8 +90,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     [],
   );
 
-  const toggleView = useCallback((id: number) => {
-    setExpandedViews((cur) => {
+  const toggleNode = useCallback((id: number) => {
+    setExpandedNodes((cur) => {
       const next = new Set(cur);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -96,14 +99,14 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     });
   }, []);
 
-  // 앵커 변경 → 새 그래프 (기존 캔버스 대체) / new anchor replaces the canvas
+  // 앵커 변경 → 새 그래프 (기존 캔버스 대체, 앵커만 펼침) / new anchor replaces the canvas
   useEffect(() => {
     if (anchorId === null) return;
     setError(null);
     fetchGraph(anchorId, 1)
       .then((incoming) => {
         setGraph(null);
-        setExpandedViews(new Set());
+        setExpandedNodes(new Set([incoming.anchor_id]));
         applyIncoming(incoming, null);
       })
       .catch((e) => setError(e.message));
@@ -119,11 +122,11 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     let cancelled = false;
     const sized = graph.nodes.map((n) => ({
       id: n.id,
-      ...estimateNodeSize(n, expandedViews.has(n.id)),
+      ...estimateNodeSize(n, expandedNodes.has(n.id)),
     }));
     // 접힌 뷰의 lineage 엣지는 숨김 / hide lineage edges of collapsed views
     const visibleEdges = graph.edges.filter(
-      (e) => e.kind !== "view_lineage" || expandedViews.has(e.src_object_id),
+      (e) => e.kind !== "view_lineage" || expandedNodes.has(e.src_object_id),
     );
     layoutGraph(sized, visibleEdges).then((positions) => {
       if (cancelled) return;
@@ -135,10 +138,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           position: { x: posMap.get(n.id)?.x ?? 0, y: posMap.get(n.id)?.y ?? 0 },
           data: {
             node: n,
-            viewExpanded: expandedViews.has(n.id),
+            expanded: expandedNodes.has(n.id),
             isAnchor: n.id === graph.anchor_id,
             onExpandNeighbors: expandNeighbors,
-            onToggleView: toggleView,
+            onToggleNode: toggleNode,
             onSelectColumn,
           },
         })),
@@ -185,7 +188,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn, centerOn]);
+  }, [graph, expandedNodes, expandNeighbors, toggleNode, onSelectColumn, centerOn]);
 
   return (
     <div className="relative h-full w-full" data-testid="ErdCanvas-root">
@@ -209,17 +212,41 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       </ReactFlow>
       <Legend />
 
+      {/* 전체 펼침/접힘 툴바 — 선택적 정보 열람 보조 / bulk expand-collapse toolbar */}
+      {graph && (
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-2"
+             data-testid="ErdCanvas-toolbar">
+          <span className="hidden text-xs md:inline" style={{ color: "var(--muted)" }}>
+            {t("erd.dblClickHint")}
+          </span>
+          <button
+            className="icon-button"
+            onClick={() => setExpandedNodes(new Set(graph.nodes.map((n) => n.id)))}
+            data-testid="ErdCanvas-expandAllButton"
+          >
+            {t("erd.expandAll")}
+          </button>
+          <button
+            className="icon-button"
+            onClick={() => setExpandedNodes(new Set())}
+            data-testid="ErdCanvas-collapseAllButton"
+          >
+            {t("erd.collapseAll")}
+          </button>
+        </div>
+      )}
+
       {anchorId === null && (
         <div className="absolute inset-0 z-10 flex items-center justify-center"
              data-testid="ErdCanvas-emptyState">
           <div className="rounded-xl border p-8 text-center"
                style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}>
             <p className="mb-2 text-lg font-bold" style={{ color: "var(--ink)" }}>
-              앵커 테이블로 시작하세요
+              {t("erd.emptyTitle")}
             </p>
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
-              왼쪽에서 검색하거나, 예시를 눌러 바로 열 수 있습니다.
-              <br />전체 스키마는 렌더링하지 않습니다 — 앵커에서 단계적으로 확장하세요.
+              {t("erd.emptyBody")}
+              <br />{t("erd.emptyBody2")}
             </p>
             <div className="flex justify-center gap-2">
               {QUICK_START_ANCHORS.map((name) => (
@@ -252,10 +279,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             data-testid="ErdCanvas-confirmModal"
           >
             <p className="mb-1 font-semibold" style={{ color: "var(--ink)" }}>
-              노드 {pending.total}개를 렌더링할까요?
+              {t("erd.confirmTitle").replace("{n}", String(pending.total))}
             </p>
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
-              이번 확장으로 {pending.addedCount}개가 추가됩니다. 큰 그래프는 탐색이 느려질 수 있습니다.
+              {t("erd.confirmBody").replace("{n}", String(pending.addedCount))}
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -263,7 +290,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                 data-testid="ErdCanvas-confirmCancelButton"
                 onClick={() => setPending(null)}
               >
-                취소
+                {t("erd.cancel")}
               </button>
               <button
                 className="btn-primary"
@@ -273,7 +300,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                   setPending(null);
                 }}
               >
-                렌더링
+                {t("erd.render")}
               </button>
             </div>
           </div>

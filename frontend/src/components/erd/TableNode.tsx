@@ -1,28 +1,30 @@
 "use client";
 
-/** ERD 커스텀 노드 — 테이블/뷰 카드 / custom React Flow node for tables and views. */
+/** ERD 커스텀 노드 — 기본 접힘, 더블클릭 토글 / collapsed-by-default node card. */
 
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
 
+import { useI18n } from "@/components/i18n";
 import { MAX_VISIBLE_COLUMNS } from "@/lib/layout";
 import type { GraphNode } from "@/lib/types";
 
 export interface TableNodeData extends Record<string, unknown> {
   node: GraphNode;
-  viewExpanded: boolean;
+  expanded: boolean;
   isAnchor: boolean;
   onExpandNeighbors: (id: number) => void;
-  onToggleView: (id: number) => void;
+  onToggleNode: (id: number) => void;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
 }
 
 export type TableFlowNode = Node<TableNodeData, "tableNode">;
 
 export function TableNode({ data }: NodeProps<TableFlowNode>) {
-  const { node, viewExpanded, isAnchor } = data;
+  const { t } = useI18n();
+  const { node, expanded, isAnchor } = data;
   const isView = node.type === "view";
-  const collapsed = isView && !viewExpanded;
+  const collapsed = !expanded;
   const visibleColumns = node.columns.slice(0, MAX_VISIBLE_COLUMNS);
   const hiddenCount = node.columns.length - visibleColumns.length;
 
@@ -33,6 +35,7 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
         isView ? "erd-node--view" : "",
         isAnchor ? "erd-node--selected" : "",
       ].join(" ")}
+      onDoubleClick={() => data.onToggleNode(node.id)}
       data-testid={`ErdCanvas-node-${node.id}`}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
@@ -41,22 +44,24 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
       <div className="erd-node__header" title={node.ai_summary ?? undefined}>
         <span className="erd-node__type">{isView ? "VIEW" : "TBL"}</span>
         <span className="flex-1 truncate">{node.schema}.{node.name}</span>
-        {node.ai_summary && <span className="badge badge--ai">AI</span>}
-        {isView && (
-          <button
-            className="icon-button"
-            data-testid={`ErdNode-toggleButton-${node.id}`}
-            onClick={() => data.onToggleView(node.id)}
-            title={collapsed ? "컬럼 펼치기" : "접기"}
-          >
-            {collapsed ? "▸" : "▾"}
-          </button>
+        {/* 접힘 상태에서도 규모가 보이게 / column count visible while folded */}
+        {collapsed && (
+          <span className="erd-node__type">{node.columns.length}c</span>
         )}
+        {node.ai_summary && <span className="badge badge--ai">AI</span>}
+        <button
+          className="icon-button"
+          data-testid={`ErdNode-toggleButton-${node.id}`}
+          onClick={() => data.onToggleNode(node.id)}
+          title={collapsed ? t("erd.expandColumns") : t("erd.collapseColumns")}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
         <button
           className="icon-button"
           data-testid={`ErdNode-expandButton-${node.id}`}
           onClick={() => data.onExpandNeighbors(node.id)}
-          title="이웃 1-hop 확장"
+          title={t("erd.expandNeighbors")}
         >
           +
         </button>
@@ -84,7 +89,9 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
             </div>
           ))}
           {hiddenCount > 0 && (
-            <div className="erd-node__meta">… 외 {hiddenCount}개 컬럼</div>
+            <div className="erd-node__meta">
+              {t("erd.moreColumns").replace("{n}", String(hiddenCount))}
+            </div>
           )}
           <div className="erd-node__meta flex gap-1 flex-wrap items-center">
             {node.row_count !== null && <span>{node.row_count.toLocaleString()} rows</span>}
@@ -94,7 +101,7 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
             )}
             {node.unresolved_dep_count > 0 && (
               <span className="badge badge--unresolved">
-                미해석 {node.unresolved_dep_count}
+                {t("erd.unresolved")} {node.unresolved_dep_count}
               </span>
             )}
           </div>

@@ -15,10 +15,10 @@ const META_H = 26;
 /** 노드 픽셀 크기 추정 — ELK 입력 / estimated pixel size fed to ELK. */
 export function estimateNodeSize(
   node: GraphNode,
-  viewExpanded: boolean,
+  expanded: boolean,
 ): { width: number; height: number } {
-  // 뷰는 기본 접힘(헤더만) / views collapse to the header by default
-  if (node.type === "view" && !viewExpanded) {
+  // 모든 노드 기본 접힘(헤더만) — 원하는 것만 선택적으로 펼친다 / every node folds to its header
+  if (!expanded) {
     return { width: NODE_WIDTH, height: HEADER_H };
   }
   const rows = Math.min(node.columns.length, MAX_VISIBLE_COLUMNS)

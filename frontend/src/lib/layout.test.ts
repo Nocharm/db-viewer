@@ -15,17 +15,20 @@ function makeNode(type: "table" | "view", columnCount: number): GraphNode {
 }
 
 describe("estimateNodeSize", () => {
-  it("collapses views to a header-only card by default", () => {
-    const collapsed = estimateNodeSize(makeNode("view", 10), false);
-    expect(collapsed.height).toBeLessThan(60);
+  it("collapses every node to a header-only card by default", () => {
+    // 테이블·뷰 모두 접힘이 기본 / tables and views both fold to the header
+    const collapsedView = estimateNodeSize(makeNode("view", 10), false);
+    const collapsedTable = estimateNodeSize(makeNode("table", 10), false);
+    expect(collapsedView.height).toBeLessThan(60);
+    expect(collapsedTable.height).toBe(collapsedView.height);
     const expanded = estimateNodeSize(makeNode("view", 10), true);
-    expect(expanded.height).toBeGreaterThan(collapsed.height);
+    expect(expanded.height).toBeGreaterThan(collapsedView.height);
   });
 
-  it("caps visible rows and adds an overflow row", () => {
-    const small = estimateNodeSize(makeNode("table", 10), false);
-    const huge = estimateNodeSize(makeNode("table", 60), false);
-    const capped = estimateNodeSize(makeNode("table", MAX_VISIBLE_COLUMNS + 1), false);
+  it("caps visible rows and adds an overflow row when expanded", () => {
+    const small = estimateNodeSize(makeNode("table", 10), true);
+    const huge = estimateNodeSize(makeNode("table", 60), true);
+    const capped = estimateNodeSize(makeNode("table", MAX_VISIBLE_COLUMNS + 1), true);
     expect(huge.height).toBe(capped.height); // 초과분은 한 줄 요약 / overflow collapses to one row
     expect(huge.height).toBeGreaterThan(small.height);
     expect(huge.width).toBe(NODE_WIDTH);
