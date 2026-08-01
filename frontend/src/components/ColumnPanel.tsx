@@ -84,8 +84,11 @@ export function ColumnPanel({ column, onClose }: Props) {
 
   return (
     <aside
-      className="flex h-full w-96 flex-col overflow-y-auto border-l p-3"
-      style={{ borderColor: "var(--hairline)" }}
+      className="scroll-area absolute right-3 top-14 z-20 flex w-96 flex-col overflow-y-auto rounded-xl border p-3"
+      style={{
+        borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+        maxHeight: "calc(100% - 68px)",
+      }}
       data-testid="ColumnPanel-root"
     >
       <div className="mb-2 flex items-center gap-2">

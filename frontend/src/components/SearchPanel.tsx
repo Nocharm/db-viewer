@@ -15,6 +15,8 @@ interface Props {
 
 export function SearchPanel({ onSelect, selectedId }: Props) {
   const { t } = useI18n();
+  // 플로팅 오버레이 — 접으면 검색 버튼만 남는다 / floating overlay, folds to a button
+  const [open, setOpen] = useState(true);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "table" | "view">("");
   const [items, setItems] = useState<ObjectSummary[]>([]);
@@ -51,21 +53,43 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
     return () => clearTimeout(timer);
   }, [q, typeFilter]);
 
+  if (!open) {
+    return (
+      <button
+        className="icon-button absolute left-3 top-3 z-20"
+        onClick={() => setOpen(true)}
+        title={t("erd.searchOpen")}
+        data-testid="SearchPanel-openButton"
+      >
+        🔍
+      </button>
+    );
+  }
+
   return (
     <aside
-      className="flex h-full w-72 flex-col border-r"
-      style={{ borderColor: "var(--hairline)" }}
+      className="absolute left-3 top-3 z-20 flex w-72 flex-col rounded-xl border"
+      style={{
+        borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+        maxHeight: "calc(100% - 24px)",
+      }}
       data-testid="SearchPanel-root"
     >
       <div className="p-3">
-        <input
-          className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-[var(--focus-blue)]"
-          style={{ borderColor: "var(--border-light)" }}
-          placeholder={t("erd.searchPlaceholder")}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          data-testid="SearchPanel-queryInput"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-[var(--focus-blue)]"
+            style={{ borderColor: "var(--border-light)" }}
+            placeholder={t("erd.searchPlaceholder")}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            data-testid="SearchPanel-queryInput"
+          />
+          <button className="icon-button shrink-0" onClick={() => setOpen(false)}
+                  title={t("erd.searchClose")} data-testid="SearchPanel-foldButton">
+            ✕
+          </button>
+        </div>
         <select
           className="mt-2 w-full rounded border px-2 py-1.5 text-sm"
           style={{ borderColor: "var(--border-light)" }}
@@ -86,13 +110,17 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         </p>
       )}
 
-      <ul className="flex-1 overflow-y-auto" data-testid="SearchPanel-resultList">
+      <ul className="scroll-area min-h-0 flex-1 overflow-y-auto pb-1"
+          data-testid="SearchPanel-resultList">
         {items.map((item) => (
           <li key={item.id}>
             <button
               className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--soft-stone)]"
               style={item.id === selectedId ? { background: "var(--soft-stone)" } : undefined}
-              onClick={() => onSelect(item)}
+              onClick={() => {
+                onSelect(item);
+                setOpen(false); // 선택 후 캔버스에 집중 / fold after picking an anchor
+              }}
               data-testid={`SearchPanel-item-${item.id}`}
             >
               <span className="erd-node__type mr-1.5">

@@ -84,15 +84,14 @@ function ErdPageInner() {
           </span>
         )}
       </AppHeader>
-      <main className="flex min-h-0 flex-1">
+      {/* 캔버스 전체폭 — 검색·검증은 플로팅 오버레이 / full-bleed canvas, floating panels */}
+      <main className="relative min-h-0 flex-1">
+        <ErdCanvas
+          anchorId={anchor?.id ?? null}
+          onSelectColumn={handleSelectColumn}
+          onQuickStart={handleQuickStart}
+        />
         <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />
-        <section className="min-w-0 flex-1">
-          <ErdCanvas
-            anchorId={anchor?.id ?? null}
-            onSelectColumn={handleSelectColumn}
-            onQuickStart={handleQuickStart}
-          />
-        </section>
         <ColumnPanel column={selectedColumn} onClose={() => setSelectedColumn(null)} />
       </main>
     </div>
