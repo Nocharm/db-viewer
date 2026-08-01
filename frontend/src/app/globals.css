@@ -23,6 +23,7 @@
   --primary: #faff69;          /* electric yellow — CTA·스탯·포커스 전용 */
   --primary-active: #e6eb52;
   --on-primary: #0a0a0a;
+  --stat-ink: #faff69;         /* 스탯 텍스트 — 다크에서만 옐로, 라이트는 잉크 (대비) */
   --action-blue: #faff69;      /* 다크에선 텍스트 링크도 옐로 (ClickHouse text-link) */
   --focus-blue: #faff69;       /* 포커스 링 = 옐로 */
   --error: #ef4444;
@@ -59,6 +60,7 @@
   --primary: #faff69;
   --primary-active: #e6eb52;
   --on-primary: #0a0a0a;
+  --stat-ink: #0a0a0a;         /* 옐로 텍스트는 흰 바탕에서 실독 — 라이트는 잉크 */
   --action-blue: #1863dc;
   --focus-blue: #1863dc;
   --error: #b30000;
@@ -359,6 +361,43 @@ mark.hl {
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 12px;
+}
+
+/* ── 스탯 — ClickHouse stat-display: 옐로 + 대형 + 타이트 트래킹 ── */
+.stat-number {
+  color: var(--stat-ink);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-number--danger {
+  color: var(--rel-unresolved);
+}
+/* 보조 스탯 — 히어로만 옐로, 나머지는 잉크 / secondary stats stay ink so the hero owns yellow */
+.stat-number--plain {
+  color: var(--ink);
+}
+
+/* ── 로딩 스켈레톤 — 텍스트 대신 형태로 상태 전달 ── */
+.skeleton {
+  background: var(--surface-elevated);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* ── 브랜드 마크 — 옐로 사각 앵커 ── */
+.logo-mark {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--primary);
 }
 
 /* ── 일치율 게이지 — 스탯은 옐로 ── */

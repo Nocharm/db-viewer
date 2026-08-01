@@ -34,11 +34,30 @@ export function TableDetail({
   detail, loading, previewLoading, onPreview, onOpenErd, onSelectTable, onOpenColumn,
 }: Props) {
   if (!detail) {
+    if (loading) {
+      // 텍스트 대신 스켈레톤 — 로딩을 형태로 전달 / skeleton instead of loading text
+      return (
+        <div className="h-full p-7" data-testid="TableDetail-emptyState">
+          <div className="skeleton mb-3 h-8 w-64" />
+          <div className="skeleton mb-7 h-4 w-40" />
+          <div className="mb-7 flex gap-3">
+            <div className="skeleton h-10 w-36" />
+            <div className="skeleton h-10 w-28" />
+          </div>
+          <div className="skeleton mb-5 h-32 w-full max-w-4xl" />
+          <div className="grid max-w-4xl grid-cols-2 gap-5">
+            <div className="skeleton h-40" />
+            <div className="skeleton h-40" />
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex h-full items-center justify-center"
+      <div className="flex h-full flex-col items-center justify-center gap-2"
            data-testid="TableDetail-emptyState">
+        <span className="text-2xl" aria-hidden style={{ color: "var(--muted-soft)" }}>⌗</span>
         <p className="text-sm" style={{ color: "var(--muted)" }}>
-          {loading ? "불러오는 중…" : "왼쪽에서 테이블을 선택하세요"}
+          왼쪽 목록에서 테이블을 선택하세요
         </p>
       </div>
     );
@@ -46,9 +65,12 @@ export function TableDetail({
 
   return (
     <div className="scroll-area h-full min-h-0 p-7" data-testid="TableDetail-root">
-      {/* 헤더 */}
-      <div className="mb-2 flex items-center gap-3">
-        <h2 className="erd-node__header !border-0 !p-0 !text-base">{detail.name}</h2>
+      {/* 헤더 — 시선 앵커: title-lg 24px/700 / eye anchor per ClickHouse title-lg */}
+      <div className="mb-2 flex items-baseline gap-3">
+        <h2 className="font-mono text-2xl font-bold tracking-tight"
+            style={{ color: "var(--ink)" }}>
+          {detail.name}
+        </h2>
         <span className="badge badge--muted">{detail.type === "view" ? "VIEW" : "TABLE"}</span>
         {detail.ai_summary && <span className="badge badge--ai">AI</span>}
       </div>

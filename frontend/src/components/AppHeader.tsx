@@ -52,7 +52,9 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       style={{ borderColor: "var(--hairline)" }}
       data-testid="AppHeader-root"
     >
-      <span className="text-[15px] font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+      <span className="flex items-center gap-2 text-[15px] font-bold tracking-tight"
+            style={{ color: "var(--ink)" }}>
+        <span className="logo-mark" aria-hidden />
         db-viewer
       </span>
       <nav className="flex items-center gap-1">

@@ -31,8 +31,8 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
       data-testid="PreviewSection-root"
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h3 className="erd-node__header !border-0 !p-0">
-          미리보기 — {preview.object}
+        <h3 className="text-base font-semibold tracking-tight" style={{ color: "var(--ink)" }}>
+          미리보기 — <span className="font-mono">{preview.object}</span>
         </h3>
         <span className="badge badge--muted">TOP {preview.limit}</span>
         {preview.masked_columns.length > 0 && (
@@ -50,8 +50,8 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
       <div className="mb-4 flex flex-wrap items-center gap-2"
            data-testid="PreviewSection-filterBar">
         <select
-          className="rounded border px-3 py-1.5 text-sm"
-          style={{ borderColor: "var(--border-light)" }}
+          className="h-10 rounded-lg border px-3 text-sm"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
           value={filterColumn}
           onChange={(e) => setFilterColumn(e.target.value)}
           data-testid="PreviewSection-filterColumnSelect"
@@ -62,8 +62,8 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           ))}
         </select>
         <input
-          className="w-56 rounded border px-3 py-1.5 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
-          style={{ borderColor: "var(--border-light)" }}
+          className="h-10 w-56 rounded-lg border px-3 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
           placeholder="값 (부분 일치)"
           value={filterValue}
           onChange={(e) => setFilterValue(e.target.value)}
@@ -107,7 +107,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           <tbody>
             {preview.rows.map((row, index) => (
               <tr key={index} className="border-b transition-colors duration-150 ease-in-out hover:bg-[var(--soft-stone)]"
-                  style={{ borderColor: "var(--card-border, #f2f2f2)" }}>
+                  style={{ borderColor: "var(--hairline)" }}>
                 {preview.columns.map((column) => (
                   <td key={column} className="whitespace-nowrap px-3 py-1.5">
                     {String(row[column] ?? "")}

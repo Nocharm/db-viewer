@@ -132,7 +132,11 @@ export function ColumnPanel({ column, onClose }: Props) {
                 <span className="font-mono text-xs">
                   {candidate.object}.{candidate.column}
                 </span>
-                <span className="float-right">{candidate.score}</span>
+                {/* 점수는 우측 옐로 볼드 — 스캔 축 / score column scannable in yellow */}
+                <span className="float-right text-xs font-semibold tabular-nums"
+                      style={{ color: "var(--stat-ink)" }}>
+                  {candidate.score}
+                </span>
                 <div className="mt-0.5 flex gap-1">
                   {Object.keys(candidate.signals).map((signal) => (
                     <span key={signal} className="badge badge--muted">
@@ -153,19 +157,20 @@ export function ColumnPanel({ column, onClose }: Props) {
 
       {selected && (
         <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--hairline)" }}>
-          <div className="mb-2 flex gap-2">
-            <button className="icon-button" disabled={busy}
+          {/* 주 행동은 하나 — T2 검증만 옐로 / one primary action per view */}
+          <div className="mb-2 flex items-center gap-2">
+            <button className="btn-primary" disabled={busy}
                     onClick={() => verify(selected)}
                     data-testid="ColumnPanel-verifyButton">
               T2 검증
             </button>
-            <button className="icon-button" disabled={busy}
+            <button className="btn-secondary" disabled={busy}
                     onClick={() => run(async () =>
                       setPreview(await runPreview(column.id, selected.column_id)))}
                     data-testid="ColumnPanel-previewButton">
               미리보기 20행
             </button>
-            <button className="icon-button" disabled={busy || !result}
+            <button className="btn-secondary" disabled={busy || !result}
                     onClick={() => run(async () => {
                       await confirmRelation(column.id, selected.column_id);
                       setConfirmed(true);
