@@ -212,9 +212,9 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       {anchorId === null && (
         <div className="absolute inset-0 z-10 flex items-center justify-center"
              data-testid="ErdCanvas-emptyState">
-          <div className="rounded-2xl border bg-white p-8 text-center"
-               style={{ borderColor: "var(--hairline)" }}>
-            <p className="erd-node__header mb-2 justify-center !border-0 !p-0">
+          <div className="rounded-xl border p-8 text-center"
+               style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}>
+            <p className="mb-2 text-lg font-bold" style={{ color: "var(--ink)" }}>
               앵커 테이블로 시작하세요
             </p>
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
@@ -245,27 +245,28 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       )}
 
       {pending && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/20">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50">
           <div
-            className="rounded-2xl border bg-white p-6"
-            style={{ borderColor: "var(--hairline)" }}
+            className="rounded-xl border p-6"
+            style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
             data-testid="ErdCanvas-confirmModal"
           >
-            <p className="mb-1 font-medium">노드 {pending.total}개를 렌더링할까요?</p>
+            <p className="mb-1 font-semibold" style={{ color: "var(--ink)" }}>
+              노드 {pending.total}개를 렌더링할까요?
+            </p>
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
               이번 확장으로 {pending.addedCount}개가 추가됩니다. 큰 그래프는 탐색이 느려질 수 있습니다.
             </p>
             <div className="flex justify-end gap-2">
               <button
-                className="icon-button"
+                className="btn-secondary"
                 data-testid="ErdCanvas-confirmCancelButton"
                 onClick={() => setPending(null)}
               >
                 취소
               </button>
               <button
-                className="rounded-full px-4 py-1.5 text-sm text-white"
-                style={{ background: "var(--primary)" }}
+                className="btn-primary"
                 data-testid="ErdCanvas-confirmRenderButton"
                 onClick={() => {
                   setGraph(pending.merged);

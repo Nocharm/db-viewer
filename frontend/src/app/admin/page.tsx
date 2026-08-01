@@ -94,8 +94,7 @@ export default function AdminPage() {
             data-testid="AdminPage-noteInput"
           />
           <button
-            className="rounded-full px-4 text-sm text-white"
-            style={{ background: "var(--primary)" }}
+            className="btn-primary"
             onClick={() =>
               run(() => addWhitelist(loginId.trim(), note || undefined), "추가 완료")}
             disabled={!loginId.trim()}

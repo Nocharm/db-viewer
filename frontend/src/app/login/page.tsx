@@ -52,12 +52,11 @@ function KeycloakLogin() {
   return (
     <div className="flex h-screen items-center justify-center">
       {showCard ? (
-        <div className="rounded-2xl border p-8 text-center"
-             style={{ borderColor: "var(--hairline)" }}>
-          <p className="erd-node__header mb-4 !border-0 !p-0">db-viewer</p>
+        <div className="rounded-xl border p-8 text-center"
+             style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}>
+          <p className="mb-4 text-lg font-bold" style={{ color: "var(--ink)" }}>db-viewer</p>
           <button
-            className="rounded-full px-6 py-2 text-sm text-white"
-            style={{ background: "var(--primary)" }}
+            className="btn-primary"
             onClick={() => {
               clearAutoLoginTried();
               void signinRedirectFromLogin();

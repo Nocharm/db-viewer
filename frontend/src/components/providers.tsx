@@ -64,10 +64,12 @@ function MeGate({ children }: { children: React.ReactNode }) {
     // 화이트리스트 미등록 — 전 API가 403이므로 안내 화면으로 차단
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="rounded-2xl border p-8 text-center"
-             style={{ borderColor: "var(--hairline)" }}
+        <div className="rounded-xl border p-8 text-center"
+             style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
              data-testid="MeGate-notWhitelisted">
-          <p className="mb-2 text-lg">접근 권한이 없습니다</p>
+          <p className="mb-2 text-lg font-semibold" style={{ color: "var(--ink)" }}>
+            접근 권한이 없습니다
+          </p>
           <p className="text-sm" style={{ color: "var(--slate)" }}>
             <span className="font-mono">{me.login_id}</span> 계정은 화이트리스트에 없습니다.
             <br />관리자에게 등록을 요청하세요.

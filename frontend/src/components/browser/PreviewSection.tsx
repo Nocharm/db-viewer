@@ -73,8 +73,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           data-testid="PreviewSection-filterValueInput"
         />
         <button
-          className="pressable rounded-full px-4 py-1.5 text-sm text-white disabled:opacity-40"
-          style={{ background: "var(--primary)" }}
+          className="btn-primary"
           disabled={!canSearch}
           onClick={() => onSearch(filterColumn, filterValue.trim())}
           data-testid="PreviewSection-searchButton"

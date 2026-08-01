@@ -1,12 +1,40 @@
 "use client";
 
-/** 공용 헤더 — 내비게이션 + 사용자 / shared header with nav and user info. */
+/** 공용 헤더 — 내비게이션 + 테마 토글 + 사용자 / shared header with nav, theme toggle, user. */
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const current = document.documentElement.dataset.theme;
+    if (current === "light") setTheme("light");
+  }, []);
+
+  const toggle = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("dbv.theme", next);
+    } catch {
+      // localStorage 차단 환경 — 세션 한정 토글 / session-only toggle
+    }
+  };
+
+  return (
+    <button className="icon-button" onClick={toggle} title="다크/라이트 전환"
+            data-testid="AppHeader-themeToggle">
+      {theme === "dark" ? "☀︎" : "☾"}
+    </button>
+  );
+}
 
 const LINKS = [
   { href: "/", label: "테이블" },
@@ -24,7 +52,9 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       style={{ borderColor: "var(--hairline)" }}
       data-testid="AppHeader-root"
     >
-      <span className="erd-node__header !border-0 !p-0">db-viewer</span>
+      <span className="text-[15px] font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+        db-viewer
+      </span>
       <nav className="flex items-center gap-1">
         {LINKS.map(({ href, label }) => {
           const active = pathname === href;
@@ -54,6 +84,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </nav>
       <div className="ml-auto flex items-center gap-3">
         {children}
+        <ThemeToggle />
         {me && (
           <span className="text-sm" style={{ color: "var(--slate)" }}
                 data-testid="AppHeader-userName">

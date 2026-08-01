@@ -1,140 +1,241 @@
 @import "tailwindcss";
 
-/* 디자인 토큰 — rules/frontend/DESIGN-cohere.md + design-app.md (라이트 전용, 승인 결정) */
-:root {
-  --canvas: #ffffff;
-  --ink: #212121;
-  --primary: #17171c;
-  --soft-stone: #eeece7;
-  --hairline: #d9d9dd;
-  --border-light: #e5e7eb;
-  --muted: #93939f;
-  --slate: #75758a;
-  --focus-blue: #4c6ee6;
-  --action-blue: #1863dc;
-  --deep-green: #003c33;
-  --error: #b30000;
+/* ══════════════════════════════════════════════════════════════════
+   디자인 토큰 — ClickHouse 시스템 (rules/frontend/DESIGN-clickhouse.md)
+   다크 기본 + 라이트 변형, 토글은 <html data-theme>. 신뢰도 팔레트는
+   테마별로 dataviz validator 검증 완료 (design-app.md §검증 기록).
+   ══════════════════════════════════════════════════════════════════ */
+:root,
+:root[data-theme="dark"] {
+  --canvas: #0a0a0a;
+  --surface-soft: #121212;
+  --surface-card: #1a1a1a;
+  --surface-elevated: #242424;
+  --ink: #ffffff;
+  --body-text: #cccccc;
+  --muted: #888888;
+  --slate: #888888;
+  --muted-soft: #5a5a5a;
+  --hairline: #2a2a2a;
+  --border-light: #2a2a2a;
+  --hairline-strong: #3a3a3a;
 
-  /* 신뢰도 색 — dataviz validator 검증 완료 (design-app.md §색상 검증 기록) */
+  --primary: #faff69;          /* electric yellow — CTA·스탯·포커스 전용 */
+  --primary-active: #e6eb52;
+  --on-primary: #0a0a0a;
+  --action-blue: #faff69;      /* 다크에선 텍스트 링크도 옐로 (ClickHouse text-link) */
+  --focus-blue: #faff69;       /* 포커스 링 = 옐로 */
+  --error: #ef4444;
+  --deep-green: #22c55e;
+
+  /* 호환 별칭 — hover·선택 면 / legacy alias for hover surfaces */
+  --soft-stone: #242424;
+
+  /* 신뢰도 색 (다크 검증 세트 — ALL PASS, CVD 7.4는 파선·배지 보조 인코딩으로 합법) */
+  --rel-confirmed: #059669;
+  --rel-inferred: #2a62cf;
+  --rel-ai: #cf5fd9;
+  --rel-unresolved: #ef4444;
+  --rel-lineage: #888888;
+
+  --font-body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+
+:root[data-theme="light"] {
+  --canvas: #ffffff;
+  --surface-soft: #f7f7f5;
+  --surface-card: #f4f4f2;
+  --surface-elevated: #eaeae7;
+  --ink: #0a0a0a;
+  --body-text: #333333;
+  --muted: #8a8a8a;
+  --slate: #75757a;
+  --muted-soft: #b0b0b0;
+  --hairline: #e6e6e3;
+  --border-light: #e6e6e3;
+  --hairline-strong: #d0d0cc;
+
+  --primary: #faff69;
+  --primary-active: #e6eb52;
+  --on-primary: #0a0a0a;
+  --action-blue: #1863dc;
+  --focus-blue: #1863dc;
+  --error: #b30000;
+  --deep-green: #00926a;
+
+  --soft-stone: #eaeae7;
+
+  /* 신뢰도 색 (라이트 검증 세트 — 기존 ALL PASS 팔레트) */
   --rel-confirmed: #00926a;
   --rel-inferred: #1863dc;
   --rel-ai: #9b60aa;
   --rel-unresolved: #b30000;
   --rel-lineage: #93939f;
-
-  --font-body: "Unica77 Cohere Web", Inter, Arial, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: CohereMono, ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
 
 body {
   background: var(--canvas);
-  color: var(--ink);
+  color: var(--body-text);
   font-family: var(--font-body);
   font-size: 14px;
 }
 
-/* ── ERD 노드 (flat 원칙 — 그림자 금지, 보더로 상태 표현) ── */
+h1, h2, h3 {
+  color: var(--ink);
+}
+
+/* ── ERD 노드 — 다크 서피스 카드 (그림자 없음) ── */
 .erd-node {
-  background: var(--canvas);
+  background: var(--surface-card);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   width: 260px;
   overflow: hidden;
+  color: var(--body-text);
+  transition: border-color 0.18s ease-in-out;
 }
 .erd-node--view {
-  background: var(--soft-stone);
+  background: var(--surface-elevated);
 }
 .erd-node--selected {
-  outline: 2px solid var(--focus-blue);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 .erd-node:hover {
-  border-color: var(--ink);
+  border-color: var(--hairline-strong);
 }
 .erd-node__header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
-  font-family: var(--font-mono);
+  padding: 9px 12px;
+  font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.26px;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
   border-bottom: 1px solid var(--hairline);
 }
 .erd-node__row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 10px;
+  padding: 2px 12px;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
+  font-family: var(--font-mono);
 }
 .erd-node__row--pk {
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 500;
 }
 .erd-node__type {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .erd-node__meta {
-  padding: 4px 10px 8px;
+  padding: 5px 12px 9px;
   color: var(--muted);
   font-size: 12px;
 }
 
-/* ── 배지 (erd-badge 토큰) ── */
+/* ── 배지 ── */
 .badge {
   display: inline-block;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  letter-spacing: 0.2px;
 }
 .badge--unresolved {
-  background: color-mix(in srgb, var(--rel-unresolved) 12%, white);
+  background: color-mix(in srgb, var(--rel-unresolved) 18%, var(--surface-card));
   color: var(--rel-unresolved);
 }
 .badge--ai {
-  background: color-mix(in srgb, var(--rel-ai) 12%, white);
+  background: color-mix(in srgb, var(--rel-ai) 18%, var(--surface-card));
   color: var(--rel-ai);
 }
 .badge--muted {
-  background: color-mix(in srgb, var(--muted) 16%, white);
+  background: var(--surface-elevated);
   color: var(--slate);
 }
 .badge--confirmed {
-  background: color-mix(in srgb, var(--rel-confirmed) 12%, white);
+  background: color-mix(in srgb, var(--rel-confirmed) 18%, var(--surface-card));
   color: var(--rel-confirmed);
 }
 
+/* ── 버튼 ── */
 .icon-button {
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  background: var(--canvas);
-  font-size: 11px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--surface-card);
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1;
-  padding: 3px 6px;
+  padding: 6px 10px;
   cursor: pointer;
-  color: var(--slate);
+  color: var(--body-text);
   transition: background-color 0.18s ease-in-out, color 0.18s ease-in-out,
     border-color 0.18s ease-in-out, transform 0.12s ease-in-out;
 }
 .icon-button:hover {
-  border-color: var(--ink);
+  border-color: var(--muted);
   color: var(--ink);
-  background: var(--soft-stone);
+  background: var(--surface-elevated);
 }
 .icon-button:active {
   transform: scale(0.96);
 }
 
-/* ── 스크롤바: 평소 숨김, 호버·스크롤 시 표시 / hidden until hover-scroll ── */
+/* 옐로 프라이머리 버튼 — ClickHouse button-primary */
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background-color 0.18s ease-in-out, transform 0.12s ease-in-out,
+    opacity 0.18s ease-in-out;
+}
+.btn-primary:hover {
+  background: var(--primary-active);
+}
+.btn-primary:active {
+  transform: scale(0.97);
+}
+.btn-primary:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.btn-secondary {
+  background: var(--surface-card);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background-color 0.18s ease-in-out, border-color 0.18s ease-in-out,
+    transform 0.12s ease-in-out;
+}
+.btn-secondary:hover {
+  background: var(--surface-elevated);
+  border-color: var(--muted);
+}
+.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/* ── 스크롤바: 평소 숨김, 호버·스크롤 시 표시 ── */
 .scroll-area {
   overflow: auto;
   scrollbar-width: thin;
@@ -142,7 +243,7 @@ body {
 }
 .scroll-area:hover,
 .scroll-area:focus-within {
-  scrollbar-color: var(--hairline) transparent;
+  scrollbar-color: var(--hairline-strong) transparent;
 }
 .scroll-area::-webkit-scrollbar {
   width: 8px;
@@ -156,13 +257,13 @@ body {
   border-radius: 4px;
 }
 .scroll-area:hover::-webkit-scrollbar-thumb {
-  background: var(--hairline);
+  background: var(--hairline-strong);
 }
 .scroll-area::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
 
-/* ── 인터랙션 공통: ease-in-out + 클릭 효과 / shared hover-press affordance ── */
+/* ── 인터랙션 공통 ── */
 .pressable {
   cursor: pointer;
   transition: background-color 0.18s ease-in-out, color 0.18s ease-in-out,
@@ -170,40 +271,44 @@ body {
     box-shadow 0.18s ease-in-out;
 }
 .pressable:hover {
-  background: var(--soft-stone);
+  background: var(--surface-elevated);
 }
 .pressable:active {
   transform: scale(0.985);
 }
 
-/* ── 조인키 칩 ── */
+/* ── 조인키 칩 — 다크 pill, 선택 시 옐로 반전 ── */
 .key-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: 30px;
+  padding: 5px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9999px;
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
-  background: var(--canvas);
-  color: var(--ink);
+  background: var(--surface-card);
+  color: var(--body-text);
 }
 .key-chip--selected {
   background: var(--primary);
   border-color: var(--primary);
-  color: var(--on-primary, #fff);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+.key-chip--selected:hover {
+  background: var(--primary-active);
 }
 .key-chip__count {
   font-size: 10px;
   color: var(--muted);
 }
 .key-chip--selected .key-chip__count {
-  color: rgba(255, 255, 255, 0.7);
+  color: color-mix(in srgb, var(--on-primary) 60%, transparent);
 }
 
-/* ── 좌측 목록 행 — 밀도 완화 / relaxed density ── */
+/* ── 좌측 목록 행 ── */
 .list-row {
   display: flex;
   align-items: center;
@@ -213,58 +318,95 @@ body {
   font-size: 13px;
   line-height: 1.5;
   text-align: left;
+  color: var(--body-text);
   border-left: 2px solid transparent;
 }
-
-/* 검색어 하이라이트 / search-term highlight */
-mark.hl {
-  background: color-mix(in srgb, var(--focus-blue) 22%, transparent);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
 .list-row--selected {
-  background: var(--soft-stone);
-  border-left-color: var(--action-blue);
+  background: var(--surface-elevated);
+  border-left-color: var(--primary);
+  color: var(--ink);
   font-weight: 500;
 }
 
-/* ── 카드 레이아웃 — 선 대신 바탕 톤 차이로 구분 / surface alternation, no dividers ── */
-.surface-muted {
-  background: color-mix(in srgb, var(--soft-stone) 60%, white);
-}
-.card {
-  background: var(--canvas);
-  border-radius: 14px;
+/* 검색어 하이라이트 — 옐로 보이스 */
+mark.hl {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
-/* ── 상세 패널 섹션 — 보더 없이 옅은 면으로 / borderless tinted sections ── */
+/* ── 카드 레이아웃 — 캔버스 위 서피스 카드 (해어라인, 그림자 없음) ── */
+.surface-muted {
+  background: var(--canvas);
+}
+.card {
+  background: var(--surface-card);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+/* ── 상세 패널 섹션 — 중첩 카드 = surface-elevated ── */
 .panel-section {
-  background: color-mix(in srgb, var(--soft-stone) 45%, white);
+  background: var(--surface-elevated);
   border-radius: 10px;
   padding: 18px 20px;
 }
 .panel-section__title {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.22px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: var(--slate);
+  color: var(--muted);
   margin-bottom: 12px;
 }
 
-/* ── 일치율 게이지 ── */
+/* ── 일치율 게이지 — 스탯은 옐로 ── */
 .rate-bar {
   flex: 1;
   height: 4px;
   border-radius: 2px;
-  background: var(--border-light);
+  background: var(--hairline-strong);
   overflow: hidden;
 }
 .rate-bar__fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--rel-confirmed);
+  background: var(--primary);
   transition: width 0.3s ease-in-out;
+}
+
+/* ── 입력 ── */
+input, select, textarea {
+  background: var(--surface-card);
+  color: var(--ink);
+}
+input::placeholder {
+  color: var(--muted);
+}
+
+/* ── React Flow 다크 대응 ── */
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+}
+.react-flow__controls-button:hover {
+  background: var(--surface-elevated);
+}
+.react-flow__controls-button svg {
+  fill: var(--ink);
+}
+.react-flow__edge-text {
+  fill: var(--body-text);
+}
+.react-flow__edge-textbg {
+  fill: var(--canvas);
+  fill-opacity: 0.85;
 }

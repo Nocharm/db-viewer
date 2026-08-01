@@ -1,81 +1,57 @@
-# App Design System — db-viewer
+# App Design System — db-viewer (v2: ClickHouse 기반)
 
-`DESIGN-cohere.md`(동결된 원본 레퍼런스)의 앱 확장. 토큰 값·flat 원칙·white canvas는 원본을 따르고,
-이 문서는 **확장 토큰 + ERD 시각 언어**만 정의한다. 근거: `docs/step0-proposal.md` (승인 완료).
+기준 시스템이 **Cohere(라이트) → ClickHouse(다크 기본)** 로 전환됐다 (사용자 지시,
+2026-08-01). 원본 레퍼런스: `rules/frontend/DESIGN-clickhouse.md` (사용자 제공 분석 문서
+— 저장 예정, 값 원본은 사용자 메시지). 이전 Cohere 시스템은 `DESIGN-cohere.md`로 동결 유지.
 
-## 적용 범위
+## 핵심 계약
 
-- 마케팅 컴포넌트 8종 미사용: announcement-bar, hero-photo-card, trust-logo-strip,
-  blog-filter-chip, footer-newsletter, dark-feature-band, product-card, contact-form-card
-- Display 타이포(96/72/60px) 미사용 — 앱 최대 `section-heading`(48px)
-- 다크모드 v1 미지원 (라이트 전용, 승인 결정)
+- **다크 기본 + 라이트 변형 + 헤더 토글** (`<html data-theme>`, localStorage `dbv.theme`,
+  페인트 전 인라인 스크립트로 플래시 방지)
+- 근흑 캔버스 `#0a0a0a` / 서피스 카드 `#1a1a1a` / 중첩 카드 `#242424` / 해어라인 `#2a2a2a`
+- **일렉트릭 옐로 `#faff69`** = 유일한 브랜드 전압 — primary CTA(`btn-primary`, 블랙 텍스트),
+  선택 상태(조인키 칩·리스트 좌측 보더·앵커 포커스 링), 스탯성 표시(일치율 게이지),
+  검색 하이라이트(`mark.hl`). 본문·면색으로 남용 금지
+- Inter 단일 패밀리(700 display·600 버튼·400 본문), 코드·식별자는 JetBrains Mono 폴백 스택
+- 그림자 없음 — 깊이는 캔버스↔카드 명도 차이. 카드 radius 12px, 버튼 8px, 배지 pill
+- 라이트 변형: 화이트 캔버스 + 라이트 그레이 카드, 옐로 CTA는 동일(블랙 텍스트라 양 테마 성립),
+  텍스트 링크만 테마별(다크=옐로, 라이트=블루)
 
-## 확장 토큰
+## 토큰 구현
 
-```yaml
-# 신뢰도 색 — 색만으로 구분 금지. 선 패턴·배지가 색과 독립적으로 상태를 인코딩한다
-colors:
-  rel-confirmed: "#00926a"   # deep-green 램프의 선(line)용 밝은 단계 — 확정 (fk / confirmed)
-  rel-inferred: "#1863dc"    # action-blue 재사용 — 추정 (containment 검증 통과)
-  rel-ai: "#9b60aa"          # form-focus 재사용 — AI 제안 (미검증)
-  rel-unresolved: "#b30000"  # error 재사용 — 미해석 / 파싱 실패
-  rel-lineage: "#93939f"     # muted 재사용 — view lineage (신뢰도 채널 아님, 구조 채널)
+`frontend/src/app/globals.css`의 `:root`(다크)와 `[data-theme="light"]` 두 세트.
+기존 컴포넌트 호환을 위해 구 토큰명을 별칭으로 유지:
+`--soft-stone`(hover 면)→surface-elevated, `--focus-blue`→primary(포커스 링=옐로),
+`--action-blue`(링크)→다크 옐로/라이트 블루, `--slate`·`--muted`→그레이 스케일.
 
-typography:
-  erd-table-name:            # ERD 노드 헤더 — mono-label 축소판
-    fontFamily: CohereMono
-    fontSize: 13px
-    fontWeight: 500
-    letterSpacing: 0.26px
-    textTransform: uppercase
-  erd-badge:                 # 상태 배지 (AI / ⚠ / N:M / 저카디널리티)
-    fontFamily: CohereMono
-    fontSize: 10px
-    fontWeight: 500
-    textTransform: uppercase
-  # ERD 컬럼 행은 기존 micro(12px) 재사용 — 신규 토큰 최소화
-```
+## ERD 신뢰도 팔레트 — 테마별 검증 (dataviz validator)
 
-## ERD 노드
+색=신뢰도, 패턴=종류, 배지=색 독립 보조 인코딩 원칙은 불변.
 
-flat 원칙 유지 — 그림자 금지, 보더로 상태 표현.
+| 상태 | 다크 (`#0a0a0a` 계열 서피스) | 라이트 (`#ffffff`) |
+|---|---|---|
+| 확정 (fk/confirmed) | `#059669` | `#00926a` |
+| 추정 (inferred) | `#2a62cf` | `#1863dc` |
+| AI 제안 | `#cf5fd9` | `#9b60aa` |
+| 미해석 | `#ef4444` | `#b30000` |
+| view lineage (중립) | `#888888` | `#93939f` |
 
-| 요소 | 스펙 |
-|---|---|
-| table 노드 | canvas bg + hairline 1px 보더 + rounded sm(8px). 헤더 `erd-table-name`, 컬럼 행 micro/ink, PK 행 키 아이콘, row_count는 caption/muted |
-| view 노드 | soft-stone bg, 기본 접힘. 펼치면 lineage 엣지 노출 |
-| 앵커/선택 | focus-blue(`#4c6ee6`) 2px ring |
-| 상태 배지 | `erd-badge` — parse_failed·unresolved(rel-unresolved 연한 배경), 저카디널리티(muted + 사유 툴팁), AI(rel-ai) |
-| hover | 보더 ink 강조 (그림자 대신) |
+- **다크 세트 검증 (2026-08-01, `--mode dark --pairs all`): ALL CHECKS PASS** —
+  Lightness ✓ Chroma ✓ Normal 21.1 ✓ Contrast ≥3:1 ✓, CVD worst 7.4(protan)는
+  6–8 합법 대역(파선 패턴 + 필수 배지 보조 인코딩 보유)
+- 라이트 세트는 v1에서 검증된 팔레트 그대로
+- 팔레트 변경 시 두 테마 모두 재검증:
+  `node scripts/validate_palette.js "<4색>" --mode dark|light --pairs all`
 
-## ERD 엣지 — 색 = 신뢰도, 패턴 = 종류, 배지 = 색 독립 보조 인코딩
+## 컴포넌트 클래스 (globals.css)
 
-| 상태 | 색 | 패턴 (2px) | 보조 인코딩 |
-|---|---|---|---|
-| 확정 — fk | `rel-confirmed` | 실선 | — |
-| 확정 — 사용자 confirmed | `rel-confirmed` | 실선 | ✓ 배지 (fk와 구분) |
-| 추정 — inferred | `rel-inferred` | 파선 8‑4 | 투명도 = confidence |
-| AI 제안 — ai_suggested | `rel-ai` | 파선 3‑3 | `AI` 배지 필수 |
-| 미해석 — unresolved | `rel-unresolved` | 일점쇄선 | ⚠ 배지 |
-| view lineage | `rel-lineage` | 점선 1.5‑4 | 신뢰도 채널 아님 |
+`btn-primary`(옐로 CTA) · `btn-secondary`(다크 서피스) · `icon-button` · `key-chip(--selected)`
+· `list-row(--selected)` · `card` · `panel-section`(중첩 카드) · `badge--*` · `rate-bar`(옐로 fill)
+· `scroll-area`(호버 시에만 스크롤바) · `pressable`(ease-in-out + 클릭 스케일) · `mark.hl`
+· React Flow 다크 오버라이드(`.react-flow__controls*`, edge label bg)
 
-- confidence 투명도는 **3단계 스텝** — 1.0 / 0.7 / 0.45. 연속 투명도는 비교 불가, 0.45 미만은 hairline과 혼동
-- **staleness는 투명도 재사용 금지** (confidence와 충돌). `last_verified_at` 배지 + 임계 90일 초과 시 배지 회색 (승인 결정 — 계획서 §3.4 "흐리게"를 대체)
-- N:M 교차 관계: 양끝 무방향 + `N:M` 배지 — FK로 오독 방지. 1:N은 N쪽 화살표
-- 카디널리티 크로우풋 표기는 v1 미채택 (렌더러 마커 제약 확인 후 재검토)
+## Don't
 
-## 색상 검증 기록 (dataviz validator, 2026-08-01)
-
-신뢰도 4색 `--pairs all` (동일 화면 공존) 전 항목 PASS:
-Lightness band ✓ · Chroma floor ✓ · CVD worst ΔE 9.3(protan) ✓ · Normal-vision 17.9 ✓ · Contrast ≥3:1 ✓
-
-- 원본 `deep-green #003c33`은 선 색으로 탈락(명도·채도 미달) → 램프 확장 `#00926a`.
-  `deep-green`은 면·텍스트 용도로 계속 사용
-- 탈락 후보: coral `#ff7759`(대비 2.55:1), slate `#75758a`(채도 미달, violet과 CVD ΔE 4.7)
-- `rel-lineage` 회색은 의도적 recessive 중립 — 카테고리 세트 제외, 점선 패턴이 식별 담당
-- 팔레트 변경 시 재검증 필수: `node scripts/validate_palette.js "<4색>" --mode light --pairs all`
-
-## data-testid
-
-ERD 요소도 `identifiers.md` 적용: `ErdCanvas-node-${objectId}`, `ErdCanvas-edge-${relationId}`,
-`ErdToolbar-expandButton`, `NodeDetail-verifyButton` 형식.
+- 옐로 외 제2 브랜드 색 도입 금지 (신뢰도 팔레트는 데이터 채널 — 브랜드 색 아님)
+- 그림자 금지, 본문에 옐로 텍스트 금지, pill은 배지 전용
+- `data-testid` 규칙은 `identifiers.md` 그대로

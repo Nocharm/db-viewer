@@ -15,8 +15,8 @@ const ITEMS: { kind: EdgeKind; label: string }[] = [
 export function Legend() {
   return (
     <div
-      className="absolute bottom-3 left-3 z-10 rounded-lg border bg-white px-3 py-2"
-      style={{ borderColor: "var(--hairline)" }}
+      className="absolute bottom-3 left-3 z-10 rounded-lg border px-3 py-2"
+      style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
       data-testid="ErdCanvas-legend"
     >
       {ITEMS.map(({ kind, label }) => {

@@ -33,7 +33,16 @@ function ErdPageInner() {
   const params = useSearchParams();
   const [anchor, setAnchor] = useState<ObjectSummary | null>(() =>
     anchorFromParams(params.get("anchor"), params.get("label")));
-  const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(null);
+  // 브라우저 컬럼 칩 딥링크 → 조인 검증 패널 자동 오픈 / auto-open the validation panel
+  const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(() => {
+    const columnId = params.get("col");
+    const columnName = params.get("colName");
+    const label = params.get("label");
+    if (columnId && columnName && label) {
+      return { id: Number(columnId), name: columnName, object: label };
+    }
+    return null;
+  });
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   const handleSelectColumn = useCallback(

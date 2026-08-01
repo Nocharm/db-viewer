@@ -149,6 +149,13 @@ function HomeInner() {
     router.push(`/erd?anchor=${selected.id}&label=${selected.schema}.${selected.name}`);
   }, [router, selected]);
 
+  // 컬럼 칩 → ERD의 조인 검증 패널 딥링크 / deep link into the T2 validation panel
+  const handleOpenColumn = useCallback((columnId: number, columnName: string) => {
+    if (!selected) return;
+    const label = `${selected.schema}.${selected.name}`;
+    router.push(`/erd?anchor=${selected.id}&label=${label}&col=${columnId}&colName=${columnName}`);
+  }, [router, selected]);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <AppHeader>
@@ -184,6 +191,7 @@ function HomeInner() {
               onPreview={() => loadPreview(undefined, true)}
               onOpenErd={handleOpenErd}
               onSelectTable={selectByQname}
+              onOpenColumn={handleOpenColumn}
             />
           </section>
         </main>

@@ -12,6 +12,8 @@ interface Props {
   onOpenErd: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
   onSelectTable: (qname: string) => void;
+  /** 컬럼 칩 클릭 → ERD 조인 검증 패널로 이동 / open the join-validation panel in the ERD */
+  onOpenColumn: (columnId: number, columnName: string) => void;
 }
 
 /** 클릭 가능한 테이블명 / clickable table reference. */
@@ -29,7 +31,7 @@ function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) 
 }
 
 export function TableDetail({
-  detail, loading, previewLoading, onPreview, onOpenErd, onSelectTable,
+  detail, loading, previewLoading, onPreview, onOpenErd, onSelectTable, onOpenColumn,
 }: Props) {
   if (!detail) {
     return (
@@ -63,8 +65,7 @@ export function TableDetail({
 
       <div className="mb-7 flex gap-3">
         <button
-          className="pressable rounded-full px-6 py-2 text-sm text-white disabled:opacity-40"
-          style={{ background: "var(--primary)" }}
+          className="btn-primary"
           onClick={onPreview}
           disabled={previewLoading}
           data-testid="TableDetail-previewButton"
@@ -72,8 +73,7 @@ export function TableDetail({
           {previewLoading ? "조회 중…" : "미리보기 TOP 20"}
         </button>
         <button
-          className="pressable rounded-full border px-6 py-2 text-sm"
-          style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
+          className="btn-secondary"
           onClick={onOpenErd}
           data-testid="TableDetail-erdButton"
         >
@@ -83,20 +83,24 @@ export function TableDetail({
 
       <div className="flex max-w-4xl flex-col gap-5">
         <section className="panel-section">
-          <div className="panel-section__title">컬럼 ({detail.column_count})</div>
+          <div className="panel-section__title">
+            컬럼 ({detail.column_count}) — 클릭하면 ERD에서 조인 검증
+          </div>
           <div className="flex flex-wrap gap-2">
             {detail.columns.map((column) => (
-              <span
+              <button
                 key={column.id}
-                className="rounded-md border px-2.5 py-1 font-mono text-xs"
+                className="pressable rounded-md border px-2.5 py-1 font-mono text-xs"
                 style={{
-                  borderColor: column.is_join_key ? "var(--rel-confirmed)" : "var(--border-light)",
-                  color: column.is_join_key ? "var(--rel-confirmed)" : "var(--ink)",
+                  borderColor: column.is_join_key ? "var(--rel-confirmed)" : "var(--hairline-strong)",
+                  color: column.is_join_key ? "var(--rel-confirmed)" : "var(--body-text)",
                 }}
-                title={column.data_type}
+                title={`${column.data_type} — T2 조인 검증 열기`}
+                onClick={() => onOpenColumn(column.id, column.name)}
+                data-testid={`TableDetail-column-${column.id}`}
               >
                 {column.is_pk ? "🔑 " : ""}{column.name}
-              </span>
+              </button>
             ))}
           </div>
         </section>
