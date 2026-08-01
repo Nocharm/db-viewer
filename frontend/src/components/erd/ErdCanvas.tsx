@@ -4,13 +4,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  applyNodeChanges,
   Background,
   Controls,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
-import type { Edge } from "@xyflow/react";
+import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { useI18n } from "@/components/i18n";
@@ -52,6 +53,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [error, setError] = useState<string | null>(null);
   const { setCenter } = useReactFlow();
   const centeredAnchorRef = useRef<number | null>(null);
+  // 헤더 드래그로 옮긴 노드는 재레이아웃에도 그 자리를 유지한다 / manual drags survive relayout
+  const manualPosRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   // fresh 마운트에선 ReactFlow 초기화 전 setCenter가 무시된다 — init까지 보류
   // setCenter before ReactFlow init is lost on fresh mounts; defer until onInit
   const flowReadyRef = useRef(false);
@@ -107,10 +110,21 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       .then((incoming) => {
         setGraph(null);
         setExpandedNodes(new Set([incoming.anchor_id]));
+        manualPosRef.current = new Map(); // 새 캔버스 — 수동 배치 초기화
         applyIncoming(incoming, null);
       })
       .catch((e) => setError(e.message));
   }, [anchorId, applyIncoming]);
+
+  // 드래그 반영 — position 변경만 수동 배치로 기록 / record drags as manual placements
+  const handleNodesChange = useCallback((changes: NodeChange<TableFlowNode>[]) => {
+    for (const change of changes) {
+      if (change.type === "position" && change.position) {
+        manualPosRef.current.set(Number(change.id), change.position);
+      }
+    }
+    setFlowNodes((cur) => applyNodeChanges(changes, cur));
+  }, []);
 
   // 그래프·접힘 상태 변경 → ELK 재배치 / re-layout on graph or collapse changes
   useEffect(() => {
@@ -135,7 +149,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         graph.nodes.map((n) => ({
           id: String(n.id),
           type: "tableNode" as const,
-          position: { x: posMap.get(n.id)?.x ?? 0, y: posMap.get(n.id)?.y ?? 0 },
+          // 헤더만 드래그 핸들 — 컬럼 클릭과 충돌하지 않는다 / header is the drag handle
+          dragHandle: ".erd-node__header",
+          position: manualPosRef.current.get(n.id)
+            ?? { x: posMap.get(n.id)?.x ?? 0, y: posMap.get(n.id)?.y ?? 0 },
           data: {
             node: n,
             expanded: expandedNodes.has(n.id),
@@ -196,6 +213,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
+        onNodesChange={handleNodesChange}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {

@@ -425,6 +425,14 @@ input::placeholder {
 }
 
 /* ── React Flow 다크 대응 ── */
+/* 캔버스 안에서만 — 헤더가 노드 드래그 핸들 / header doubles as the node drag handle */
+.react-flow .erd-node__header {
+  cursor: grab;
+}
+.react-flow .erd-node__header:active {
+  cursor: grabbing;
+}
+
 .react-flow__controls {
   box-shadow: none;
   border: 1px solid var(--hairline);
