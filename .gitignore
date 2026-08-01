@@ -30,3 +30,6 @@ dist/
 .vscode/
 .idea/
 *.swp
+
+# Fixture output (regenerable via tools/fixture_gen.py)
+/fixtures/

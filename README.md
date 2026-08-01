@@ -28,6 +28,8 @@ backend/       # FastAPI 백엔드
   app/models/  # 서비스 DB 스키마 (SQLAlchemy)
   alembic/     # 마이그레이션
   tests/
+tools/         # fixture_gen.py — 합성 카탈로그 생성기 (회귀 자산)
+               #   python tools/fixture_gen.py --out fixtures
 rules/         # 코딩·작업 규칙 (CLAUDE.md에서 import)
 docs/          # 프로젝트 문서 (step0-proposal 등)
 ```
