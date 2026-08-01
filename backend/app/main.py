@@ -13,6 +13,7 @@ from app.api import (
     ai,
     columns,
     ingest,
+    join_check,
     keys,
     me,
     objects,
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     # 조회·검증·AI는 화이트리스트 사용자 게이트 / whitelist gate for humans
     user_gate = [Depends(require_whitelisted)]
     app.include_router(objects.router, dependencies=user_gate)
+    app.include_router(join_check.router, dependencies=user_gate)
     app.include_router(views.router, dependencies=user_gate)
     app.include_router(snapshots.router, dependencies=user_gate)
     app.include_router(columns.router, dependencies=user_gate)
