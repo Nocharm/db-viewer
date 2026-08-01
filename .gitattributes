@@ -1,0 +1,4 @@
+# 줄바꿈 LF 고정 — Windows 경유 전송(scp 등)에도 안전 (bpm 런북 레슨)
+* text=auto eol=lf
+*.png binary
+*.ico binary

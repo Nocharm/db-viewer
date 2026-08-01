@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **bpm 운영 레슨 이식** — 실서버 런북(docs/deploy/deploy.md)에서 추출: ① 인증 면제 `/api/health` + compose healthcheck(frontend는 backend healthy 대기), ② `.gitattributes` LF 고정(Windows 경유 전송), ③ README에 Web origins(token CORS는 redirect URI가 아니라 이것), preferred_username 매퍼, federation↔bind 계정 별개, 첫 전체 동기화 프룬 주의, 트러블슈팅 표, 롤백 절, ④ ui-review에 LAN IP 확인 항목(secure context 함정은 localhost에서 재현 불가). crypto.randomUUID류 직접 사용 없음 확인(oidc 라이브러리 조합은 bpm 운영으로 검증됨). dev 서버 사고 1건: 실행 중 prod build가 .next 캐시 충돌 → 캐시 삭제·재기동으로 복구.
 - **UI/UX 로컬 리뷰 킷** — 로컬 검증 범위를 프론트 UI/UX로 확정(통신 검증은 서버 배포 후). `tools/seed_ui_states.py`가 API로 전 시각 상태 프라이밍(확정 ✓·고/저신뢰 inferred·AI 제안·요약·화이트리스트) — 실행 중 스택에 적용해 실측 확인(HR_APRV 앵커에 confirmed/fk/ai_suggested 혼재). 체크리스트 15항목은 `docs/ui-review.md`(seed 42 기준 검색어 명시). Docker 킷(local-test.md)은 배포 리허설용으로 유지.
 - **로컬 리허설 킷** — `docker-compose.local.yml` 오버레이: 로컬 Keycloak(realm·클라이언트·테스트 유저 2명 자동 임포트, `keycloak.local` alias로 브라우저·백엔드 issuer 일치) + `--profile collect`로 MSSQL(시드 스키마: FK/무FK 관계·중첩 뷰) + n8n(W0/W1 리허설, env 자동 주입). LDAP은 AD 전용 속성이라 로컬 대체 불가 → 끔(동기화만 비활성, 단위 테스트가 커버). `tools/seed_fixtures.py` CLI 신설(픽스처 없으면 즉석 생성). 검증: compose config·realm JSON·스크립트 — Docker 데몬 미기동이라 전체 기동은 사용자 실행 필요(runbook: docs/local-test.md).
 - **인증 마무리** — /parsing 페이지의 raw fetch를 인증 공용 클라이언트로 교체(auth ON에서 401 나던 격차), 로그인 기록 추가(audit_logs action=login, KST 하루 1건 중복 제거 — bpm 패턴). 스모크 재기동으로 실검증: dev 모드 /api/me·whitelist CRUD·ingest 재시드·프론트 프록시 전부 정상. 서브넷 172.48.0.0/16 사용자 확정.

@@ -45,6 +45,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     networks: [dbviewer]
 
   frontend:
@@ -59,7 +65,9 @@ services:
       BACKEND_URL: http://backend:8000
     ports:
       - "6678:3000"   # 배포 주소: http://182.199.63.71:6678
-    depends_on: [backend]
+    depends_on:
+      backend:
+        condition: service_healthy
     networks: [dbviewer]
 
 networks:

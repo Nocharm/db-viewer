@@ -26,6 +26,11 @@ from app.auth import require_ingest_access, require_whitelisted
 
 def create_app() -> FastAPI:
     app = FastAPI(title="db-viewer")
+
+    # 인증 면제 헬스체크 — compose healthcheck·배포 검증용 (bpm 런북 패턴)
+    @app.get("/api/health")
+    def health() -> dict:
+        return {"status": "ok"}
     # ingest는 머신 호출(n8n) — API 키 게이트 / machine gate for n8n
     app.include_router(ingest.router, dependencies=[Depends(require_ingest_access)])
     # 조회·검증·AI는 화이트리스트 사용자 게이트 / whitelist gate for humans

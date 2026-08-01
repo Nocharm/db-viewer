@@ -51,7 +51,12 @@ docker compose up -d --build
 
 - **Keycloak**: realm `ai-portal` (http://182.199.63.71:8080/realms/ai-portal), public client
   `db-viewer-frontend` 등록 필요 — redirect URI `http://182.199.63.71:6678/*`,
-  post-logout redirect `http://182.199.63.71:6678/login`
+  post-logout redirect `http://182.199.63.71:6678/login`,
+  **Web origins `http://182.199.63.71:6678`** (token 교환 CORS는 redirect URI가 아니라 Web origins가 푼다 — bpm 운영 레슨)
+- **Keycloak federation과 백엔드 LDAP bind는 별개 계정** — 로그인·토큰은 realm의 AD federation이,
+  `employees` 동기화는 우리 `LDAP_BIND_DN` 서비스 계정(읽기 전용)이 담당. 인프라 담당과 각각 확인
+- **토큰 매퍼**: `preferred_username`이 AD `sAMAccountName`이어야 화이트리스트·사용자 매칭이 동작
+  (Keycloak LDAP federation 기본 매핑이면 OK)
 - **켜는 법**: `.env`에서 `AUTH_ENABLED=true` + `DBV_SYSADMINS=<본인 login_id>` + `INGEST_API_KEY` 설정 후
   `docker compose up -d --build` (NEXT_PUBLIC 값은 빌드 시 인라인 — 재빌드 필수)
 - **화이트리스트**: 등록된 login_id만 로그인 가능(시스템관리자는 우회). `/admin` 화면 또는
@@ -59,6 +64,30 @@ docker compose up -d --build
 - **LDAP**: `LDAP_*` 4개 값을 모두 설정하면 활성화 — 로그인 시 단건 동기화 + `/admin`의 전체 동기화(5분 스로틀).
   제외 규칙(외부 조직·서비스 계정)은 `backend/app/ad/org.py`
 - **개발 모드**: `AUTH_ENABLED=false`(기본)면 Keycloak 없이 동작 — `X-Dev-User` 헤더 신뢰 (bpm 패턴)
+- ⚠ **첫 AD 전체 동기화 주의**: 프룬이 스테일 `source=ad` 행을 대량 삭제할 수 있다(퇴사자·비활성).
+  local 소스 행은 보존되지만, 운영 데이터가 쌓인 뒤라면 실행 전 사용자 목록 백업 권장 (bpm 운영 레슨)
+
+## 배포 검증·트러블슈팅 (bpm 운영 레슨 이식)
+
+```bash
+docker compose ps                                   # 서비스 Up, backend healthy
+curl -s http://182.199.63.71:6678/api/health        # {"status":"ok"} — 인증 면제
+```
+
+| 증상 | 확인 |
+|---|---|
+| 로그인 후 redirect 오류 | Keycloak Valid redirect URIs에 `:6678/*` 등록 여부 |
+| 복귀 시 `failed to fetch` / `No matching state found` | **Web origins** 누락 — token 엔드포인트 CORS |
+| 프론트가 인증을 안 함 | `NEXT_PUBLIC_*`는 빌드 인라인 — `.env` 변경 후 `--build` 했는지 |
+| `/api/*` 401 | 토큰 만료 / `KEYCLOAK_ISSUER`가 realm URL과 정확히 일치하는지 |
+| 로그인 버튼 무반응 | 콘솔에 `crypto.subtle...secure contexts` — 평문 HTTP는 PKCE 자동 비활성이 정상. Keycloak이 S256 강제면 해제 |
+| "로컬은 되는데 서버만" 깨짐 | secure context 차이 — `localhost`는 secure라 재현 불가. **LAN IP(`http://<내IP>:3000`)로 접속해 재현**할 것 |
+| 고쳤는데 서버에서 같은 에러 | 이미지 재빌드·해시 청크명 변경 여부 확인 → `docker compose build --no-cache frontend` |
+| 특정 사용자가 동기화에서 빠짐 | 의도된 제외 규칙(`ad/org.py`): loginId에 `.` 없음 / 이름에 `_` / 제외 조직 |
+| 전체 동기화 503 | `LDAP_*` 4종 중 빈 값 |
+
+**롤백**: `git checkout <이전 커밋> && docker compose up -d --build` — 데이터는 `pgdata` 볼륨에 유지.
+`docker compose down -v`는 볼륨까지 삭제(주의).
 
 ## 디렉터리
 

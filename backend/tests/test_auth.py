@@ -222,3 +222,9 @@ def test_sync_all_upserts_excludes_and_prunes(client, migrated_engine, monkeypat
     with migrated_engine.connect() as conn:
         ids = {r.login_id for r in conn.execute(sa.select(Base.metadata.tables["app_users"]))}
     assert ids == {"hong.gil", "local.admin"}
+
+
+def test_health_is_exempt_from_auth(client, auth_on):
+    # 헬스체크는 인증 면제 — compose healthcheck·배포 검증용 (bpm 패턴)
+    res = client.get("/api/health")
+    assert res.status_code == 200 and res.json() == {"status": "ok"}

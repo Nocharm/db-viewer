@@ -44,6 +44,10 @@ AI 제안 엣지 ~330건, AI 요약 2건, 화이트리스트 2명.
 
 디자인 기준: `rules/frontend/design-app.md` (색·패턴·배지가 표와 일치하는지 대조).
 
+> ⚠ **한 번은 LAN IP로도 확인** (`http://<내 IP>:3000`) — bpm 운영 레슨: `localhost`는 secure
+> context라 서버(평문 HTTP + 원격 IP)에서만 터지는 문제(`crypto.*` 계열 undefined)가 재현되지
+> 않는다. LAN IP 접속이 서버 환경과 같은 조건이다.
+
 ## 3. 서버 배포 후에만 검증 가능한 것
 
 - Keycloak 로그인·silent 자동 로그인·로그아웃, 화이트리스트 **차단 화면**(비등록 계정 로그인)
