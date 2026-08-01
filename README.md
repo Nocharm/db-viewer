@@ -29,6 +29,19 @@ npm test                                     # vitest 단위 테스트
 서비스 DB는 PostgreSQL 16 (마이그레이션: `alembic upgrade head`). 로컬 설정은 `.env.example`를 `.env`로 복사.
 픽스처로 시작하려면: `python tools/fixture_gen.py --out fixtures` 후 `catalog.json`·`view_deps.json`을 ingest API로 POST.
 
+## 배포
+
+```bash
+cp .env.example .env   # POSTGRES_PASSWORD 등 채우기
+docker compose up -d --build
+```
+
+- **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
+- **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트
+  - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
+  - `w1_catalog_snapshot.json` — 정기 카탈로그 수집. env: `DB_VIEWER_API_BASE=http://182.199.63.71:6678`
+- Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의)
+
 ## 디렉터리
 
 ```

@@ -1,0 +1,60 @@
+# db-viewer 배포 — 외부 노출은 frontend 6678 단일 포트 (UI + /api 프록시)
+# n8n(182.199.63.71:5678)은 http://182.199.63.71:6678/api/ingest/* 로 POST한다
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dbviewer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: dbviewer
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbviewer -d dbviewer"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [dbviewer]
+
+  backend:
+    build: ./backend
+    # 기동 시 마이그레이션 후 서빙 / migrate then serve
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://dbviewer:${POSTGRES_PASSWORD}@postgres:5432/dbviewer
+      SOURCE_MODE: ${SOURCE_MODE}
+      LINEAGE_DEPTH_LIMIT: ${LINEAGE_DEPTH_LIMIT}
+      FIXTURE_DIR: ${FIXTURE_DIR}
+      SCAN_MAX_CONCURRENT: ${SCAN_MAX_CONCURRENT}
+      SCAN_FULL_RECHECK_TOP: ${SCAN_FULL_RECHECK_TOP}
+      SCAN_MIN_CONTAINMENT: ${SCAN_MIN_CONTAINMENT}
+      SCAN_NIGHT_START_HOUR: ${SCAN_NIGHT_START_HOUR}
+      SCAN_NIGHT_END_HOUR: ${SCAN_NIGHT_END_HOUR}
+      LOW_CARDINALITY_MIN_DISTINCT: ${LOW_CARDINALITY_MIN_DISTINCT}
+      LOW_CARDINALITY_BLACKLIST: ${LOW_CARDINALITY_BLACKLIST}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [dbviewer]
+
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "6678:3000"   # 배포 주소: http://182.199.63.71:6678
+    depends_on: [backend]
+    networks: [dbviewer]
+
+networks:
+  dbviewer:
+    driver: bridge
+    ipam:
+      config:
+        # 사내 대역 충돌 회피 요청값 — 주의: 172.48/16은 RFC1918 사설 대역이 아님
+        # requested to dodge corporate ranges; note 172.48/16 is public space
+        - subnet: 172.48.0.0/16
+          gateway: 172.48.0.1
+
+volumes:
+  pgdata:
