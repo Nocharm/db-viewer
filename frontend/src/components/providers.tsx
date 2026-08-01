@@ -12,6 +12,7 @@ import {
 } from "react";
 import { AuthProvider, useAuth } from "react-oidc-context";
 
+import { LangProvider } from "@/components/i18n";
 import { fetchMe, setAuthToken, type Me } from "@/lib/api";
 import { markAutoLoginTried, saveReturnTo } from "@/lib/auth-return";
 
@@ -104,11 +105,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export function Providers({ children }: { children: React.ReactNode }) {
   const mounted = useMounted();
   if (!mounted) return null;
-  if (!AUTH_ENABLED) return <MeGate>{children}</MeGate>;
+  if (!AUTH_ENABLED) return <LangProvider><MeGate>{children}</MeGate></LangProvider>;
   return (
-    <AuthProvider {...buildOidcConfig()}>
-      <AuthGate>{children}</AuthGate>
-    </AuthProvider>
+    <LangProvider>
+      <AuthProvider {...buildOidcConfig()}>
+        <AuthGate>{children}</AuthGate>
+      </AuthProvider>
+    </LangProvider>
   );
 }
 

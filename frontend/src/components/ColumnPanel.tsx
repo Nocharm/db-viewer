@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import {
   confirmRelation,
   fetchCandidates,
@@ -43,6 +44,7 @@ const SIGNAL_LABELS: Record<string, string> = {
 };
 
 export function ColumnPanel({ column, onClose }: Props) {
+  const { t } = useI18n();
   const [candidates, setCandidates] = useState<CandidatesResponse | null>(null);
   const [selected, setSelected] = useState<CandidateItem | null>(null);
   const [result, setResult] = useState<ContainmentResponse | null>(null);
@@ -149,7 +151,7 @@ export function ColumnPanel({ column, onClose }: Props) {
           ))}
           {candidates.candidates.length === 0 && (
             <li className="px-2 py-1 text-sm" style={{ color: "var(--muted)" }}>
-              후보 없음
+              {t("panel.noCandidates")}
             </li>
           )}
         </ul>
@@ -162,13 +164,13 @@ export function ColumnPanel({ column, onClose }: Props) {
             <button className="btn-primary" disabled={busy}
                     onClick={() => verify(selected)}
                     data-testid="ColumnPanel-verifyButton">
-              T2 검증
+              {t("panel.verify")}
             </button>
             <button className="btn-secondary" disabled={busy}
                     onClick={() => run(async () =>
                       setPreview(await runPreview(column.id, selected.column_id)))}
                     data-testid="ColumnPanel-previewButton">
-              미리보기 20행
+              {t("panel.preview20")}
             </button>
             <button className="btn-secondary" disabled={busy || !result}
                     onClick={() => run(async () => {
@@ -176,7 +178,7 @@ export function ColumnPanel({ column, onClose }: Props) {
                       setConfirmed(true);
                     })}
                     data-testid="ColumnPanel-confirmButton">
-              확정
+              {t("panel.confirm")}
             </button>
             {confirmed && (
               <span className="badge badge--confirmed" data-testid="ColumnPanel-confirmedBadge">
@@ -229,7 +231,7 @@ export function ColumnPanel({ column, onClose }: Props) {
 
           {history.length > 0 && (
             <div className="mt-3" data-testid="ColumnPanel-historyList">
-              <div className="text-xs font-medium">검증 이력</div>
+              <div className="text-xs font-medium">{t("panel.history")}</div>
               {history.map((h, i) => (
                 <div key={i} className="text-xs" style={{ color: "var(--slate)" }}>
                   {new Date(h.observed_at).toLocaleString()} —{" "}

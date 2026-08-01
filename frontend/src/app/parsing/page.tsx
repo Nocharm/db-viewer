@@ -5,9 +5,11 @@
 import { useEffect, useState } from "react";
 
 import { AppHeader } from "@/components/AppHeader";
+import { useI18n } from "@/components/i18n";
 import { fetchParseStats, fetchSnapshots, type ParseStats } from "@/lib/api";
 
 export default function ParsingPage() {
+  const { t } = useI18n();
   const [stats, setStats] = useState<ParseStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +33,7 @@ export default function ParsingPage() {
       </p>
     );
   } else if (!stats) {
-    content = <p className="p-6" style={{ color: "var(--muted)" }}>불러오는 중…</p>;
+    content = <p className="p-6" style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
   }
   if (content) {
     return (
@@ -45,12 +47,12 @@ export default function ParsingPage() {
 
   // 위험 지표는 값이 있을 때만 에러색 — 0이면 조용히 / danger color only when nonzero
   const tiles: { label: string; value: number; danger?: boolean }[] = [
-    { label: "전체 뷰", value: stats.total_views },
-    { label: "파싱 성공", value: stats.counts.ok ?? 0 },
-    { label: "부분 해석", value: stats.counts.partial ?? 0 },
-    { label: "미지원", value: stats.counts.unsupported ?? 0, danger: true },
-    { label: "파싱 실패", value: stats.counts.parse_failed ?? 0, danger: true },
-    { label: "정의 없음(권한)", value: stats.counts.no_definition ?? 0 },
+    { label: t("parsing.totalViews"), value: stats.total_views },
+    { label: t("parsing.ok"), value: stats.counts.ok ?? 0 },
+    { label: t("parsing.partial"), value: stats.counts.partial ?? 0 },
+    { label: t("parsing.unsupported"), value: stats.counts.unsupported ?? 0, danger: true },
+    { label: t("parsing.failed"), value: stats.counts.parse_failed ?? 0, danger: true },
+    { label: t("parsing.noDefinition"), value: stats.counts.no_definition ?? 0 },
   ];
 
   return (
@@ -59,7 +61,8 @@ export default function ParsingPage() {
       <div className="scroll-area min-h-0 flex-1">
         <div className="mx-auto max-w-4xl p-6" data-testid="ParsingPage-root">
           <h1 className="mb-5 text-2xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-            파싱 지표 <span style={{ color: "var(--muted)" }}>— 스냅샷 #{stats.snapshot_id}</span>
+            {t("parsing.title")}{" "}
+            <span style={{ color: "var(--muted)" }}>— {t("parsing.snapshot")} #{stats.snapshot_id}</span>
           </h1>
       <div className="mb-6 grid grid-cols-4 gap-3">
         {/* 히어로 스탯 — 성공률이 첫 시선 / success rate leads the eye in yellow */}
@@ -67,7 +70,7 @@ export default function ParsingPage() {
              data-testid="ParsingPage-successRateTile">
           <div className="mb-2 text-xs font-semibold uppercase tracking-widest"
                style={{ color: "var(--muted)" }}>
-            파싱 성공률
+            {t("parsing.successRate")}
           </div>
           <div className="stat-number" style={{ fontSize: 56, letterSpacing: "-1.5px" }}>
             {stats.success_rate !== null ? `${(stats.success_rate * 100).toFixed(1)}%` : "—"}
@@ -84,13 +87,13 @@ export default function ParsingPage() {
         ))}
       </div>
 
-      <h2 className="mb-2 text-sm font-medium">격리된 뷰 (파싱 실패 · 미지원)</h2>
+      <h2 className="mb-2 text-sm font-medium">{t("parsing.isolated")}</h2>
       <table className="w-full text-sm" data-testid="ParsingPage-failedTable">
         <thead>
           <tr className="border-b text-left" style={{ borderColor: "var(--hairline)" }}>
-            <th className="py-1.5">뷰</th>
-            <th>상태</th>
-            <th>오류</th>
+            <th className="py-1.5">{t("parsing.view")}</th>
+            <th>{t("parsing.status")}</th>
+            <th>{t("parsing.error")}</th>
           </tr>
         </thead>
         <tbody>
@@ -103,7 +106,7 @@ export default function ParsingPage() {
             </tr>
           ))}
           {stats.failed_views.length === 0 && (
-            <tr><td className="py-2" style={{ color: "var(--muted)" }} colSpan={3}>없음</td></tr>
+            <tr><td className="py-2" style={{ color: "var(--muted)" }} colSpan={3}>{t("common.none")}</td></tr>
           )}
         </tbody>
       </table>

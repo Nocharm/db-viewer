@@ -4,11 +4,15 @@
 
 import { useLogout } from "@/components/providers";
 
-export function LogoutButton() {
+export function LogoutButton({ label = "로그아웃" }: { label?: string }) {
   const logout = useLogout();
   return (
-    <button className="icon-button" onClick={logout} data-testid="Home-logoutButton">
-      로그아웃
+    <button
+      className="pressable w-full rounded px-2 py-1.5 text-left text-sm hover:bg-[var(--soft-stone)]"
+      onClick={logout}
+      data-testid="Home-logoutButton"
+    >
+      {label}
     </button>
   );
 }

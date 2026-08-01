@@ -4,7 +4,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "db-viewer",
+  title: "db-viewer — DB 스키마·관계 탐색기",
   description: "MSSQL schema, lineage and relation explorer",
 };
 

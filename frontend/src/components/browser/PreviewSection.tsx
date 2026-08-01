@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
+  const { t } = useI18n();
   const [filterColumn, setFilterColumn] = useState(preview.filter?.column ?? "");
   const [filterValue, setFilterValue] = useState(preview.filter?.value ?? "");
 
@@ -32,16 +34,16 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h3 className="text-base font-semibold tracking-tight" style={{ color: "var(--ink)" }}>
-          미리보기 — <span className="font-mono">{preview.object}</span>
+          {t("preview.title")} — <span className="font-mono">{preview.object}</span>
         </h3>
         <span className="badge badge--muted">TOP {preview.limit}</span>
         {preview.masked_columns.length > 0 && (
           <span className="badge badge--muted">
-            마스킹 {preview.masked_columns.length}컬럼
+            {t("preview.masked")} {preview.masked_columns.length}{t("preview.maskedSuffix")}
           </span>
         )}
         <span className="text-sm" style={{ color: "var(--muted)" }}>
-          {preview.rows.length}건
+          {preview.rows.length}{t("preview.rowsSuffix")}
           {preview.filter && ` — ${preview.filter.column} ~ "${preview.filter.value}"`}
         </span>
       </div>
@@ -56,7 +58,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           onChange={(e) => setFilterColumn(e.target.value)}
           data-testid="PreviewSection-filterColumnSelect"
         >
-          <option value="">필터 컬럼 선택</option>
+          <option value="">{t("preview.selectColumn")}</option>
           {preview.columns.map((column) => (
             <option key={column} value={column}>{column}</option>
           ))}
@@ -64,7 +66,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
         <input
           className="h-10 w-56 rounded-lg border px-3 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
-          placeholder="값 (부분 일치)"
+          placeholder={t("preview.valuePlaceholder")}
           value={filterValue}
           onChange={(e) => setFilterValue(e.target.value)}
           onKeyDown={(e) => {
@@ -78,15 +80,15 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           onClick={() => onSearch(filterColumn, filterValue.trim())}
           data-testid="PreviewSection-searchButton"
         >
-          {loading ? "조회 중…" : "조건으로 재조회"}
+          {loading ? t("detail.loading") : t("preview.requery")}
         </button>
         <span className="text-xs" style={{ color: "var(--muted)" }}>
-          원본에 새 질의를 보냅니다 (로컬은 합성 데이터)
+          {t("preview.requeryHint")}
         </span>
         {preview.filter && (
           <button className="icon-button" onClick={onClear}
                   data-testid="PreviewSection-clearButton">
-            필터 해제
+            {t("preview.clear")}
           </button>
         )}
       </div>
@@ -119,7 +121,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
               <tr>
                 <td className="px-3 py-4" style={{ color: "var(--muted)" }}
                     colSpan={preview.columns.length} data-testid="PreviewSection-emptyState">
-                  조건에 맞는 행 없음 — 필터를 완화해 보세요
+                  {t("preview.empty")}
                 </td>
               </tr>
             )}

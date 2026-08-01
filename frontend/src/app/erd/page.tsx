@@ -6,6 +6,7 @@ import { Suspense, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
+import { useI18n } from "@/components/i18n";
 import { ColumnPanel, type SelectedColumn } from "@/components/ColumnPanel";
 import { ErdCanvas } from "@/components/erd/ErdCanvas";
 import { SearchPanel } from "@/components/SearchPanel";
@@ -30,6 +31,7 @@ function anchorFromParams(id: string | null, label: string | null): ObjectSummar
 }
 
 function ErdPageInner() {
+  const { t } = useI18n();
   const params = useSearchParams();
   const [anchor, setAnchor] = useState<ObjectSummary | null>(() =>
     anchorFromParams(params.get("anchor"), params.get("label")));
@@ -63,17 +65,17 @@ function ErdPageInner() {
     <div className="flex h-screen flex-col overflow-hidden">
       <AppHeader>
         <span className="text-sm" style={{ color: "var(--muted)" }}>
-          {anchor ? `${anchor.schema}.${anchor.name}` : "테이블을 검색해 시작하세요"}
+          {anchor ? `${anchor.schema}.${anchor.name}` : t("erd.startHint")}
         </span>
         <button
           className="icon-button"
           onClick={() => {
             void suggestRelationsAi().then((res) =>
-              setAiNotice(`AI 제안 ${res.created}건 생성 — 검증 큐에서 확인`));
+              setAiNotice(t("erd.aiNotice").replace("{n}", String(res.created))));
           }}
           data-testid="Home-aiSuggestButton"
         >
-          AI 관계 제안
+          {t("erd.aiSuggest")}
         </button>
         {aiNotice && (
           <span className="text-sm" style={{ color: "var(--slate)" }}

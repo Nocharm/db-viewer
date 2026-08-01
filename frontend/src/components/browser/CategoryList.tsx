@@ -2,6 +2,8 @@
 
 /** 좌측 1열 — 테이블 카테고리 / business categories. */
 
+import { useI18n } from "@/components/i18n";
+
 export interface CategoryEntry {
   code: string;
   label: string;
@@ -16,6 +18,7 @@ interface Props {
 }
 
 export function CategoryList({ categories, selected, totalCount, onSelect }: Props) {
+  const { t } = useI18n();
   return (
     <aside
       className="card scroll-area w-44 shrink-0 py-3"
@@ -26,7 +29,7 @@ export function CategoryList({ categories, selected, totalCount, onSelect }: Pro
         onClick={() => onSelect(null)}
         data-testid="CategoryList-all"
       >
-        <span className="flex-1">전체</span>
+        <span className="flex-1">{t("category.all")}</span>
         <span className="text-xs" style={{ color: "var(--muted)" }}>{totalCount}</span>
       </button>
       {categories.map((category) => (

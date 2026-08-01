@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import type { JoinKeyItem } from "@/lib/api";
 
 // 한눈에 스캔 가능한 칩 수 — 나머지는 +N 뒤로 / chips scannable at a glance
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function JoinKeyBar({ items, selected, onSelect }: Props) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, VISIBLE_KEYS);
   // 접힌 목록 밖의 선택 키는 항상 보이게 / a hidden selected key stays visible
@@ -35,7 +37,7 @@ export function JoinKeyBar({ items, selected, onSelect }: Props) {
           onClick={() => onSelect(null)}
           data-testid="JoinKeyBar-allChip"
         >
-          전체
+          {t("joinkeys.all")}
         </button>
         {[...pinned, ...visible].map((item) => (
           <button
@@ -56,7 +58,7 @@ export function JoinKeyBar({ items, selected, onSelect }: Props) {
             onClick={() => setExpanded((cur) => !cur)}
             data-testid="JoinKeyBar-moreButton"
           >
-            {expanded ? "접기" : `+${hiddenCount}`}
+            {expanded ? t("joinkeys.fold") : `+${hiddenCount}`}
           </button>
         )}
       </div>

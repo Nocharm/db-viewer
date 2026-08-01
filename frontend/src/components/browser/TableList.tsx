@@ -2,6 +2,7 @@
 
 /** 좌측 2열 — 테이블명 목록 + 강화 검색(초성·컬럼·하이라이트). / table list with rich search. */
 
+import { useI18n } from "@/components/i18n";
 import type { SearchMatch } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 
@@ -30,6 +31,7 @@ function Highlight({ text, range }: { text: string; range: [number, number] | nu
 }
 
 export function TableList({ items, selectedId, query, onQuery, onSelect }: Props) {
+  const { t } = useI18n();
   return (
     <aside
       className="card flex w-80 shrink-0 flex-col"
@@ -39,7 +41,7 @@ export function TableList({ items, selectedId, query, onQuery, onSelect }: Props
         <input
           className="w-full rounded-lg border px-3.5 py-2 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--border-light)" }}
-          placeholder="테이블·컬럼·카테고리 검색 (초성 가능)"
+          placeholder={t("tablelist.searchPlaceholder")}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           data-testid="TableList-filterInput"
@@ -60,7 +62,7 @@ export function TableList({ items, selectedId, query, onQuery, onSelect }: Props
               {match.matchedColumn && (
                 <span className="mt-0.5 block truncate text-[11px]"
                       style={{ color: "var(--slate)" }}>
-                  컬럼: <Highlight text={match.matchedColumn} range={match.columnRange} />
+                  {t("tablelist.columnPrefix")}: <Highlight text={match.matchedColumn} range={match.columnRange} />
                 </span>
               )}
             </span>
@@ -72,7 +74,7 @@ export function TableList({ items, selectedId, query, onQuery, onSelect }: Props
         {items.length === 0 && (
           <p className="px-4 py-3 text-sm" style={{ color: "var(--muted)" }}
              data-testid="TableList-emptyState">
-            조건에 맞는 테이블 없음
+            {t("tablelist.empty")}
           </p>
         )}
       </div>

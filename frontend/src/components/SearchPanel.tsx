@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { searchObjects, searchTablesAi } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
 
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function SearchPanel({ onSelect, selectedId }: Props) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "table" | "view">("");
   const [items, setItems] = useState<ObjectSummary[]>([]);
@@ -59,7 +61,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         <input
           className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--border-light)" }}
-          placeholder="검색 (2자+) — ?로 시작하면 AI 탐색"
+          placeholder={t("erd.searchPlaceholder")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           data-testid="SearchPanel-queryInput"
@@ -71,9 +73,9 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
           onChange={(e) => setTypeFilter(e.target.value as "" | "table" | "view")}
           data-testid="SearchPanel-typeSelect"
         >
-          <option value="">전체</option>
-          <option value="table">테이블</option>
-          <option value="view">뷰</option>
+          <option value="">{t("erd.typeAll")}</option>
+          <option value="table">{t("erd.typeTable")}</option>
+          <option value="view">{t("erd.typeView")}</option>
         </select>
       </div>
 
@@ -106,7 +108,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         {q.length >= 2 && items.length === 0 && !error && (
           <li className="px-3 py-2 text-sm" style={{ color: "var(--muted)" }}
               data-testid="SearchPanel-emptyState">
-            결과 없음
+            {t("erd.noResults")}
           </li>
         )}
       </ul>
