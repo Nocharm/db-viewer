@@ -94,8 +94,8 @@ def test_ai_candidates_render_as_ai_suggested_edges(client, load_fixture):
 
 def test_search_tables_endpoint(client, load_fixture):
     _seed(client, load_fixture)
-    body = client.get("/api/ai/search-tables", params={"q": "CHAIN"}).json()
-    assert body["items"] == []  # CHAIN은 뷰 이름 — 테이블 탐색이므로 미포함
+    body = client.get("/api/ai/search-tables", params={"q": "ZZQX_NOPE"}).json()
+    assert body["items"] == []  # 매칭 없음 — 빈 결과 상태
 
     manifest = load_fixture("manifest.json")
     trap = manifest["cases"]["low_cardinality"][0]

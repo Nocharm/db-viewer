@@ -39,17 +39,117 @@ _TABLE_NOUNS = [
     "GRP", "RATE", "SPEC", "STAT", "SUM", "TRAN", "BASE", "REL", "SET", "INFO",
     "LOG", "TMP", "CHG", "APRV", "FILE",
 ]
+
+# 모듈별 도메인 엔티티 — 첫 항목이 모듈 마스터 / per-module entities, first is the master.
+# 실DB와 유사한 수준의 네이밍(UI 리뷰용) — 부족분은 _TABLE_NOUNS로 폴백.
+MODULE_NOUNS: dict[str, list[str]] = {
+    "HR": ["EMP", "EMP_FAMILY", "APPOINT", "SALARY", "ATTEND", "LEAVE", "CERT",
+           "EDU_HIST", "EVAL", "PROMOTION", "RETIRE", "DISPATCH", "SHIFT", "APRV", "LOG"],
+    "ORG": ["DEPT", "DEPT_HIST", "POSITION", "DUTY", "TEAM_MAP", "CHART", "AUTH_GRP"],
+    "ORD": ["SO_HDR", "SO_DTL", "CUST_PO", "QUOTE_HDR", "QUOTE_DTL", "DELIVERY_REQ",
+            "BACKORDER", "RETURN_HDR", "RETURN_DTL", "CONTRACT", "PRICE_AGREE", "CREDIT"],
+    "ITM": ["ITEM", "ITEM_SPEC", "ITEM_UOM", "ITEM_PRICE", "ITEM_CLASS", "ITEM_BARCODE",
+            "ITEM_VENDOR", "ITEM_REV", "ITEM_ATTACH"],
+    "PRD": ["WORK_ORD", "WORK_RSLT", "ROUTING", "ROUTING_STEP", "LINE", "LINE_STOP",
+            "SHIFT_RSLT", "REWORK", "SCRAP", "YIELD", "PKG_ORD", "PKG_RSLT"],
+    "BOM": ["BOM_HDR", "BOM_DTL", "BOM_REV", "ALT_ITEM", "WHERE_USED", "ECO"],
+    "SHP": ["SHIP_ORD", "SHIP_RSLT", "PACKING_HDR", "PACKING_DTL", "INVOICE",
+            "CARRIER", "CONTAINER", "EXPORT_DOC", "TRACKING", "COLD_CHAIN"],
+    "INV": ["STOCK", "STOCK_MOVE", "STOCK_ADJ", "CYCLE_COUNT", "SAFETY_STOCK",
+            "EXPIRY", "HOLD", "ALLOC"],
+    "WMS": ["WAREHOUSE", "LOCATION", "PUTAWAY", "PICKING", "PICKING_DTL",
+            "REPLENISH", "TASK", "DOCK"],
+    "PUR": ["PO_HDR", "PO_DTL", "PR_HDR", "PR_DTL", "RFQ", "GR_HDR", "GR_DTL",
+            "INSPECT_REQ", "SUPPLIER_EVAL"],
+    "VND": ["VENDOR", "VENDOR_CONTACT", "VENDOR_ITEM", "VENDOR_EVAL", "VENDOR_CERT"],
+    "FIN": ["AR_INVOICE", "AP_INVOICE", "PAYMENT", "RECEIPT", "TAX_INVOICE",
+            "EXCHANGE_RATE", "BUDGET", "COST_CENTER", "SETTLE_HDR", "SETTLE_DTL"],
+    "ACC": ["ACCOUNT", "JOURNAL_HDR", "JOURNAL_DTL", "LEDGER", "CLOSING",
+            "SLIP_HDR", "SLIP_DTL", "ASSET", "DEPRECIATION"],
+    "CST": ["COST_ROLLUP", "COST_ITEM", "ACTIVITY_RATE", "VARIANCE", "ABC_DRIVER"],
+    "CRM": ["CUSTOMER", "CUST_CONTACT", "CUST_ADDR", "LEAD", "OPPORTUNITY",
+            "CLAIM", "VOC", "CAMPAIGN"],
+    "QC": ["SAMPLE", "SAMPLE_RSLT", "TEST_ITEM", "TEST_SPEC", "DEVIATION",
+           "CAPA", "RELEASE", "RETEST"],
+    "EQP": ["EQUIP", "EQUIP_SPEC", "CALIB", "CALIB_RSLT", "SENSOR", "ALARM_HIST"],
+    "MNT": ["PM_PLAN", "PM_ORD", "PM_RSLT", "BREAKDOWN", "SPARE_PART"],
+    "PLN": ["MPS", "MRP_RUN", "MRP_RSLT", "DEMAND", "SUPPLY", "CAPA_PLAN"],
+    "MES": ["BATCH_HDR", "BATCH_STEP", "BATCH_PARAM", "EBR", "RECIPE",
+            "RECIPE_STEP", "PROCESS_VAL", "CLEANING", "ENV_MONITOR", "WEIGHING",
+            "LABEL_ISSUE", "MATERIAL_USE"],
+    "LAB": ["LIMS_SAMPLE", "LIMS_RSLT", "INSTRUMENT", "REAGENT", "STABILITY"],
+    "EDU": ["COURSE", "ENROLL", "COMPLETE", "GMP_TRAINING"],
+    "DOC": ["DOC_MST", "DOC_REV", "SOP", "APPROVAL_LINE", "DISTRIBUTE"],
+    "SYS": ["USER", "ROLE", "USER_ROLE", "MENU", "CODE_MST", "CODE_DTL", "CONFIG"],
+    "LOG": ["ACCESS_LOG", "JOB_LOG", "IF_LOG", "ERROR_LOG", "AUDIT_TRAIL"],
+    "APV": ["APRV_DOC", "APRV_LINE", "APRV_HIST", "DELEGATE"],
+    "EXT": ["IF_SAP", "IF_LIMS", "IF_WMS", "IF_HR", "EDI_IN", "EDI_OUT"],
+}
+
+# 모듈 테마 컬럼 — 테이블마다 몇 개씩 우선 배치 / thematic columns placed before fillers
+MODULE_COLS: dict[str, list[str]] = {
+    "HR": ["EMP_NM", "DEPT_CD", "POSITION_CD", "HIRE_YMD", "BIRTH_YMD", "EMAIL"],
+    "ORG": ["DEPT_NM", "UP_DEPT_CD", "DEPT_LVL", "MGR_EMP_NO"],
+    "ORD": ["CUST_CD", "ITEM_CD", "ORD_QTY", "ORD_AMT", "DUE_YMD", "CURRENCY_CD"],
+    "ITM": ["ITEM_NM", "ITEM_TYPE_CD", "UOM_CD", "SPEC_TXT", "MAKER_NM"],
+    "PRD": ["PLANT_CD", "LINE_CD", "ITEM_CD", "PLAN_QTY", "GOOD_QTY", "DEFECT_QTY"],
+    "BOM": ["PARENT_ITEM_CD", "CHILD_ITEM_CD", "USAGE_QTY", "LOSS_RATE"],
+    "SHP": ["CUST_CD", "ITEM_CD", "SHIP_QTY", "SHIP_YMD", "CARRIER_CD", "TEMP_ZONE_CD"],
+    "INV": ["WH_CD", "ITEM_CD", "LOT_NO", "STOCK_QTY", "EXP_YMD"],
+    "WMS": ["WH_CD", "LOC_CD", "ITEM_CD", "LOT_NO", "QTY"],
+    "PUR": ["VENDOR_CD", "ITEM_CD", "PO_QTY", "PO_AMT", "DUE_YMD"],
+    "VND": ["VENDOR_NM", "BIZ_NO", "CEO_NM", "TEL_NO", "COUNTRY_CD"],
+    "FIN": ["CUST_CD", "AMT", "CURRENCY_CD", "DUE_YMD", "SETTLE_YMD"],
+    "ACC": ["ACCT_CD", "DR_AMT", "CR_AMT", "SLIP_YMD", "REMARK"],
+    "CST": ["ITEM_CD", "COST_AMT", "PERIOD_YM", "COST_TYPE_CD"],
+    "CRM": ["CUST_NM", "GRADE_CD", "OWNER_EMP_NO", "TEL_NO", "EMAIL"],
+    "QC": ["ITEM_CD", "LOT_NO", "TEST_CD", "RSLT_VAL", "JUDGE_CD", "TESTER_EMP_NO"],
+    "EQP": ["EQUIP_NM", "MODEL_NM", "INSTALL_YMD", "PLANT_CD", "LINE_CD"],
+    "MNT": ["EQUIP_CD", "PM_CYCLE_CD", "PLAN_YMD", "RSLT_YMD", "WORKER_EMP_NO"],
+    "PLN": ["ITEM_CD", "PLAN_YM", "PLAN_QTY", "FIRM_QTY", "PLANT_CD"],
+    "MES": ["BATCH_NO", "ITEM_CD", "RECIPE_CD", "START_DT", "END_DT", "OPERATOR_EMP_NO"],
+    "LAB": ["SAMPLE_NO", "ITEM_CD", "LOT_NO", "TEST_CD", "RSLT_VAL", "INSTRUMENT_CD"],
+    "EDU": ["COURSE_NM", "EMP_NO", "COMPLETE_YMD", "SCORE_VAL"],
+    "DOC": ["DOC_NM", "REV_NO", "WRITER_EMP_NO", "EFFECT_YMD"],
+    "SYS": ["USER_NM", "ROLE_CD", "MENU_NM", "SORT_NO"],
+    "LOG": ["USER_ID", "IP_ADDR", "ACTION_CD", "TARGET_TXT", "OCCUR_DT"],
+    "APV": ["DOC_TITLE", "DRAFTER_EMP_NO", "APRV_EMP_NO", "APRV_YMD", "APRV_STATUS_CD"],
+    "EXT": ["IF_ID", "SEND_DT", "RECV_DT", "RSLT_CD", "MSG_TXT"],
+}
+
 _FILLER_NAMES = [
-    "NM", "DESC_TXT", "QTY", "AMT", "PRC", "CNT", "RMK", "SEQ_NO", "SORT_NO",
+    "ITEM_CD", "CUST_CD", "VENDOR_CD", "PLANT_CD", "LINE_CD", "WH_CD", "LOT_NO",
+    "QTY", "AMT", "UNIT_PRICE", "CNT", "REMARK", "SEQ_NO", "SORT_NO",
     "BASE_YMD", "START_DT", "END_DT", "UNIT_CD", "TYPE_CD", "KIND_CD", "VER_NO",
-    "RATE_VAL", "WGT_VAL", "SIZE_VAL", "ADDR_TXT", "TEL_NO", "EMAIL_TXT", "URL_TXT",
-    "MEMO_TXT", "TAG_TXT", "REF_NO", "EXT_CD", "LOT_NO", "BATCH_NO", "LINE_NO",
+    "RATE_VAL", "WGT_VAL", "SIZE_VAL", "ADDR_TXT", "TEL_NO", "EMAIL", "URL_TXT",
+    "MEMO_TXT", "TAG_TXT", "REF_NO", "EXT_CD", "BATCH_NO", "LINE_NO", "GRADE_CD",
+    "APPROVE_YMD", "CONFIRM_YN_DT", "PERIOD_YM", "CURRENCY_CD", "EXCH_RATE",
 ]
 # (data_type, max_length_bytes) — sys.columns.max_length 의미와 동일 / matches sys.columns semantics
 _FILLER_TYPES = [
     ("int", 4), ("bigint", 8), ("decimal", 9), ("datetime2", 8), ("date", 3),
     ("varchar", 20), ("varchar", 50), ("varchar", 100), ("nvarchar", 200), ("char", 1),
 ]
+
+# 접미사 → 타입 관례 — 노드 패널에 보이는 타입의 사실성 / suffix-driven type convention
+_SUFFIX_TYPES: list[tuple[tuple[str, ...], tuple[str, int]]] = [
+    (("LOT_NO", "BATCH_NO", "BIZ_NO", "TEL_NO", "REF_NO"), ("varchar", 20)),
+    (("_NM", "_TXT", "_TITLE", "TITLE"), ("nvarchar", 200)),
+    (("_CD",), ("varchar", 20)),
+    (("_YMD",), ("char", 8)),
+    (("_YM",), ("char", 6)),
+    (("_DT",), ("datetime2", 8)),
+    (("_QTY", "_AMT", "_PRICE", "_RATE", "_VAL", "_SCORE", "RATE"), ("decimal", 9)),
+    (("_NO", "_ID", "_SEQ", "_CNT", "_LVL"), ("int", 4)),
+    (("EMAIL", "URL_TXT", "IP_ADDR"), ("varchar", 100)),
+]
+
+
+def _type_for(column_name: str, fallback: tuple[str, int]) -> tuple[str, int]:
+    for suffixes, type_pair in _SUFFIX_TYPES:
+        if any(column_name.endswith(s) for s in suffixes):
+            return type_pair
+    return fallback
 
 TABLE_OID_BASE = 1_000_000
 VIEW_OID_BASE = 2_000_000
@@ -114,11 +214,15 @@ class _Gen:
         rng = self.rng
         for prefix, count in MODULES:
             style = rng.choice(["T_", "TB_", ""])  # 모듈별 네이밍 편차 / per-module naming drift
+            domain_pool = MODULE_NOUNS.get(prefix, [])
             used_nouns: set[str] = set()
             for i in range(count):
-                noun = "MST" if i == 0 else rng.choice(
-                    [n for n in _TABLE_NOUNS if n not in used_nouns] or _TABLE_NOUNS
-                )
+                if i < len(domain_pool):
+                    noun = domain_pool[i]  # 첫 항목이 모듈 마스터 / first entry is the master
+                else:
+                    noun = rng.choice(
+                        [n for n in _TABLE_NOUNS if n not in used_nouns] or _TABLE_NOUNS
+                    )
                 used_nouns.add(noun)
                 name = f"{style}{prefix}_{noun}"
                 oid = self._next_table_oid = self._next_table_oid + 1
@@ -129,12 +233,21 @@ class _Gen:
                 }
                 self.tables.append(table)
                 self.columns[oid] = []
-                pk_name = f"{prefix}_{rng.choice(['NO', 'ID', 'CD', 'SEQ'])}"
+                # PK는 엔티티 첫 토큰 기반 — SO_NO·EMP_NO 류 / entity-derived key name
+                pk_base = noun.split("_")[0]
+                pk_name = f"{pk_base}_{rng.choice(['NO', 'ID', 'CD', 'SEQ'])}"
                 self.add_column(oid, pk_name, "int", 4, is_nullable=False)
                 self.key_constraints.append(
                     {"name": f"PK_{name}", "type": "pk", "object_id": oid, "columns": [pk_name]}
                 )
                 table["_pk"] = pk_name
+                # 모듈 테마 컬럼 우선 배치 / thematic columns before generic fillers
+                for col_name in rng.sample(
+                    MODULE_COLS.get(prefix, []),
+                    k=min(len(MODULE_COLS.get(prefix, [])), rng.randint(3, 6)),
+                ):
+                    dt, ln = _type_for(col_name, rng.choice(_FILLER_TYPES))
+                    self.add_column(oid, col_name, dt, ln, is_nullable=rng.random() < 0.5)
 
     # ---------- relations ----------
 
@@ -228,7 +341,7 @@ class _Gen:
         while deficit > 0:
             t = rng.choice(self.tables)
             nm = rng.choice(_FILLER_NAMES)
-            dt, ln = rng.choice(_FILLER_TYPES)
+            dt, ln = _type_for(nm, rng.choice(_FILLER_TYPES))
             self.add_column(t["object_id"], nm, dt, ln, is_nullable=rng.random() < 0.6)
             deficit -= 1
 
@@ -412,6 +525,8 @@ class _Gen:
             simple_views.append((v, t))
 
         # JOIN 뷰 — ON 조건이 관계 추론 최상위 신호 / join views feed Phase 2's top signal
+        purposes = ["SUMMARY", "LIST", "DAILY", "MONTHLY", "DETAIL", "STAT", "CURR", "RPT"]
+        taken_names = {v["name"] for v in self.views}
         for i, rel in enumerate(rng.sample(self.relations, 18)):
             child = self.table_by_oid(rel["src_object_id"])
             parent = self.table_by_oid(rel["tgt_object_id"])
@@ -425,9 +540,15 @@ class _Gen:
             join_type = rng.choice(["inner", "left"])
             kw = "JOIN" if join_type == "inner" else "LEFT JOIN"
             sel = ", ".join([f"c.{n}" for n in c_cols + [rel["src_column"]]] + [f"p.{n}" for n in p_cols])
+            # 업무형 뷰 이름 — V_ORD_SO_DTL_SUMMARY 류 / business-style view names
+            base = child["name"].removeprefix("TB_").removeprefix("T_")
+            view_name = f"V_{base}_{purposes[i % len(purposes)]}"
+            if view_name in taken_names:
+                view_name = f"{view_name}_{i:02d}"
+            taken_names.add(view_name)
             v = self._new_view(
-                f"V_JOIN_{child['name']}_{i:02d}",
-                f"CREATE VIEW dbo.V_JOIN_{child['name']}_{i:02d} AS SELECT {sel} "
+                view_name,
+                f"CREATE VIEW dbo.{view_name} AS SELECT {sel} "
                 f"FROM dbo.{child['name']} c {kw} dbo.{parent['name']} p "
                 f"ON c.{rel['src_column']} = p.{rel['tgt_column']}",
             )
@@ -440,20 +561,22 @@ class _Gen:
                 "join_type": join_type,
             })
 
-        # 중첩 뷰 2·3단 / nested views, depth 2 and 3
+        # 중첩 뷰 2·3단 — 집계·리포트 뷰 네이밍 / nested views named like reporting layers
         nested2 = []
         for v1, _ in rng.sample(simple_views, 8):
             names = [n for n in self.col_names(v1["object_id"]) if not n.endswith("_CALC")][:4]
-            v2 = self._new_view(f"V_N2_{v1['name'][2:]}",
-                                f"CREATE VIEW dbo.V_N2_{v1['name'][2:]} AS "
+            v2_name = f"V_SUM_{v1['name'].removeprefix('V_')}"
+            v2 = self._new_view(v2_name,
+                                f"CREATE VIEW dbo.{v2_name} AS "
                                 f"SELECT {', '.join(names)} FROM dbo.{v1['name']}")
             self._project(v2, v1, names, depth_from_base=self._direct_map_of(v1, names))
             self._inherit_phase1(v2, v1)
             nested2.append(v2)
         for v2 in rng.sample(nested2, 4):
             names = self.col_names(v2["object_id"])[:3]
-            v3 = self._new_view(f"V_N3_{v2['name'][5:]}",
-                                f"CREATE VIEW dbo.V_N3_{v2['name'][5:]} AS "
+            v3_name = f"V_RPT_{v2['name'].removeprefix('V_SUM_')}"
+            v3 = self._new_view(v3_name,
+                                f"CREATE VIEW dbo.{v3_name} AS "
                                 f"SELECT {', '.join(names)} FROM dbo.{v2['name']}")
             self._project(v3, v2, names, depth_from_base=self._direct_map_of(v2, names))
             self._inherit_phase1(v3, v2)

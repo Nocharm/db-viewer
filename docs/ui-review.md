@@ -19,23 +19,24 @@ python3 tools/seed_ui_states.py --base http://localhost:8000
 
 → http://localhost:3000 (auth OFF 개발 모드 — 로그인 없이 진입, 사용자 `dev.user`)
 
-시드가 만드는 상태: 확정 관계 1건(✓), 고신뢰 inferred(3회 관측), 저신뢰 inferred 2건(고아 포함),
-AI 제안 엣지 ~330건, AI 요약 2건, 화이트리스트 2명.
+시드가 만드는 상태: 확정 관계 1건(✓), inferred 3건(관측 횟수·고아 다양화),
+AI 제안 엣지 ~700건, AI 요약 2건, 화이트리스트 2명.
+더미데이터는 제조 ERP 유사 네이밍(HR_EMP·ORD_SO_HDR·MES_BATCH_HDR·QC_SAMPLE_RSLT 류).
 
 ## 2. 체크리스트 (픽스처 seed 42 기준 — 검색어 그대로 사용)
 
 | # | 확인 대상 | 방법 |
 |---|---|---|
-| 1 | **fk 실선(녹색) + ✓ confirmed** | `HR_APRV` 검색 → 캔버스. ✓ 라벨 엣지가 confirmed |
-| 2 | **inferred 파선 — 투명도 1.0** | `HR_LOG` 검색 → HR_MST로 향하는 파란 파선 |
-| 3 | **inferred 파선 — 투명도 0.45(저신뢰·고아)** | `BOM_STAT` 또는 `T_ITM_HIST` 검색 |
+| 1 | **엣지 4종 총집합** (fk 실선 13·lineage 점선 5·✓ confirmed 1·AI 파선 21, 26노드) | `HR_EMP` 검색 — 히어로 화면 |
+| 2 | **✓ confirmed만 좁게** | `HR_SALARY` 검색 (4노드) — EMP_NO → HR_EMP 확정 |
+| 3 | **inferred 파선(투명도 0.45단)** | `T_ORG_DUTY` 검색. ※ 투명도 0.7/1.0단은 confidence ≥0.95 필요 — 픽스처 규모(행수 가중치)로는 도달 불가, 실DB 대규모 관측에서 나타남 |
 | 4 | **ai_suggested 보라 파선 + AI 라벨** | 아무 앵커에나 다수 존재 |
 | 5 | **view_lineage 점선 + 뷰 접힘/펼침** | `V_CHAIN_05` 검색 → 뷰 노드 ▸ 토글로 펼치면 점선 노출 |
 | 6 | **depth_exceeded / cycle 배지** | `V_CHAIN_12`, `V_CYCLE_A` 검색 |
 | 7 | **DMV 격리 배지** | `V_DMV` 검색 (매 노드 헤더 배지) |
-| 8 | **AI 요약 툴팁 + AI 배지** | HR_APRV·HR_MST 노드 헤더에 AI 배지, hover 시 요약 |
+| 8 | **AI 요약 툴팁 + AI 배지** | HR_SALARY·HR_EMP 노드 헤더에 AI 배지, hover 시 요약 |
 | 9 | **저카디널리티 배지·사유** | 아무 테이블의 `USE_YN` 컬럼 클릭 → 패널에 제외 사유 |
-| 10 | **ColumnPanel 전체 플로우** | `HR_LOG` 노드에서 `HR_NO` 클릭 → 후보(신호 배지: 뷰JOIN/명명/PK) → T2 검증 → 결과 카드(containment·cardinality·confidence·패턴 라벨·이력) → 미리보기 20행 → 확정 → ✓ CONFIRMED 배지 |
+| 10 | **ColumnPanel 전체 플로우** | `T_ORG_DUTY` 노드에서 `DEPTCD` 클릭 → 후보(신호 배지) → T2 검증 → 결과 카드(containment·cardinality·confidence·패턴 라벨) + **기존 이력 3건** → 미리보기 20행 → 확정 → ✓ CONFIRMED 배지 |
 | 11 | **40노드 임계 확인 모달** | 노드의 `+` 버튼으로 이웃 확장 반복 (AI 엣지 때문에 2~3회면 초과) |
 | 12 | **검색 3종** | 일반 검색 / 타입 필터(테이블·뷰) / `?주문` 처럼 `?` 프리픽스 AI 탐색 |
 | 13 | **/parsing 지표 화면** | 헤더 "파싱 지표" — 타일 7개 + 격리 목록(V_PVT 2건: unsupported) |

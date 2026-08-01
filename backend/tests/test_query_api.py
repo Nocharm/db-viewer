@@ -21,11 +21,11 @@ def _find_object(client, name: str, type_filter: str | None = None) -> dict:
 
 def test_search_filters_by_name_and_type(client, load_fixture):
     _seed(client, load_fixture)
-    res = client.get("/api/objects", params={"q": "CHAIN"}).json()
-    assert res["items"] and all("CHAIN" in i["name"] for i in res["items"])
+    res = client.get("/api/objects", params={"q": "V_CHAIN"}).json()
+    assert res["items"] and all("V_CHAIN" in i["name"] for i in res["items"])
     assert all(i["type"] == "view" for i in res["items"])
 
-    tables_only = client.get("/api/objects", params={"q": "CHAIN", "type": "table"}).json()
+    tables_only = client.get("/api/objects", params={"q": "V_CHAIN", "type": "table"}).json()
     assert tables_only["items"] == []
 
 
