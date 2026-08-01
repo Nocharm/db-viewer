@@ -12,7 +12,9 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -54,6 +56,11 @@ class CatalogObject(Base):
     # MSSQL 원본 object_id — 서비스 PK(id)와 다르다 / native MSSQL object_id, not the service PK
     object_id: Mapped[int] = mapped_column(Integer)
     row_count: Mapped[int | None] = mapped_column(BigInteger)
+    # 뷰 DDL (sys.sql_modules) — NULL = 테이블이거나 VIEW DEFINITION 권한 차단
+    # view DDL; NULL means table or permission-blocked definition
+    definition: Mapped[str | None] = mapped_column(Text)
+    # dm_sql_referenced_entities 실패 격리 플래그 (계획 §1.1) / DMV failure isolation flag
+    dmv_unresolved: Mapped[bool] = mapped_column(Boolean, server_default=false())
 
     __table_args__ = (
         CheckConstraint("type IN ('table', 'view')", name="ck_objects_type"),

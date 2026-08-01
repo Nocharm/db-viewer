@@ -1,40 +1,11 @@
 """Migration and schema integrity tests. / 마이그레이션·스키마 정합성 테스트."""
 
-from pathlib import Path
-
 import pytest
 import sqlalchemy as sa
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 
 from app.models import Base
-
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture()
-def migrated_engine(tmp_path):
-    # Arrange: 마이그레이션 적용된 임시 SQLite / fresh SQLite with all migrations applied
-    url = f"sqlite:///{tmp_path / 'test.db'}"
-    cfg = Config(str(BACKEND_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", url)
-    command.upgrade(cfg, "head")
-    engine = sa.create_engine(url)
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture()
-def fk_conn(migrated_engine):
-    # SQLite는 FK 강제가 기본 꺼짐 — 테스트에서만 명시적으로 켠다
-    # SQLite disables FK enforcement by default; enable per-connection for tests
-    conn = migrated_engine.connect()
-    conn.exec_driver_sql("PRAGMA foreign_keys=ON")
-    yield conn
-    conn.close()
 
 
 def _insert_snapshot_tree(conn) -> tuple[int, int, int]:

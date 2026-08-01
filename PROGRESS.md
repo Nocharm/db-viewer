@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **정지점 4: 수집 SQL + ingest** — FastAPI 앱 + `/api/ingest/catalog`·`/api/ingest/view-deps` (픽스처 포맷 = 계약). is_pk는 key_constraints에서 파생, 미해석 참조는 텍스트 식별자 보존, 에러는 승인된 `{"error": {code, message, context}}` 규약. 스키마 추가 2건(0002): `objects.definition`(Phase 2 파싱 입력 영속화 — raw POST는 재조회 불가), `objects.dmv_unresolved`. 수집 T-SQL 7종은 `n8n/sql/` — 07은 커서 + TRY/CATCH로 객체별 개별 호출(일괄 CROSS APPLY 전체 실패 방지).
 - **정지점 3: 픽스처 생성기** — `tools/fixture_gen.py` (stdlib only, 시드 결정론). 409 테이블 / 9,000 컬럼 + 필수 케이스 전부(12단 체인, 순환 뷰, 크로스 DB, definition NULL, PIVOT/APPLY/힌트, DMV 실패, 함정 컬럼). 기대치는 두 벌: lineage_full(컬럼 정밀, Phase 2용) / lineage_phase1(set-level — 중첩 뷰는 부모의 전체 참조 집합 상속, deps만으로는 좁힐 수 없음). 값 집합은 관계 DAG 위상 순서로 생성하고 containment를 최종 집합에서 재계산해 데이터·기대치 불일치를 원천 차단.
 - **정지점 2: 서비스 DB 스키마** — PostgreSQL 16 + SQLAlchemy 2.0 + Alembic 확정. 계획 DDL에 3개 필드 추가: `view_deps.referenced_database/name`(미해석·크로스 DB 참조의 텍스트 식별자 보존 — 없으면 Phase 2 재해석 불가), `view_lineage_flat.flag`(cycle/depth_exceeded), `columns.masking_policy`(§3.5 선반영). 테스트는 SQLite로 실행(dialect 중립), drift는 alembic compare_metadata로 검증.
 - **Step 0 개편안 승인** — 신뢰도 4색 팔레트를 dataviz validator로 검증해 확정(`#00926a`는 deep-green 램프 확장 — 원본은 선 색으로 명도·채도 미달). staleness는 투명도 대신 배지(confidence 인코딩과 충돌), 다크모드 v1 제외. 확장 토큰·ERD 시각 언어는 `rules/frontend/design-app.md` 신설로 분리(원본 DESIGN-cohere.md 동결).
