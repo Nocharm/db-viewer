@@ -1,6 +1,7 @@
 /** 백엔드 조회 API 클라이언트 / thin fetch wrappers for the query API. */
 
 import type {
+  AiTableHit,
   CandidatesResponse,
   ContainmentResponse,
   GraphResponse,
@@ -75,4 +76,12 @@ export function fetchHistory(
   return getJson(
     `/api/validate/history?src_column_id=${srcColumnId}&tgt_column_id=${tgtColumnId}`,
   );
+}
+
+export function searchTablesAi(q: string): Promise<{ items: AiTableHit[] }> {
+  return getJson(`/api/ai/search-tables?q=${encodeURIComponent(q)}`);
+}
+
+export function suggestRelationsAi(): Promise<{ suggested: number; created: number }> {
+  return postJson("/api/ai/suggest-relations", {});
 }

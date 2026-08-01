@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import columns, ingest, objects, relations, scan, snapshots, validate, views
+from app.api import ai, columns, ingest, objects, relations, scan, snapshots, validate, views
 
 
 def create_app() -> FastAPI:
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(validate.router)
     app.include_router(relations.router)
     app.include_router(scan.router)
+    app.include_router(ai.router)
 
     # 승인된 에러 규약: {"error": {code, message, context}} / approved error envelope
     @app.exception_handler(StarletteHTTPException)

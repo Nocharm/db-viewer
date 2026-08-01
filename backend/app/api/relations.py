@@ -40,6 +40,13 @@ def confirm_relation(req: ConfirmRequest, db: Session = Depends(get_db)) -> dict
             "message": "relation not found — run containment validation first",
             "context": {"src": str(src_ref), "tgt": str(tgt_ref)},
         })
+    if relation.status == "candidate":
+        # AI·규칙 후보를 검증 없이 confirmed로 저장 금지 (계획 §5.2)
+        # never persist an unvalidated candidate as confirmed
+        raise HTTPException(400, {
+            "message": "candidate must pass containment validation before confirmation",
+            "context": {"src": str(src_ref), "tgt": str(tgt_ref), "origin": relation.origin},
+        })
 
     relation.status = "confirmed"
     db.add(AuditLog(

@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -74,6 +75,21 @@ class JoinValidationHistory(Base):
 
     __table_args__ = (
         Index("ix_jvh_pair", "src_object", "src_column", "tgt_object", "tgt_column"),
+    )
+
+
+class AiSummary(Base):
+    """Cached AI table summary — ERD tooltip source (계획 §5.1-3). / AI 요약 캐시."""
+
+    __tablename__ = "ai_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    object_qname: Mapped[str] = mapped_column(String(261))
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("object_qname", name="uq_ai_summaries_qname"),
     )
 
 

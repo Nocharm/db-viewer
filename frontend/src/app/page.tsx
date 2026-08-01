@@ -12,6 +12,7 @@ import type { ObjectSummary } from "@/lib/types";
 export default function Home() {
   const [anchor, setAnchor] = useState<ObjectSummary | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   const handleSelectColumn = useCallback(
     (columnId: number, columnName: string, objectQname: string) =>
@@ -29,8 +30,25 @@ export default function Home() {
         <span className="text-sm" style={{ color: "var(--muted)" }}>
           {anchor ? `${anchor.schema}.${anchor.name}` : "테이블을 검색해 시작하세요"}
         </span>
+        <button
+          className="icon-button ml-auto"
+          onClick={() => {
+            import("@/lib/api").then(({ suggestRelationsAi }) =>
+              suggestRelationsAi().then((res) =>
+                setAiNotice(`AI 제안 ${res.created}건 생성 — 검증 큐에서 확인`)));
+          }}
+          data-testid="Home-aiSuggestButton"
+        >
+          AI 관계 제안
+        </button>
+        {aiNotice && (
+          <span className="text-sm" style={{ color: "var(--slate)" }}
+                data-testid="Home-aiNotice">
+            {aiNotice}
+          </span>
+        )}
         <a
-          className="ml-auto text-sm underline"
+          className="text-sm underline"
           style={{ color: "var(--action-blue)" }}
           href="/parsing"
           data-testid="Home-parsingLink"

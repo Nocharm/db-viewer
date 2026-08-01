@@ -12,9 +12,10 @@ from app.models.catalog import (
     ViewLineageFlat,
 )
 from app.models.jobs import ScanJob, ScanResult
-from app.models.relations import AuditLog, JoinValidationHistory, Relation
+from app.models.relations import AiSummary, AuditLog, JoinValidationHistory, Relation
 
 __all__ = [
+    "AiSummary",
     "AuditLog",
     "ScanJob",
     "ScanResult",

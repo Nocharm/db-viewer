@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 
-import { searchObjects } from "@/lib/api";
+import { searchObjects, searchTablesAi } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
 
 interface Props {
@@ -24,9 +24,24 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
       return;
     }
     const timer = setTimeout(() => {
-      searchObjects(q, typeFilter || undefined)
-        .then((res) => {
-          setItems(res.items);
+      // '?'로 시작하면 AI 자연어 탐색 (계획 §5.1-2) / '?' prefix = AI search
+      const isAi = q.startsWith("?");
+      const request = isAi
+        ? searchTablesAi(q.slice(1).trim()).then((res) =>
+            res.items
+              .filter((h) => h.object_id !== null)
+              .map((h) => {
+                const [schema, name] = h.object.split(".");
+                return {
+                  id: h.object_id as number, schema, name,
+                  type: "table" as const, row_count: null,
+                  column_count: 0, dmv_unresolved: false,
+                };
+              }))
+        : searchObjects(q, typeFilter || undefined).then((res) => res.items);
+      request
+        .then((list) => {
+          setItems(list);
           setError(null);
         })
         .catch((e) => setError(e.message));
@@ -44,7 +59,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         <input
           className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--border-light)" }}
-          placeholder="테이블·뷰 검색 (2자 이상)"
+          placeholder="검색 (2자+) — ?로 시작하면 AI 탐색"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           data-testid="SearchPanel-queryInput"

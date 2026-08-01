@@ -38,9 +38,10 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
 
-      <div className="erd-node__header">
+      <div className="erd-node__header" title={node.ai_summary ?? undefined}>
         <span className="erd-node__type">{isView ? "VIEW" : "TBL"}</span>
         <span className="flex-1 truncate">{node.schema}.{node.name}</span>
+        {node.ai_summary && <span className="badge badge--ai">AI</span>}
         {isView && (
           <button
             className="icon-button"

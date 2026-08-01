@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.db import get_db
 from app.models import (
+    AiSummary,
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
@@ -119,17 +120,27 @@ def _load_lineage_edges(db: Session, snapshot_id: int) -> tuple[list[dict], dict
 
 
 def _load_relation_edges(db: Session, qname_to_id: dict[str, int]) -> list[dict]:
-    """검증·확정 관계를 현재 스냅샷 객체에 매핑 / map textual relations onto this snapshot."""
+    """검증·확정·AI 제안 관계를 현재 스냅샷에 매핑 / relations mapped onto this snapshot."""
     edges = []
     for rel in db.execute(
-        select(Relation).where(Relation.status.in_(["validated", "confirmed"]))
+        select(Relation).where(
+            Relation.status.in_(["validated", "confirmed"])
+            # AI 제안은 검증 전에도 노출하되 ai_suggested로 명확히 구분 (계획 §5.3)
+            | ((Relation.status == "candidate") & (Relation.origin == "ai"))
+        )
     ).scalars():
         src, tgt = qname_to_id.get(rel.src_object), qname_to_id.get(rel.tgt_object)
         if src is None or tgt is None:
             continue  # 이번 스냅샷에 없는 객체 / object absent from this snapshot
+        if rel.status == "candidate":
+            kind = "ai_suggested"
+        elif rel.status == "confirmed":
+            kind = "confirmed"
+        else:
+            kind = "inferred"
         edges.append({
             "id": f"rel-{rel.id}",
-            "kind": "confirmed" if rel.status == "confirmed" else "inferred",
+            "kind": kind,
             "src_object_id": src, "tgt_object_id": tgt,
             "columns": [{"src_column": rel.src_column, "tgt_column": rel.tgt_column}],
             "confidence": rel.confidence, "cardinality": rel.cardinality,
@@ -202,12 +213,22 @@ def get_object_graph(
             "is_pk": col.is_pk, "is_nullable": col.is_nullable, "is_computed": col.is_computed,
         })
 
+    id_to_qname = {oid: q for q, oid in qname_to_id.items()}
+    summaries = {
+        s.object_qname: s.summary
+        for s in db.execute(
+            select(AiSummary).where(
+                AiSummary.object_qname.in_([id_to_qname[i] for i in included])
+            )
+        ).scalars()
+    }
     nodes = [
         {
             "id": obj.id, "schema": obj.schema, "name": obj.name, "type": obj.type,
             "row_count": obj.row_count, "dmv_unresolved": obj.dmv_unresolved,
             "lineage_flag": lineage_flags.get(obj.id),
             "unresolved_dep_count": unresolved_counts.get(obj.id, 0),
+            "ai_summary": summaries.get(f"{obj.schema}.{obj.name}"),
             "columns": columns_by_object.get(obj.id, []),
         }
         for obj in db.execute(

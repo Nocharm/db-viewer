@@ -33,7 +33,15 @@ export interface GraphNode {
   dmv_unresolved: boolean;
   lineage_flag: "cycle" | "depth_exceeded" | null;
   unresolved_dep_count: number;
+  ai_summary?: string | null;
   columns: GraphColumn[];
+}
+
+export interface AiTableHit {
+  object_id: number | null;
+  object: string;
+  score: number;
+  reason: string;
 }
 
 export interface GraphEdge {
