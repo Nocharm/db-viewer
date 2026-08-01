@@ -48,10 +48,65 @@ class ParsedView:
     cross_databases: list[str] = field(default_factory=list)
 
 
+def strip_sql_comments(sql: str) -> str:
+    """주석 제거 전처리 — 주석 속 옛 쿼리가 조인·lineage로 오인되는 것을 원천 차단.
+
+    파서(sqlglot)도 주석을 무시하지만 버전·엣지 케이스에 의존하지 않도록 앞단에서
+    확정적으로 제거한다. T-SQL 규칙 준수: 블록 주석 중첩(/* /* */ */) 허용,
+    문자열 리터럴('' 이스케이프)·[대괄호]·"따옴표" 식별자 안의 주석 기호는 보존.
+    Strips -- and nested block comments while respecting string literals and
+    quoted identifiers, so commented-out SQL can never be parsed as live query.
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if ch == "-" and nxt == "-":
+            # 라인 주석 — 줄바꿈은 남겨 토큰 경계 유지 / keep the newline as a separator
+            while i < n and sql[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            depth, i = 1, i + 2
+            while i < n and depth > 0:
+                pair = sql[i:i + 2]
+                if pair == "/*":
+                    depth, i = depth + 1, i + 2
+                elif pair == "*/":
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+            out.append(" ")  # 주석이 토큰 사이 공백이던 자리 보존 / preserve separation
+            continue
+        if ch == "'":
+            end = i + 1
+            while end < n:
+                if sql[end] == "'":
+                    if end + 1 < n and sql[end + 1] == "'":
+                        end += 2  # '' 이스케이프 / escaped quote
+                        continue
+                    break
+                end += 1
+            out.append(sql[i:min(end + 1, n)])
+            i = end + 1
+            continue
+        if ch in ("[", '"'):
+            closer = "]" if ch == "[" else '"'
+            end = sql.find(closer, i + 1)
+            end = n - 1 if end == -1 else end
+            out.append(sql[i:end + 1])
+            i = end + 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def parse_view(definition: str) -> ParsedView:
     """Parse one CREATE VIEW statement. / CREATE VIEW 1건 파싱 — 예외는 상태로 격리."""
     try:
-        tree = sqlglot.parse_one(definition, read="tsql")
+        tree = sqlglot.parse_one(strip_sql_comments(definition), read="tsql")
     except (SqlglotError, RecursionError) as e:
         return ParsedView(status="parse_failed", error=str(e)[:400])
     if isinstance(tree, exp.Command):
