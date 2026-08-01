@@ -19,6 +19,9 @@ python3 tools/seed_ui_states.py --base http://localhost:8000
 
 → http://localhost:3000 (auth OFF 개발 모드 — 로그인 없이 진입, 사용자 `dev.user`)
 
+첫 화면은 **빈 캔버스 + 시작 가이드**가 정상이다(앵커 방식 — 전체 스키마를 그리지 않음).
+가이드의 예시 칩(HR_EMP 등)을 누르면 바로 열리고, 선택 시 앵커 노드 중심으로 자동 줌된다.
+
 시드가 만드는 상태: 확정 관계 1건(✓), inferred 3건(관측 횟수·고아 다양화),
 AI 제안 엣지 ~700건, AI 요약 2건, 화이트리스트 2명.
 더미데이터는 제조 ERP 유사 네이밍(HR_EMP·ORD_SO_HDR·MES_BATCH_HDR·QC_SAMPLE_RSLT 류).

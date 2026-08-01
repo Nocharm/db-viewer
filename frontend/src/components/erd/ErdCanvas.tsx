@@ -2,8 +2,14 @@
 
 /** ERD 캔버스 — 앵커 확장·뷰 접힘·임계치 모달 / anchor-based ERD canvas. */
 
-import { useCallback, useEffect, useState } from "react";
-import { Background, Controls, ReactFlow } from "@xyflow/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+} from "@xyflow/react";
 import type { Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -20,15 +26,29 @@ const nodeTypes = { tableNode: TableNode };
 interface Props {
   anchorId: number | null;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
+  onQuickStart: (name: string) => void;
 }
 
-export function ErdCanvas({ anchorId, onSelectColumn }: Props) {
+// 빈 캔버스 가이드용 예시 앵커 / quick-start suggestions for the empty state
+const QUICK_START_ANCHORS = ["HR_EMP", "ORD_SO_HDR", "MES_BATCH_HDR", "V_CHAIN_05"];
+
+export function ErdCanvas(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <ErdCanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [expandedViews, setExpandedViews] = useState<Set<number>>(new Set());
   const [pending, setPending] = useState<MergePlan | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const { setCenter } = useReactFlow();
+  const centeredAnchorRef = useRef<number | null>(null);
 
   const applyIncoming = useCallback((incoming: GraphResponse, current: GraphResponse | null) => {
     const plan = planMerge(current, incoming);
@@ -136,11 +156,25 @@ export function ErdCanvas({ anchorId, onSelectColumn }: Props) {
           } as Edge;
         }),
       );
+      // 전체 맞춤 대신 앵커 좌표로 직접 센터링 — ELK 좌표를 알고 있어 측정 타이밍에 무관
+      // center on the anchor's ELK coordinates; no dependence on node measurement timing
+      if (centeredAnchorRef.current !== graph.anchor_id) {
+        centeredAnchorRef.current = graph.anchor_id;
+        const anchorPos = posMap.get(graph.anchor_id);
+        const anchorSize = sized.find((s) => s.id === graph.anchor_id);
+        if (anchorPos && anchorSize) {
+          void setCenter(
+            anchorPos.x + anchorSize.width / 2,
+            anchorPos.y + anchorSize.height / 2,
+            { zoom: 0.75, duration: 300 },
+          );
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn]);
+  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn, setCenter]);
 
   return (
     <div className="relative h-full w-full" data-testid="ErdCanvas-root">
@@ -148,7 +182,6 @@ export function ErdCanvas({ anchorId, onSelectColumn }: Props) {
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
-        fitView
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
       >
@@ -156,6 +189,31 @@ export function ErdCanvas({ anchorId, onSelectColumn }: Props) {
         <Controls />
       </ReactFlow>
       <Legend />
+
+      {anchorId === null && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center"
+             data-testid="ErdCanvas-emptyState">
+          <div className="rounded-2xl border bg-white p-8 text-center"
+               style={{ borderColor: "var(--hairline)" }}>
+            <p className="erd-node__header mb-2 justify-center !border-0 !p-0">
+              앵커 테이블로 시작하세요
+            </p>
+            <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
+              왼쪽에서 검색하거나, 예시를 눌러 바로 열 수 있습니다.
+              <br />전체 스키마는 렌더링하지 않습니다 — 앵커에서 단계적으로 확장하세요.
+            </p>
+            <div className="flex justify-center gap-2">
+              {QUICK_START_ANCHORS.map((name) => (
+                <button key={name} className="icon-button font-mono"
+                        onClick={() => onQuickStart(name)}
+                        data-testid={`ErdCanvas-quickStart-${name}`}>
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div

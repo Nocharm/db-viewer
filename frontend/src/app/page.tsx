@@ -9,6 +9,7 @@ import { ErdCanvas } from "@/components/erd/ErdCanvas";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
 import { SearchPanel } from "@/components/SearchPanel";
+import { searchObjects } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function Home() {
@@ -22,6 +23,14 @@ export default function Home() {
       setSelectedColumn({ id: columnId, name: columnName, object: objectQname }),
     [],
   );
+
+  // 빈 캔버스 가이드 칩 → 검색 후 정확 일치 앵커 선택 / quick-start chip resolves an anchor
+  const handleQuickStart = useCallback((name: string) => {
+    void searchObjects(name).then((res) => {
+      const hit = res.items.find((i) => i.name === name) ?? res.items[0];
+      if (hit) setAnchor(hit);
+    });
+  }, []);
 
   return (
     <div className="flex h-screen flex-col">
@@ -75,7 +84,11 @@ export default function Home() {
       <main className="flex min-h-0 flex-1">
         <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />
         <section className="min-w-0 flex-1">
-          <ErdCanvas anchorId={anchor?.id ?? null} onSelectColumn={handleSelectColumn} />
+          <ErdCanvas
+            anchorId={anchor?.id ?? null}
+            onSelectColumn={handleSelectColumn}
+            onQuickStart={handleQuickStart}
+          />
         </section>
         <ColumnPanel column={selectedColumn} onClose={() => setSelectedColumn(null)} />
       </main>

@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **첫 화면 UX 수정** — "아무것도 안 뜬다" 피드백의 원인은 크래시가 아니라 앵커 방식의 안내 없는 빈 캔버스. ① 빈 상태 가이드 + 예시 칩(원클릭 시작), ② 초기 뷰포트를 전체 맞춤(깨알 줌) 대신 ELK 좌표 기반 앵커 setCenter로(측정 타이밍 무관·확장 시 시점 유지). 브라우저 실검증(스크린샷)으로 확인. 부수 레슨: dev 서버 실행 중 prod build 금지(.next 캐시 충돌 500), fitView의 nodes 필터는 측정 타이밍에 취약.
 - **더미데이터 사실화** — 픽스처 어휘를 제조 ERP 수준으로(모듈별 엔티티 400여 개: HR_EMP·ORD_SO_HDR·MES_BATCH_HDR·QC_SAMPLE_RSLT 류, 엔티티 기반 PK명, 접미사→타입 관례 _YMD→char(8) 등, 업무형 뷰명 V_*_SUMMARY/V_SUM_/V_RPT_). 규모·엣지 케이스·회귀 자산은 불변 — 특수 뷰(V_CHAIN·V_CYCLE 등) 이름 유지, 122 테스트 통과(이름 결합 테스트 3건만 조정). 로컬 스택 재시드 — 히어로 앵커 HR_EMP(엣지 4종 동시), 체크리스트 앵커 갱신. 알게 된 것: inferred 투명도 0.7/1.0단은 행수 가중치 때문에 픽스처 규모로는 도달 불가(실DB 전용) — 문서에 명시.
 - **bpm 운영 레슨 이식** — 실서버 런북(docs/deploy/deploy.md)에서 추출: ① 인증 면제 `/api/health` + compose healthcheck(frontend는 backend healthy 대기), ② `.gitattributes` LF 고정(Windows 경유 전송), ③ README에 Web origins(token CORS는 redirect URI가 아니라 이것), preferred_username 매퍼, federation↔bind 계정 별개, 첫 전체 동기화 프룬 주의, 트러블슈팅 표, 롤백 절, ④ ui-review에 LAN IP 확인 항목(secure context 함정은 localhost에서 재현 불가). crypto.randomUUID류 직접 사용 없음 확인(oidc 라이브러리 조합은 bpm 운영으로 검증됨). dev 서버 사고 1건: 실행 중 prod build가 .next 캐시 충돌 → 캐시 삭제·재기동으로 복구.
 - **UI/UX 로컬 리뷰 킷** — 로컬 검증 범위를 프론트 UI/UX로 확정(통신 검증은 서버 배포 후). `tools/seed_ui_states.py`가 API로 전 시각 상태 프라이밍(확정 ✓·고/저신뢰 inferred·AI 제안·요약·화이트리스트) — 실행 중 스택에 적용해 실측 확인(HR_APRV 앵커에 confirmed/fk/ai_suggested 혼재). 체크리스트 15항목은 `docs/ui-review.md`(seed 42 기준 검색어 명시). Docker 킷(local-test.md)은 배포 리허설용으로 유지.
