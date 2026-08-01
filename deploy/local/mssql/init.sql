@@ -1,0 +1,46 @@
+-- 로컬 수집 리허설용 최소 스키마 — W0 정찰·W1 수집이 의미 있는 결과를 내도록 구성
+-- FK 있는 관계 / FK 없는 실제 관계 / 중첩 뷰를 각각 포함한다
+IF DB_ID('LOCALTEST') IS NULL
+    CREATE DATABASE LOCALTEST;
+GO
+USE LOCALTEST;
+GO
+IF OBJECT_ID('dbo.T_DEPT', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.T_DEPT (
+        DEPT_CD int NOT NULL CONSTRAINT PK_T_DEPT PRIMARY KEY,
+        DEPT_NM nvarchar(100) NOT NULL
+    );
+    CREATE TABLE dbo.T_EMP (
+        EMP_NO int NOT NULL CONSTRAINT PK_T_EMP PRIMARY KEY,
+        EMP_NM nvarchar(100) NOT NULL,
+        DEPT_CD int NOT NULL CONSTRAINT FK_T_EMP_T_DEPT REFERENCES dbo.T_DEPT (DEPT_CD),
+        USE_YN char(1) NOT NULL DEFAULT 'Y'
+    );
+    CREATE TABLE dbo.T_ORDER (
+        ORDER_ID int NOT NULL CONSTRAINT PK_T_ORDER PRIMARY KEY,
+        EMP_NO int NOT NULL CONSTRAINT FK_T_ORDER_T_EMP REFERENCES dbo.T_EMP (EMP_NO),
+        ORDER_AMT decimal(18, 2) NULL
+    );
+    -- FK 없는 실제 관계 — 추론·검증(T2) 리허설 대상
+    CREATE TABLE dbo.T_ORDER_LOG (
+        LOG_ID int NOT NULL CONSTRAINT PK_T_ORDER_LOG PRIMARY KEY,
+        ORDER_ID int NOT NULL,
+        LOG_MSG nvarchar(200) NULL
+    );
+
+    INSERT INTO dbo.T_DEPT VALUES (10, N'개발'), (20, N'품질');
+    INSERT INTO dbo.T_EMP VALUES (1, N'홍길동', 10, 'Y'), (2, N'김철수', 20, 'Y');
+    INSERT INTO dbo.T_ORDER VALUES (100, 1, 1000.00), (101, 2, 250.50);
+    INSERT INTO dbo.T_ORDER_LOG VALUES (1, 100, N'created'), (2, 101, N'created');
+END
+GO
+IF OBJECT_ID('dbo.V_ORDER', 'V') IS NULL
+    EXEC('CREATE VIEW dbo.V_ORDER AS
+          SELECT o.ORDER_ID, o.ORDER_AMT, e.EMP_NM, e.DEPT_CD
+          FROM dbo.T_ORDER o JOIN dbo.T_EMP e ON o.EMP_NO = e.EMP_NO');
+GO
+IF OBJECT_ID('dbo.V_ORDER_SUMMARY', 'V') IS NULL
+    EXEC('CREATE VIEW dbo.V_ORDER_SUMMARY AS
+          SELECT DEPT_CD, COUNT(*) AS ORDER_CNT FROM dbo.V_ORDER GROUP BY DEPT_CD');
+GO

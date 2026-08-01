@@ -1,0 +1,39 @@
+{
+  "realm": "ai-portal",
+  "enabled": true,
+  "registrationAllowed": false,
+  "users": [
+    {
+      "username": "admin.sys",
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "Sys",
+      "email": "admin.sys@local.test",
+      "credentials": [{ "type": "password", "value": "admin", "temporary": false }]
+    },
+    {
+      "username": "hong.gil",
+      "enabled": true,
+      "firstName": "Gil",
+      "lastName": "Hong",
+      "email": "hong.gil@local.test",
+      "credentials": [{ "type": "password", "value": "test", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "db-viewer-frontend",
+      "name": "db-viewer frontend (local)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:6678/*"],
+      "webOrigins": ["http://localhost:6678"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:6678/login"
+      }
+    }
+  ]
+}

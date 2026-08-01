@@ -1,0 +1,71 @@
+# 로컬 리허설 오버레이 — 서버 구성과 동일 스택 + 로컬 Keycloak(+선택: MSSQL·n8n)
+# 사용법: docs/local-test.md 참조
+#   docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # 브라우저(호스트 /etc/hosts)와 백엔드(네트워크 alias)가 같은 issuer URL을 쓴다
+      KC_HOSTNAME: http://keycloak.local:8080
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./deploy/local/keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "8080:8080"
+    networks:
+      dbviewer:
+        aliases: [keycloak.local]
+
+  backend:
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  # ── 수집 리허설 (선택): docker compose --profile collect ... ──
+  mssql:
+    profiles: [collect]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Apple Silicon은 Docker Desktop의 Rosetta 에뮬레이션 필요 (amd64 이미지)
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "1433:1433"
+    networks: [dbviewer]
+
+  mssql-init:
+    profiles: [collect]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    depends_on: [mssql]
+    volumes:
+      - ./deploy/local/mssql:/seed:ro
+    entrypoint: >
+      bash -c "for i in $(seq 1 60); do
+        /opt/mssql-tools18/bin/sqlcmd -S mssql -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -i /seed/init.sql && exit 0;
+        sleep 2; done; echo 'mssql seed failed' >&2; exit 1"
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    networks: [dbviewer]
+
+  n8n:
+    profiles: [collect]
+    image: n8nio/n8n:latest
+    environment:
+      # W0/W1 워크플로가 참조하는 env — 컨테이너 내부에선 frontend:3000이 6678 역할
+      DB_VIEWER_API_BASE: http://frontend:3000
+      DB_VIEWER_INGEST_KEY: ${INGEST_API_KEY}
+      DB_VIEWER_SOURCE_DB: LOCALTEST
+      N8N_SECURE_COOKIE: "false"
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks: [dbviewer]
+
+volumes:
+  n8n_data:

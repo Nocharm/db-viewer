@@ -36,6 +36,8 @@ cp .env.example .env   # POSTGRES_PASSWORD 등 채우기
 docker compose up -d --build
 ```
 
+배포 전 로컬 리허설(로컬 Keycloak + 선택적 MSSQL/n8n 수집 리허설): `docs/local-test.md`
+
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
 - **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트
   - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
