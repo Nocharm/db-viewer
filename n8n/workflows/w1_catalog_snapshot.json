@@ -337,6 +337,6 @@
     "executionOrder": "v1"
   },
   "meta": {
-    "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). credentials와 $env.DB_VIEWER_API_BASE / DB_VIEWER_SOURCE_DB를 배포 환경에 맞게 설정할 것."
+    "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). credentials와 $env.DB_VIEWER_API_BASE(예: http://182.199.63.71:6678) / DB_VIEWER_SOURCE_DB를 배포 환경에 맞게 설정할 것."
   }
 }

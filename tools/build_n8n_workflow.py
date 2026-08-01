@@ -13,6 +13,39 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = REPO_ROOT / "n8n" / "sql"
 OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
+RECON_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
+
+# (노드 이름, 정찰 SQL 파일) — 연결 단계 정지점 16 / recon queries, connection step 16
+RECON_SQL_NODES = [
+    ("recon 01 fk count", "recon/01_fk_count.sql"),
+    ("recon 02 object scale", "recon/02_object_scale.sql"),
+    ("recon 03 view definition permission", "recon/03_view_definition_permission.sql"),
+    ("recon 04 cross database refs", "recon/04_cross_database_refs.sql"),
+    ("recon 05 nested views", "recon/05_nested_views.sql"),
+    ("recon 06 lineage dmv smoke", "recon/06_lineage_dmv_smoke.sql"),
+]
+
+RECON_REPORT_JS = """\
+// 정찰 결과 종합 — 판단은 사람이 한다 (결과 보고 → 정지점 16)
+// assemble the recon report; humans judge the results
+const report = {};
+report.fk_count = $('recon 01 fk count').all().map(i => i.json);
+report.object_scale = $('recon 02 object scale').all().map(i => i.json);
+report.view_definition_permission = $('recon 03 view definition permission').all().map(i => i.json);
+report.cross_database_refs = $('recon 04 cross database refs').all().map(i => i.json);
+report.nested_views = $('recon 05 nested views').all().map(i => i.json);
+report.lineage_dmv_smoke = $('recon 06 lineage dmv smoke').all().map(i => i.json);
+report.warnings = [];
+const perm = report.view_definition_permission[0];
+if (perm && Number(perm.blocked) > 0) {
+  report.warnings.push(`VIEW DEFINITION blocked on ${perm.blocked}/${perm.total} views — 권한 필요 (최우선)`);
+}
+const smoke = report.lineage_dmv_smoke[0];
+if (smoke && smoke.error) {
+  report.warnings.push(`dm_sql_referenced_entities failed on ${smoke.smoke_view}: ${smoke.error}`);
+}
+return [{ json: report }];
+"""
 
 # (노드 이름, SQL 파일) — 실행 순서 / execution order
 SQL_NODES = [
@@ -134,7 +167,43 @@ def build_workflow() -> dict:
         "settings": {"executionOrder": "v1"},
         "meta": {
             "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
-                     "credentials와 $env.DB_VIEWER_API_BASE / DB_VIEWER_SOURCE_DB를 배포 환경에 맞게 설정할 것.",
+                     "credentials와 $env.DB_VIEWER_API_BASE(예: http://182.199.63.71:6678) / "
+                     "DB_VIEWER_SOURCE_DB를 배포 환경에 맞게 설정할 것.",
+        },
+    }
+
+
+def build_recon_workflow() -> dict:
+    """정찰 워크플로 — 수동 트리거, 6종 쿼리 → 종합 리포트 1건 / manual recon run."""
+    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
+    nodes = [
+        _node("Manual Trigger", "n8n-nodes-base.manualTrigger", [0, 0], {}),
+    ]
+    for i, (name, filename) in enumerate(RECON_SQL_NODES):
+        nodes.append(_node(
+            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
+            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
+            credentials=mssql_cred, type_version=1.1,
+        ))
+    nodes.append(_node(
+        "Recon report", "n8n-nodes-base.code", [220 * 7, 0],
+        {"jsCode": RECON_REPORT_JS}, type_version=2,
+    ))
+
+    order = [n["name"] for n in nodes]
+    connections = {
+        src: {"main": [[{"node": dst, "type": "main", "index": 0}]]}
+        for src, dst in zip(order, order[1:])
+    }
+    return {
+        "name": "W0 recon queries",
+        "nodes": nodes,
+        "connections": connections,
+        "settings": {"executionOrder": "v1"},
+        "meta": {
+            "notes": "연결 단계 정지점 16 — 실행 결과(Recon report)를 보고 후 W1 진행 여부를 결정한다. "
+                     "[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결할 것. "
+                     "credentials를 배포 환경에 맞게 설정.",
         },
     }
 
@@ -143,6 +212,10 @@ def main() -> None:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(build_workflow(), ensure_ascii=False, indent=2) + "\n")
     print(f"wrote {OUT_PATH}")
+    RECON_OUT_PATH.write_text(
+        json.dumps(build_recon_workflow(), ensure_ascii=False, indent=2) + "\n"
+    )
+    print(f"wrote {RECON_OUT_PATH}")
 
 
 if __name__ == "__main__":
