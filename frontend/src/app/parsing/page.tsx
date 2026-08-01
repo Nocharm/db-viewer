@@ -4,29 +4,20 @@
 
 import { useEffect, useState } from "react";
 
-interface ParseStats {
-  snapshot_id: number;
-  total_views: number;
-  counts: Record<string, number>;
-  success_rate: number | null;
-  failed_views: { id: number; name: string; status: string; error: string | null }[];
-}
+import { fetchParseStats, fetchSnapshots, type ParseStats } from "@/lib/api";
 
 export default function ParsingPage() {
   const [stats, setStats] = useState<ParseStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/snapshots")
-      .then((r) => r.json())
+    // 인증 헤더가 붙는 공용 클라이언트 사용 — raw fetch는 auth ON에서 401
+    fetchSnapshots()
       .then((body) => {
-        const ready = body.items?.find(
-          (s: { status: string }) => s.status === "ready",
-        );
+        const ready = body.items.find((s) => s.status === "ready");
         if (!ready) throw new Error("ready 스냅샷이 없습니다");
-        return fetch(`/api/snapshots/${ready.id}/parse-stats`);
+        return fetchParseStats(ready.id);
       })
-      .then((r) => r.json())
       .then(setStats)
       .catch((e) => setError(e.message));
   }, []);

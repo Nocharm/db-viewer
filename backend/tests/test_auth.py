@@ -84,6 +84,18 @@ def test_login_sync_is_throttled_per_user(client, monkeypatch):
     assert calls == ["admin.sys"]  # 두 번째 호출은 스로틀 / second call throttled
 
 
+def test_login_recorded_once_per_day(client, migrated_engine):
+    client.get("/api/me")
+    client.get("/api/me")
+    with migrated_engine.connect() as conn:
+        logins = conn.execute(
+            sa.select(Base.metadata.tables["audit_logs"])
+            .where(Base.metadata.tables["audit_logs"].c.action == "login")
+        ).all()
+    assert len(logins) == 1  # KST 하루 1건 중복 제거 / daily dedupe
+    assert logins[0].detail == "dev.user"
+
+
 # ── 게이트 동작 ──
 
 

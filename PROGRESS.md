@@ -4,6 +4,7 @@
 
 ## 2026-08-01
 
+- **인증 마무리** — /parsing 페이지의 raw fetch를 인증 공용 클라이언트로 교체(auth ON에서 401 나던 격차), 로그인 기록 추가(audit_logs action=login, KST 하루 1건 중복 제거 — bpm 패턴). 스모크 재기동으로 실검증: dev 모드 /api/me·whitelist CRUD·ingest 재시드·프론트 프록시 전부 정상. 서브넷 172.48.0.0/16 사용자 확정.
 - **보안 리뷰 반영(인증)** — ① LDAP TLS 인증서 검증 강제(ldap3 기본 CERT_NONE → CERT_REQUIRED + `LDAP_CA_BUNDLE`, StartTLS에도 적용), ② LDAP 필터 이스케이프를 RFC 4515로(백슬래시 우선), ③ /api/me 로그인 동기화에 사용자별 5분 스로틀(AD 부하 공격 차단), ④ PKCE는 하드코드 비활성 대신 `!window.isSecureContext` 자동 판정 — HTTPS 전환 시 수정 없이 복원(평문 HTTP에선 crypto.subtle 부재로 불가피, bpm 동일 제약).
 - **인증: Keycloak + LDAP + 화이트리스트** — bpm 패턴 이식(react-oidc-context/PyJWT·JWKS/ldap3, 라우터 단위 Depends, AUTH_ENABLED 플래그 쌍, 렌더 단계 토큰 주입, disablePKCE=HTTP 제약). bpm에 없는 것 2건 신설: ① 화이트리스트 로그인 게이트(테이블+관리 API+/admin 화면, sysadmin 우회, 감사 기록) — 요구사항, ② n8n 머신용 `X-API-Key` ingest 게이트(auth ON이면 키 필수). AD 동기화: 로그인 시 단건 + 관리자 전체 동기화(5분 스로틀, 빈 스캔 전삭제 방지, source=local 보존). 미등록 사용자는 전 API 403 + 안내 화면.
 - **정찰 워크플로(W0) + 배포 구성** — 정찰 6종을 n8n 임포트 JSON으로(`w0_recon_queries.json`, 수동 트리거 → 종합 리포트 노드가 권한 차단·DMV 실패를 warnings로 자동 표시). [6]은 TOP 1 뷰를 골라 TRY/CATCH로 DMV 즉시 호출하는 단일 배치로 재구성. 배포: compose(postgres+backend+frontend), 외부 노출은 frontend 6678 단일 포트(UI+/api 프록시 — n8n도 이 주소로 POST), 네트워크 172.48.0.0/16(요청값 — RFC1918 아님 주의 명기), Next standalone + non-root 이미지.

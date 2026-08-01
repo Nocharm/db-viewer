@@ -141,6 +141,30 @@ export function searchTablesAi(q: string): Promise<{ items: AiTableHit[] }> {
   return getJson(`/api/ai/search-tables?q=${encodeURIComponent(q)}`);
 }
 
+export interface SnapshotSummary {
+  id: number;
+  collected_at: string;
+  source_db: string;
+  status: string;
+  object_count: number;
+}
+
+export function fetchSnapshots(): Promise<{ items: SnapshotSummary[] }> {
+  return getJson("/api/snapshots");
+}
+
+export interface ParseStats {
+  snapshot_id: number;
+  total_views: number;
+  counts: Record<string, number>;
+  success_rate: number | null;
+  failed_views: { id: number; name: string; status: string; error: string | null }[];
+}
+
+export function fetchParseStats(snapshotId: number): Promise<ParseStats> {
+  return getJson(`/api/snapshots/${snapshotId}/parse-stats`);
+}
+
 export function suggestRelationsAi(): Promise<{ suggested: number; created: number }> {
   return postJson("/api/ai/suggest-relations", {});
 }

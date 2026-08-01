@@ -2,14 +2,19 @@
 
 import logging
 import time
+from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, is_sysadmin
 from app.config import get_settings
 from app.db import get_db
-from app.models import AppUser, LoginWhitelist
+from app.models import AppUser, AuditLog, LoginWhitelist
+
+# 로그인 기록의 하루 경계 — KST 자정 (bpm 패턴) / daily dedupe boundary in KST
+_KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +23,23 @@ router = APIRouter(tags=["me"])
 # 사용자별 동기화 스로틀 — /api/me 반복 호출로 AD를 두들기지 못하게 (보안 리뷰)
 # per-user sync throttle so /api/me cannot storm the AD server
 _last_sync_at: dict[str, float] = {}
+
+
+def _record_login(db: Session, login_id: str) -> None:
+    """로그인 기록 — KST 기준 하루 1건 중복 제거 (bpm 패턴) / one audit row per day."""
+    now = datetime.now(UTC)
+    kst_midnight = now.astimezone(_KST).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = kst_midnight.astimezone(UTC)
+    existing = db.execute(
+        select(AuditLog.id).where(
+            AuditLog.action == "login",
+            AuditLog.detail == login_id,
+            AuditLog.requested_at >= today_start,
+        ).limit(1)
+    ).first()
+    if existing is None:
+        db.add(AuditLog(action="login", detail=login_id,
+                        requested_by=login_id, requested_at=now))
 
 
 @router.get("/api/me")
@@ -44,6 +66,8 @@ def get_me(
             ad_service.sync_one(db, login_id)
         except Exception:  # LDAP 장애 격리 / isolate LDAP outages
             logger.exception("login-time AD sync failed for %s", login_id)
+
+    _record_login(db, login_id)
 
     user = db.get(AppUser, login_id)
     return {
