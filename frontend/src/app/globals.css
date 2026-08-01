@@ -203,16 +203,25 @@ body {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* ── 좌측 목록 행 ── */
+/* ── 좌측 목록 행 — 밀도 완화 / relaxed density ── */
 .list-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 7px 12px;
+  padding: 10px 16px;
   font-size: 13px;
+  line-height: 1.5;
   text-align: left;
   border-left: 2px solid transparent;
+}
+
+/* 검색어 하이라이트 / search-term highlight */
+mark.hl {
+  background: color-mix(in srgb, var(--focus-blue) 22%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 .list-row--selected {
   background: var(--soft-stone);
@@ -220,11 +229,11 @@ body {
   font-weight: 500;
 }
 
-/* ── 상세 패널 섹션 ── */
+/* ── 상세 패널 섹션 — 밀도 완화 / relaxed density ── */
 .panel-section {
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 10px;
+  padding: 18px 20px;
 }
 .panel-section__title {
   font-family: var(--font-mono);
@@ -233,7 +242,7 @@ body {
   letter-spacing: 0.22px;
   text-transform: uppercase;
   color: var(--slate);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 /* ── 일치율 게이지 ── */

@@ -212,16 +212,18 @@ TABLE_PREVIEW_LIMIT = 20
 @router.get("/{object_id}/preview")
 def get_object_preview(
     object_id: int,
+    filter_column: str | None = None,
+    filter_value: str | None = Query(None, max_length=100),
     db: Session = Depends(get_db),
     login_id: str = Depends(get_current_user),
 ) -> dict:
-    """TOP 20 미리보기 — 무캐시·마스킹·감사 (원본 값 반출 지점, 계획 §3.5 원칙 준용)."""
+    """TOP 20 미리보기 — 무캐시·마스킹·감사 + 컬럼·값 재검색 (계획 §3.5 원칙 준용)."""
     obj = db.get(CatalogObject, object_id)
     if obj is None:
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     settings = get_settings()
     if settings.source_mode == "live":
-        # 연결 단계(정지점 18)에서 pyodbc SELECT TOP 20으로 교체 / swapped at connection stage
+        # 연결 단계(정지점 18)에서 pyodbc SELECT TOP 20 (+ WHERE)으로 교체 / swapped at step 18
         raise HTTPException(501, {"message": "live table preview lands at connection step 18"})
 
     qname = f"{obj.schema}.{obj.name}"
@@ -229,10 +231,17 @@ def get_object_preview(
         select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
         .order_by(CatalogColumn.ordinal)
     ).scalars().all()
+    column_names = {c.name for c in columns}
+    if filter_column is not None and filter_column not in column_names:
+        raise HTTPException(400, {"message": "unknown filter column",
+                                  "context": {"filter_column": filter_column}})
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
     preview = FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
-    rows = preview.rows(qname, column_specs, TABLE_PREVIEW_LIMIT)
+    rows = preview.rows(
+        qname, column_specs, TABLE_PREVIEW_LIMIT,
+        filter_column=filter_column, filter_value=filter_value,
+    )
 
     masked = [c.name for c in columns if c.masking_policy]
     if masked:
@@ -243,7 +252,9 @@ def get_object_preview(
         ]
 
     now = datetime.now(UTC)
-    db.add(AuditLog(action="table_preview", detail=f"{qname} ({len(rows)} rows)",
+    filter_note = f" filter {filter_column}~'{filter_value}'" if filter_column else ""
+    db.add(AuditLog(action="table_preview",
+                    detail=f"{qname} ({len(rows)} rows){filter_note}",
                     requested_by=login_id, requested_at=now))
     return {
         "object": qname,
@@ -251,7 +262,30 @@ def get_object_preview(
         "rows": rows,
         "masked_columns": masked,
         "limit": TABLE_PREVIEW_LIMIT,
+        "filter": (
+            {"column": filter_column, "value": filter_value} if filter_column else None
+        ),
         "observed_at": now.isoformat(),
+    }
+
+
+@router.get("/columns-index")
+def get_columns_index(
+    snapshot_id: int | None = None, db: Session = Depends(get_db)
+) -> dict:
+    """테이블별 컬럼명 인덱스 — 브라우저 컬럼 검색용 / column-name index for client search."""
+    snapshot = resolve_snapshot(db, snapshot_id)
+    index: dict[int, list[str]] = {}
+    for object_id, name in db.execute(
+        select(CatalogColumn.object_id, CatalogColumn.name)
+        .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
+        .where(CatalogObject.snapshot_id == snapshot.id, CatalogObject.type == "table")
+        .order_by(CatalogColumn.object_id, CatalogColumn.ordinal)
+    ):
+        index.setdefault(object_id, []).append(name)
+    return {
+        "snapshot_id": snapshot.id,
+        "items": [{"object_id": oid, "columns": cols} for oid, cols in index.items()],
     }
 
 

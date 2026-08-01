@@ -208,10 +208,26 @@ export interface TablePreview {
   rows: Record<string, unknown>[];
   masked_columns: string[];
   limit: number;
+  filter: { column: string; value: string | null } | null;
 }
 
-export function fetchObjectPreview(objectId: number): Promise<TablePreview> {
-  return getJson(`/api/objects/${objectId}/preview`);
+export function fetchObjectPreview(
+  objectId: number,
+  filter?: { column: string; value: string },
+): Promise<TablePreview> {
+  const params = new URLSearchParams();
+  if (filter?.column && filter.value) {
+    params.set("filter_column", filter.column);
+    params.set("filter_value", filter.value);
+  }
+  const suffix = params.size > 0 ? `?${params}` : "";
+  return getJson(`/api/objects/${objectId}/preview${suffix}`);
+}
+
+export function fetchColumnsIndex(): Promise<{
+  items: { object_id: number; columns: string[] }[];
+}> {
+  return getJson("/api/objects/columns-index");
 }
 
 export function suggestRelationsAi(): Promise<{ suggested: number; created: number }> {

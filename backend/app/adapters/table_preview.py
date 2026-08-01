@@ -39,9 +39,19 @@ class FakeTablePreview:
             return f"샘플{column_name.split('_')[0].title()}{row_index + 1}"
         return f"{column_name.replace('_', '')[:6]}{row_index + 1:03d}"
 
-    def rows(self, qname: str, columns: list[dict], limit: int) -> list[dict]:
-        out = []
-        for row_index in range(limit):
+    def rows(
+        self, qname: str, columns: list[dict], limit: int,
+        filter_column: str | None = None, filter_value: str | None = None,
+    ) -> list[dict]:
+        """필터가 있으면 큰 풀에서 생성 후 걸러 limit 적용 — live의 WHERE 절 대응.
+
+        With a filter we synthesize a larger pool then filter, mirroring what a
+        live WHERE clause would return.
+        """
+        pool = limit if not (filter_column and filter_value) else max(limit * 10, 200)
+        needle = (filter_value or "").upper()
+        out: list[dict] = []
+        for row_index in range(pool):
             row = {}
             for column in columns:
                 values = self._sets.get((qname, column["name"]))
@@ -51,5 +61,10 @@ class FakeTablePreview:
                     row[column["name"]] = self._sample(
                         column["name"], column["data_type"], row_index
                     )
+            if filter_column and needle:
+                if needle not in str(row.get(filter_column, "")).upper():
+                    continue
             out.append(row)
+            if len(out) >= limit:
+                break
         return out

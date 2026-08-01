@@ -13,7 +13,7 @@ interface Props {
 export function JoinKeyBar({ items, selected, onSelect }: Props) {
   return (
     <div
-      className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5"
+      className="flex shrink-0 items-center gap-3 border-b px-5 py-3"
       style={{ borderColor: "var(--hairline)" }}
       data-testid="JoinKeyBar-root"
     >

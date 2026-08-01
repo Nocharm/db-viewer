@@ -68,6 +68,34 @@ def test_detail_similar_tables_have_rates(client, load_fixture):
         assert s["common_columns"] >= 1
 
 
+def test_preview_filter_by_column_value(client, load_fixture):
+    _seed(client, load_fixture)
+    rel = load_fixture("expected/relations.json")["rows"][0]
+    object_id = _object_id(client, rel["src_object"])
+
+    plain = client.get(f"/api/objects/{object_id}/preview").json()
+    sample_value = str(plain["rows"][0][rel["src_column"]])
+
+    body = client.get(f"/api/objects/{object_id}/preview", params={
+        "filter_column": rel["src_column"], "filter_value": sample_value,
+    }).json()
+    assert body["filter"] == {"column": rel["src_column"], "value": sample_value}
+    assert body["rows"]
+    assert all(sample_value in str(row[rel["src_column"]]) for row in body["rows"])
+
+    res = client.get(f"/api/objects/{object_id}/preview",
+                     params={"filter_column": "NOPE_COL", "filter_value": "x"})
+    assert res.status_code == 400
+
+
+def test_columns_index_covers_tables(client, load_fixture):
+    _seed(client, load_fixture)
+    body = client.get("/api/objects/columns-index").json()
+    total = sum(len(item["columns"]) for item in body["items"])
+    assert len(body["items"]) == 409
+    assert total >= 9000
+
+
 def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture):
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]

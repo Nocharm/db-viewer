@@ -1,50 +1,77 @@
 "use client";
 
-/** 좌측 2열 — 테이블명 목록 + 이름 필터 / table list with a name filter. */
+/** 좌측 2열 — 테이블명 목록 + 강화 검색(초성·컬럼·하이라이트). / table list with rich search. */
 
+import type { SearchMatch } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 
+export interface TableListItem {
+  table: ObjectSummary;
+  match: SearchMatch;
+}
+
 interface Props {
-  tables: ObjectSummary[];
+  items: TableListItem[];
   selectedId: number | null;
   query: string;
   onQuery: (value: string) => void;
   onSelect: (table: ObjectSummary) => void;
 }
 
-export function TableList({ tables, selectedId, query, onQuery, onSelect }: Props) {
+function Highlight({ text, range }: { text: string; range: [number, number] | null }) {
+  if (!range) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, range[0])}
+      <mark className="hl">{text.slice(range[0], range[1])}</mark>
+      {text.slice(range[1])}
+    </>
+  );
+}
+
+export function TableList({ items, selectedId, query, onQuery, onSelect }: Props) {
   return (
     <aside
-      className="flex w-72 shrink-0 flex-col border-r"
+      className="flex w-80 shrink-0 flex-col border-r"
       style={{ borderColor: "var(--hairline)" }}
       data-testid="TableList-root"
     >
-      <div className="p-2.5">
+      <div className="p-3">
         <input
-          className="w-full rounded border px-3 py-1.5 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
+          className="w-full rounded-lg border px-3.5 py-2 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
           style={{ borderColor: "var(--border-light)" }}
-          placeholder="테이블명 필터"
+          placeholder="테이블·컬럼·카테고리 검색 (초성 가능)"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           data-testid="TableList-filterInput"
         />
       </div>
-      <div className="scroll-area min-h-0 flex-1 pb-2">
-        {tables.map((table) => (
+      <div className="scroll-area min-h-0 flex-1 pb-3">
+        {items.map(({ table, match }) => (
           <button
             key={table.id}
             className={`pressable list-row ${selectedId === table.id ? "list-row--selected" : ""}`}
             onClick={() => onSelect(table)}
             data-testid={`TableList-item-${table.id}`}
           >
-            <span className="flex-1 truncate font-mono text-xs">{table.name}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-mono text-xs">
+                <Highlight text={table.name} range={match.nameRange} />
+              </span>
+              {match.matchedColumn && (
+                <span className="mt-0.5 block truncate text-[11px]"
+                      style={{ color: "var(--slate)" }}>
+                  컬럼: <Highlight text={match.matchedColumn} range={match.columnRange} />
+                </span>
+              )}
+            </span>
             <span className="text-xs" style={{ color: "var(--muted)" }}>
               {table.column_count}c
             </span>
           </button>
         ))}
-        {tables.length === 0 && (
-          <p className="px-3 py-2 text-sm" style={{ color: "var(--muted)" }}
+        {items.length === 0 && (
+          <p className="px-4 py-3 text-sm" style={{ color: "var(--muted)" }}
              data-testid="TableList-emptyState">
             조건에 맞는 테이블 없음
           </p>
