@@ -1,15 +1,23 @@
 "use client";
 
-/** 메인 화면 — 검색 + ERD 캔버스 / main screen: search plus ERD canvas. */
+/** 메인 화면 — 검색 + ERD 캔버스 + 컬럼 패널 / search, canvas, column panel. */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
+import { ColumnPanel, type SelectedColumn } from "@/components/ColumnPanel";
 import { ErdCanvas } from "@/components/erd/ErdCanvas";
 import { SearchPanel } from "@/components/SearchPanel";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function Home() {
   const [anchor, setAnchor] = useState<ObjectSummary | null>(null);
+  const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(null);
+
+  const handleSelectColumn = useCallback(
+    (columnId: number, columnName: string, objectQname: string) =>
+      setSelectedColumn({ id: columnId, name: columnName, object: objectQname }),
+    [],
+  );
 
   return (
     <div className="flex h-screen flex-col">
@@ -33,8 +41,9 @@ export default function Home() {
       <main className="flex min-h-0 flex-1">
         <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />
         <section className="min-w-0 flex-1">
-          <ErdCanvas anchorId={anchor?.id ?? null} />
+          <ErdCanvas anchorId={anchor?.id ?? null} onSelectColumn={handleSelectColumn} />
         </section>
+        <ColumnPanel column={selectedColumn} onClose={() => setSelectedColumn(null)} />
       </main>
     </div>
   );

@@ -19,9 +19,10 @@ const nodeTypes = { tableNode: TableNode };
 
 interface Props {
   anchorId: number | null;
+  onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
 }
 
-export function ErdCanvas({ anchorId }: Props) {
+export function ErdCanvas({ anchorId, onSelectColumn }: Props) {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [expandedViews, setExpandedViews] = useState<Set<number>>(new Set());
   const [pending, setPending] = useState<MergePlan | null>(null);
@@ -106,18 +107,24 @@ export function ErdCanvas({ anchorId }: Props) {
             isAnchor: n.id === graph.anchor_id,
             onExpandNeighbors: expandNeighbors,
             onToggleView: toggleView,
+            onSelectColumn,
           },
         })),
       );
       setFlowEdges(
         visibleEdges.map((e) => {
-          const visual = getEdgeVisual(e.kind);
-          const label =
-            e.kind === "fk" && Array.isArray(e.columns) && e.columns.length > 0
+          const visual = getEdgeVisual(e.kind, e.confidence ?? undefined);
+          const pairKinds = ["fk", "inferred", "confirmed", "ai_suggested"];
+          let label =
+            pairKinds.includes(e.kind) && Array.isArray(e.columns) && e.columns.length > 0
               ? (e.columns as { src_column: string }[])
                   .map((c) => c.src_column)
                   .join(", ")
               : undefined;
+          // N:M은 FK 아님 — 교차 관계 표기 (계획 §3.2) / cross relation marker
+          if (e.cardinality === "N:M") label = `${label ?? ""} [N:M]`.trim();
+          if (e.kind === "confirmed") label = `✓ ${label ?? ""}`.trim();
+          if (e.kind === "ai_suggested") label = `AI ${label ?? ""}`.trim();
           return {
             id: e.id,
             source: String(e.src_object_id),
@@ -133,7 +140,7 @@ export function ErdCanvas({ anchorId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedViews, expandNeighbors, toggleView]);
+  }, [graph, expandedViews, expandNeighbors, toggleView, onSelectColumn]);
 
   return (
     <div className="relative h-full w-full" data-testid="ErdCanvas-root">

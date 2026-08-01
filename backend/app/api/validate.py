@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.domain.confidence import Observation, compute_confidence
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
-from app.models import CatalogColumn, CatalogObject, JoinValidationHistory, Relation
+from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory, Relation
 
 router = APIRouter(prefix="/api/validate", tags=["validate"])
 
@@ -116,6 +116,59 @@ def run_containment(
         "cardinality": result.cardinality,
         "confidence": conf.confidence, "pattern": conf.pattern,
         "observations": conf.observation_count,
+        "observed_at": now.isoformat(),
+    }
+
+
+class PreviewRequest(BaseModel):
+    src_column_id: int
+    tgt_column_id: int
+    requested_by: str = "local"
+
+
+# TOP 20 고정 — 클라이언트가 늘릴 수 없다 (계획 §3.5) / hard cap, not client-controlled
+PREVIEW_LIMIT = 20
+
+
+@router.post("/preview")
+def run_preview(
+    req: PreviewRequest,
+    db: Session = Depends(get_db),
+    validator: JoinValidator = Depends(get_join_validator),
+) -> dict:
+    """조인 샘플 미리보기 — 원본 값이 나가는 유일한 지점: 무캐시·마스킹·감사 (계획 §3.5)."""
+    src_ref, src_col = resolve_column_ref(db, req.src_column_id)
+    tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
+
+    try:
+        rows = validator.preview(src_ref, tgt_ref, PREVIEW_LIMIT)
+    except ValidationDataMissing as e:
+        raise HTTPException(
+            404, {"message": "no value data for column", "context": {"column": str(e.ref)}}
+        ) from e
+
+    # 컬럼 단위 마스킹 정책 적용 (계획 §3.5) / per-column masking policy
+    masked_keys = set()
+    if src_col.masking_policy:
+        masked_keys.add(f"src.{src_ref.column}")
+    if tgt_col.masking_policy:
+        masked_keys.add(f"tgt.{tgt_ref.column}")
+    if masked_keys:
+        rows = [
+            {k: ("●●●" if k in masked_keys else v) for k, v in row.items()}
+            for row in rows
+        ]
+
+    now = datetime.now(UTC)
+    db.add(AuditLog(
+        action="preview",
+        detail=f"{src_ref} -> {tgt_ref} ({len(rows)} rows)",
+        requested_by=req.requested_by, requested_at=now,
+    ))
+    return {
+        "src": str(src_ref), "tgt": str(tgt_ref),
+        "rows": rows, "limit": PREVIEW_LIMIT,
+        "masked_columns": sorted(masked_keys),
         "observed_at": now.isoformat(),
     }
 

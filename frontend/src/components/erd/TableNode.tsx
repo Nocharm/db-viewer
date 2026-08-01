@@ -14,6 +14,7 @@ export interface TableNodeData extends Record<string, unknown> {
   isAnchor: boolean;
   onExpandNeighbors: (id: number) => void;
   onToggleView: (id: number) => void;
+  onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
 }
 
 export type TableFlowNode = Node<TableNodeData, "tableNode">;
@@ -65,7 +66,10 @@ export function TableNode({ data }: NodeProps<TableFlowNode>) {
           {visibleColumns.map((col) => (
             <div
               key={col.id}
-              className={`erd-node__row ${col.is_pk ? "erd-node__row--pk" : ""}`}
+              className={`erd-node__row cursor-pointer hover:bg-black/5 ${col.is_pk ? "erd-node__row--pk" : ""}`}
+              onClick={() =>
+                data.onSelectColumn(col.id, col.name, `${node.schema}.${node.name}`)}
+              data-testid={`ErdNode-columnRow-${col.id}`}
             >
               <span className="truncate">
                 {col.is_pk ? "🔑 " : ""}
