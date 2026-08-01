@@ -6,20 +6,41 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import ai, columns, ingest, objects, relations, scan, snapshots, validate, views
+from fastapi import Depends
+
+from app.api import (
+    admin,
+    ai,
+    columns,
+    ingest,
+    me,
+    objects,
+    relations,
+    scan,
+    snapshots,
+    validate,
+    views,
+)
+from app.auth import require_ingest_access, require_whitelisted
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="db-viewer")
-    app.include_router(ingest.router)
-    app.include_router(objects.router)
-    app.include_router(views.router)
-    app.include_router(snapshots.router)
-    app.include_router(columns.router)
-    app.include_router(validate.router)
-    app.include_router(relations.router)
-    app.include_router(scan.router)
-    app.include_router(ai.router)
+    # ingest는 머신 호출(n8n) — API 키 게이트 / machine gate for n8n
+    app.include_router(ingest.router, dependencies=[Depends(require_ingest_access)])
+    # 조회·검증·AI는 화이트리스트 사용자 게이트 / whitelist gate for humans
+    user_gate = [Depends(require_whitelisted)]
+    app.include_router(objects.router, dependencies=user_gate)
+    app.include_router(views.router, dependencies=user_gate)
+    app.include_router(snapshots.router, dependencies=user_gate)
+    app.include_router(columns.router, dependencies=user_gate)
+    app.include_router(validate.router, dependencies=user_gate)
+    app.include_router(relations.router, dependencies=user_gate)
+    app.include_router(scan.router, dependencies=user_gate)
+    app.include_router(ai.router, dependencies=user_gate)
+    # me는 토큰만, admin은 자체 sysadmin 게이트 / me needs only a token
+    app.include_router(me.router)
+    app.include_router(admin.router)
 
     # 승인된 에러 규약: {"error": {code, message, context}} / approved error envelope
     @app.exception_handler(StarletteHTTPException)

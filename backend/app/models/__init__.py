@@ -13,10 +13,13 @@ from app.models.catalog import (
 )
 from app.models.jobs import ScanJob, ScanResult
 from app.models.relations import AiSummary, AuditLog, JoinValidationHistory, Relation
+from app.models.users import AppUser, LoginWhitelist
 
 __all__ = [
     "AiSummary",
+    "AppUser",
     "AuditLog",
+    "LoginWhitelist",
     "ScanJob",
     "ScanResult",
     "Base",

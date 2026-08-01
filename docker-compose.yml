@@ -32,13 +32,29 @@ services:
       SCAN_NIGHT_END_HOUR: ${SCAN_NIGHT_END_HOUR}
       LOW_CARDINALITY_MIN_DISTINCT: ${LOW_CARDINALITY_MIN_DISTINCT}
       LOW_CARDINALITY_BLACKLIST: ${LOW_CARDINALITY_BLACKLIST}
+      AUTH_ENABLED: ${AUTH_ENABLED}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
+      DBV_SYSADMINS: ${DBV_SYSADMINS}
+      INGEST_API_KEY: ${INGEST_API_KEY}
+      LDAP_URL: ${LDAP_URL}
+      LDAP_BIND_DN: ${LDAP_BIND_DN}
+      LDAP_BIND_CREDENTIALS: ${LDAP_BIND_CREDENTIALS}
+      LDAP_USER_SEARCH_BASE: ${LDAP_USER_SEARCH_BASE}
+      LDAP_START_TLS: ${LDAP_START_TLS}
     depends_on:
       postgres:
         condition: service_healthy
     networks: [dbviewer]
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # 빌드 시 인라인 — .env 변경 후 --build 필요 / rebuild after changing these
+        NEXT_PUBLIC_AUTH_ENABLED: ${AUTH_ENABLED}
+        NEXT_PUBLIC_KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
     environment:
       BACKEND_URL: http://backend:8000
     ports:

@@ -23,6 +23,32 @@ class Settings(BaseSettings):
     # live는 보안 승인 후 명시적으로만 켠다 (Phase 3 게이트) / live only after security approval
     source_mode: Literal["fixture", "replay", "live"] = "fixture"
 
+    # 인증 (bpm 패턴) — false면 X-Dev-User 신뢰, 개발·테스트 전용 / auth flag pair with frontend
+    auth_enabled: bool = False
+    keycloak_issuer: str = "http://182.199.63.71:8080/realms/ai-portal"
+    keycloak_audience: str = ""  # 빈 값이면 aud 검증 생략 (Keycloak 기본 aud=account)
+    dev_user: str = "dev.user"
+    # 시스템관리자 login_id 콤마 목록 — 화이트리스트 우회 + 관리 API 권한
+    dbv_sysadmins: str = ""
+    # n8n 등 머신 호출용 ingest 키 / machine-caller key for /api/ingest/*
+    ingest_api_key: str = ""
+
+    # LDAP (AD 동기화) — 4개가 모두 있어야 켜진다 / all four required to enable
+    ldap_url: str = ""
+    ldap_bind_dn: str = ""
+    ldap_bind_credentials: str = ""
+    ldap_user_search_base: str = ""
+    ldap_start_tls: bool = False
+    ldap_user_filter: str = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=*))"
+
+    def sysadmin_login_ids(self) -> set[str]:
+        return {x.strip() for x in self.dbv_sysadmins.split(",") if x.strip()}
+
+    @property
+    def ldap_enabled(self) -> bool:
+        return bool(self.ldap_url and self.ldap_bind_dn
+                    and self.ldap_bind_credentials and self.ldap_user_search_base)
+
     # Tuning: lineage 재귀 상한 — 초과 시 depth_exceeded 플래그 (계획 §1.3)
     lineage_depth_limit: int = 10
 

@@ -10,6 +10,24 @@ import type {
   SearchResponse,
 } from "./types";
 
+// 토큰은 렌더 단계에서 동기 주입된다 — effect는 자식 fetch와 레이스 (bpm 패턴)
+// token set during render, not in an effect, to avoid first-fetch 401 races
+let authToken: string | null = null;
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+// auth OFF 개발 모드 전용 / dev-mode identity when auth is disabled
+let devUser: string | null = "dev.user";
+export function setDevUser(loginId: string | null): void {
+  devUser = loginId;
+}
+
+function authHeaders(): Record<string, string> {
+  if (authToken) return { Authorization: `Bearer ${authToken}` };
+  if (devUser) return { "X-Dev-User": devUser };
+  return {};
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // 백엔드 에러 규약: {"error": {code, message, context}}
@@ -21,15 +39,56 @@ async function handle<T>(res: Response): Promise<T> {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  return handle(await fetch(url));
+  return handle(await fetch(url, { headers: authHeaders() }));
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   return handle(await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   }));
+}
+
+async function deleteJson<T>(url: string): Promise<T> {
+  return handle(await fetch(url, { method: "DELETE", headers: authHeaders() }));
+}
+
+export interface Me {
+  login_id: string;
+  name: string;
+  department: string | null;
+  whitelisted: boolean;
+  is_sysadmin: boolean;
+  auth_enabled: boolean;
+}
+
+export function fetchMe(): Promise<Me> {
+  return getJson("/api/me");
+}
+
+export interface WhitelistEntry {
+  login_id: string;
+  name: string | null;
+  note: string | null;
+  added_by: string;
+  created_at: string;
+}
+
+export function fetchWhitelist(): Promise<{ items: WhitelistEntry[] }> {
+  return getJson("/api/admin/whitelist");
+}
+
+export function addWhitelist(loginId: string, note?: string): Promise<{ created: boolean }> {
+  return postJson("/api/admin/whitelist", { login_id: loginId, note });
+}
+
+export function removeWhitelist(loginId: string): Promise<{ removed: boolean }> {
+  return deleteJson(`/api/admin/whitelist/${encodeURIComponent(loginId)}`);
+}
+
+export function syncUsers(): Promise<{ scanned: number; upserted: number; excluded: number; purged: number }> {
+  return postJson("/api/admin/users/sync", {});
 }
 
 export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {

@@ -6,10 +6,13 @@ import { useCallback, useState } from "react";
 
 import { ColumnPanel, type SelectedColumn } from "@/components/ColumnPanel";
 import { ErdCanvas } from "@/components/erd/ErdCanvas";
+import { LogoutButton } from "@/components/logout-button";
+import { useMe } from "@/components/providers";
 import { SearchPanel } from "@/components/SearchPanel";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function Home() {
+  const me = useMe();
   const [anchor, setAnchor] = useState<ObjectSummary | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
@@ -55,6 +58,19 @@ export default function Home() {
         >
           파싱 지표
         </a>
+        {(me?.is_sysadmin || me?.auth_enabled === false) && (
+          <a className="text-sm underline" style={{ color: "var(--action-blue)" }}
+             href="/admin" data-testid="Home-adminLink">
+            관리
+          </a>
+        )}
+        {me && (
+          <span className="text-sm" style={{ color: "var(--slate)" }}
+                data-testid="Home-userName">
+            {me.name}
+          </span>
+        )}
+        {me?.auth_enabled && <LogoutButton />}
       </header>
       <main className="flex min-h-0 flex-1">
         <SearchPanel onSelect={setAnchor} selectedId={anchor?.id ?? null} />

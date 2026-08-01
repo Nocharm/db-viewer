@@ -4,6 +4,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY . .
+# NEXT_PUBLIC_*는 빌드 시 인라인 — 값 변경엔 재빌드 필요 (bpm과 동일한 제약)
+# NEXT_PUBLIC_* values are inlined at build time; changing them needs a rebuild
+ARG NEXT_PUBLIC_AUTH_ENABLED=false
+ARG NEXT_PUBLIC_KEYCLOAK_ISSUER=http://182.199.63.71:8080/realms/ai-portal
+ARG NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=db-viewer-frontend
+ENV NEXT_PUBLIC_AUTH_ENABLED=$NEXT_PUBLIC_AUTH_ENABLED \
+    NEXT_PUBLIC_KEYCLOAK_ISSUER=$NEXT_PUBLIC_KEYCLOAK_ISSUER \
+    NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=$NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
 RUN npm run build
 
 FROM node:22-alpine

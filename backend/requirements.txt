@@ -8,3 +8,6 @@ fastapi==0.115.6
 uvicorn==0.32.1
 # Phase 2 뷰 DDL 파싱 — 계획 명시 (dialect=tsql) / mandated by the plan for view parsing
 sqlglot==25.34.0
+# 인증 — Keycloak JWT 검증 + AD 동기화 (bpm 패턴·버전 미러링)
+pyjwt[crypto]==2.13.0
+ldap3==2.9.1

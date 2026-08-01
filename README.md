@@ -39,8 +39,22 @@ docker compose up -d --build
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
 - **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트
   - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
-  - `w1_catalog_snapshot.json` — 정기 카탈로그 수집. env: `DB_VIEWER_API_BASE=http://182.199.63.71:6678`
+  - `w1_catalog_snapshot.json` — 정기 카탈로그 수집. env: `DB_VIEWER_API_BASE=http://182.199.63.71:6678`,
+    `DB_VIEWER_INGEST_KEY` = 백엔드 `INGEST_API_KEY`와 동일 값
 - Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의)
+
+## 인증 (Keycloak + LDAP + 화이트리스트)
+
+- **Keycloak**: realm `ai-portal` (http://182.199.63.71:8080/realms/ai-portal), public client
+  `db-viewer-frontend` 등록 필요 — redirect URI `http://182.199.63.71:6678/*`,
+  post-logout redirect `http://182.199.63.71:6678/login`
+- **켜는 법**: `.env`에서 `AUTH_ENABLED=true` + `DBV_SYSADMINS=<본인 login_id>` + `INGEST_API_KEY` 설정 후
+  `docker compose up -d --build` (NEXT_PUBLIC 값은 빌드 시 인라인 — 재빌드 필수)
+- **화이트리스트**: 등록된 login_id만 로그인 가능(시스템관리자는 우회). `/admin` 화면 또는
+  `/api/admin/whitelist`로 관리, 변경은 감사 로그에 기록
+- **LDAP**: `LDAP_*` 4개 값을 모두 설정하면 활성화 — 로그인 시 단건 동기화 + `/admin`의 전체 동기화(5분 스로틀).
+  제외 규칙(외부 조직·서비스 계정)은 `backend/app/ad/org.py`
+- **개발 모드**: `AUTH_ENABLED=false`(기본)면 Keycloak 없이 동작 — `X-Dev-User` 헤더 신뢰 (bpm 패턴)
 
 ## 디렉터리
 

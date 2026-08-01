@@ -144,6 +144,11 @@ def build_workflow() -> dict:
             "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/catalog",
             "sendBody": True, "specifyBody": "json",
             "jsonBody": "={{ JSON.stringify($json) }}",
+            # ingest 머신 게이트 — 백엔드 INGEST_API_KEY와 동일 값 / machine auth key
+            "sendHeaders": True,
+            "headerParameters": {"parameters": [
+                {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+            ]},
         }, type_version=4.2),
         _node("Build view-deps payload", "n8n-nodes-base.code", [220 * 10, 0],
               {"jsCode": BUILD_VIEW_DEPS_JS}, type_version=2),
@@ -152,6 +157,10 @@ def build_workflow() -> dict:
             "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/view-deps",
             "sendBody": True, "specifyBody": "json",
             "jsonBody": "={{ JSON.stringify($json) }}",
+            "sendHeaders": True,
+            "headerParameters": {"parameters": [
+                {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+            ]},
         }, type_version=4.2),
     ]
 
@@ -168,7 +177,8 @@ def build_workflow() -> dict:
         "meta": {
             "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
                      "credentials와 $env.DB_VIEWER_API_BASE(예: http://182.199.63.71:6678) / "
-                     "DB_VIEWER_SOURCE_DB를 배포 환경에 맞게 설정할 것.",
+                     "DB_VIEWER_SOURCE_DB / DB_VIEWER_INGEST_KEY(백엔드 INGEST_API_KEY와 동일)를 "
+                     "배포 환경에 맞게 설정할 것.",
         },
     }
 
