@@ -1,9 +1,10 @@
 "use client";
 
-/** 메인 — 테이블 브라우저: 조인키 필터 → 카테고리 → 테이블 → 상세, 하단 미리보기. / table browser home. */
+/** 메인 — 테이블 브라우저. 선택은 URL(?table=)로 관리해 뒤로가기가 이전 테이블로 돌아간다.
+ * Table browser home; selection lives in the URL so browser back restores it. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
@@ -26,7 +27,18 @@ import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
   const router = useRouter();
+  const params = useSearchParams();
+  const tableParam = params.get("table");
+
   const [tables, setTables] = useState<ObjectSummary[]>([]);
   const [columnsIndex, setColumnsIndex] = useState<Map<number, string[]>>(new Map());
   const [joinKeys, setJoinKeys] = useState<JoinKeyItem[]>([]);
@@ -53,6 +65,38 @@ export default function Home() {
         new Map(res.items.map((item) => [item.object_id, item.columns]))))
       .catch(() => undefined); // 컬럼 검색만 비활성화될 뿐 / only degrades column search
   }, []);
+
+  // URL(?table=) → 선택 동기화 — 뒤로가기·딥링크 지원 / sync selection from the URL
+  useEffect(() => {
+    if (!tableParam || tables.length === 0) {
+      setSelected(null);
+      setDetail(null);
+      setPreview(null);
+      return;
+    }
+    const id = Number(tableParam);
+    if (selected?.id === id) return;
+    const table = tables.find((t) => t.id === id);
+    if (!table) return;
+    setSelected(table);
+    setDetail(null);
+    setPreview(null);
+    setDetailLoading(true);
+    fetchObjectDetail(table.id)
+      .then(setDetail)
+      .catch((e) => setError(e.message))
+      .finally(() => setDetailLoading(false));
+  }, [tableParam, tables, selected]);
+
+  const selectTable = useCallback((table: ObjectSummary) => {
+    router.push(`/?table=${table.id}`, { scroll: false });
+  }, [router]);
+
+  const selectByQname = useCallback((qname: string) => {
+    const [schema, name] = qname.split(".", 2);
+    const table = tables.find((t) => t.schema === schema && t.name === name);
+    if (table) selectTable(table);
+  }, [tables, selectTable]);
 
   const categories = useMemo<CategoryEntry[]>(() => {
     const counts = new Map<string, number>();
@@ -81,17 +125,7 @@ export default function Home() {
     return items;
   }, [tables, category, selectedKey, query, columnsIndex]);
 
-  const handleSelect = useCallback((table: ObjectSummary) => {
-    setSelected(table);
-    setPreview(null);
-    setDetail(null);
-    setDetailLoading(true);
-    fetchObjectDetail(table.id)
-      .then(setDetail)
-      .catch((e) => setError(e.message))
-      .finally(() => setDetailLoading(false));
-  }, []);
-
+  // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
   const loadPreview = useCallback(
     (filter?: { column: string; value: string }, scrollTo = false) => {
       if (!selected) return;
@@ -100,7 +134,6 @@ export default function Home() {
         .then((res) => {
           setPreview(res);
           if (scrollTo) {
-            // 미리보기 로드 후 하단으로 자동 이동 / auto-navigate down to the preview
             setTimeout(() => previewRef.current?.scrollIntoView(
               { behavior: "smooth", block: "start" }), 60);
           }
@@ -127,9 +160,9 @@ export default function Home() {
         )}
       </AppHeader>
       <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
-      {/* 미리보기가 열리면 이 컨테이너에 세로 스크롤이 생긴다 / vertical scroll appears with preview */}
-      <div className="scroll-area min-h-0 flex-1">
-        <main className="flex" style={{ height: "100%" }}>
+      {/* 카드 레이아웃 — 선 대신 바탕 톤·여백으로 구분 / cards on a muted surface */}
+      <div className="scroll-area surface-muted min-h-0 flex-1">
+        <main className="box-border flex gap-4 p-4" style={{ height: "100%" }}>
           <CategoryList
             categories={categories}
             selected={category}
@@ -141,20 +174,21 @@ export default function Home() {
             selectedId={selected?.id ?? null}
             query={query}
             onQuery={setQuery}
-            onSelect={handleSelect}
+            onSelect={selectTable}
           />
-          <section className="min-w-0 flex-1">
+          <section className="card min-w-0 flex-1 overflow-hidden">
             <TableDetail
               detail={detail}
               loading={detailLoading}
               previewLoading={previewLoading}
               onPreview={() => loadPreview(undefined, true)}
               onOpenErd={handleOpenErd}
+              onSelectTable={selectByQname}
             />
           </section>
         </main>
         {preview && (
-          <div ref={previewRef}>
+          <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
               preview={preview}
               loading={previewLoading}

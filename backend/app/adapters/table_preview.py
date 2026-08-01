@@ -1,7 +1,10 @@
 """Table preview rows without a real DB. / 실DB 없는 테이블 미리보기 합성 (fixture 모드).
 
-live 전환 시 이 어댑터만 pyodbc `SELECT TOP 20`으로 교체한다 (계획 §2 — 온디맨드는
-n8n 경유 금지, FastAPI 직접 실행).
+의미: 미리보기·재검색은 항상 **원본 소스에 새 질의**다 — 받은 20행을 클라이언트에서
+거르는 게 아니라, 조건이 소스 쿼리(WHERE)로 내려간다. fixture는 그 의미를 흉내내기
+위해 큰 풀을 생성 후 거른다. live 구현체는 연결 단계(정지점 18)에서 조건 포함
+`SELECT TOP 20`으로 교체 — 실행 경로(pyodbc 직접 vs n8n 경유)는 사용자 방침에 따라
+그 시점에 확정한다(계획 §2는 pyodbc 직접을 명시하나 n8n 선호 의견 있음).
 """
 
 import json

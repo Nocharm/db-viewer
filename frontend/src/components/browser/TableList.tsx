@@ -32,8 +32,7 @@ function Highlight({ text, range }: { text: string; range: [number, number] | nu
 export function TableList({ items, selectedId, query, onQuery, onSelect }: Props) {
   return (
     <aside
-      className="flex w-80 shrink-0 flex-col border-r"
-      style={{ borderColor: "var(--hairline)" }}
+      className="card flex w-80 shrink-0 flex-col"
       data-testid="TableList-root"
     >
       <div className="p-3">

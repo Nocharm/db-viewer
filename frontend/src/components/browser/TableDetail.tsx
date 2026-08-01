@@ -10,10 +10,26 @@ interface Props {
   previewLoading: boolean;
   onPreview: () => void;
   onOpenErd: () => void;
+  /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
+  onSelectTable: (qname: string) => void;
+}
+
+/** 클릭 가능한 테이블명 / clickable table reference. */
+function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) => void }) {
+  return (
+    <button
+      className="pressable -mx-1 truncate rounded px-1 text-left font-mono underline-offset-2 hover:underline"
+      style={{ color: "var(--action-blue)" }}
+      onClick={() => onSelect(name)}
+      data-testid={`TableDetail-ref-${name}`}
+    >
+      {name}
+    </button>
+  );
 }
 
 export function TableDetail({
-  detail, loading, previewLoading, onPreview, onOpenErd,
+  detail, loading, previewLoading, onPreview, onOpenErd, onSelectTable,
 }: Props) {
   if (!detail) {
     return (
@@ -113,7 +129,9 @@ export function TableDetail({
             <ul className="space-y-2.5">
               {detail.similar_tables.map((similar) => (
                 <li key={similar.id} className="flex items-center gap-3 text-sm">
-                  <span className="w-44 truncate font-mono text-xs">{similar.name}</span>
+                  <span className="w-44 truncate text-xs">
+                    <TableRef name={similar.name} onSelect={onSelectTable} />
+                  </span>
                   <div className="rate-bar">
                     <div className="rate-bar__fill"
                          style={{ width: `${Math.round(similar.match_rate * 100)}%` }} />
@@ -135,11 +153,13 @@ export function TableDetail({
             )}
             <ul className="space-y-1 text-xs">
               {detail.fk_out.map((name) => (
-                <li key={`out-${name}`} className="font-mono">→ {name}</li>
+                <li key={`out-${name}`} className="font-mono">
+                  → <TableRef name={name} onSelect={onSelectTable} />
+                </li>
               ))}
               {detail.fk_in.map((name) => (
                 <li key={`in-${name}`} className="font-mono" style={{ color: "var(--slate)" }}>
-                  ← {name}
+                  ← <TableRef name={name} onSelect={onSelectTable} />
                 </li>
               ))}
             </ul>
@@ -158,7 +178,7 @@ export function TableDetail({
                   <span className={`badge ${relation.status === "confirmed" ? "badge--confirmed" : "badge--muted"}`}>
                     {relation.status === "confirmed" ? "✓" : "추정"}
                   </span>
-                  <span className="truncate font-mono">{relation.other}</span>
+                  <TableRef name={relation.other} onSelect={onSelectTable} />
                   {relation.cardinality === "N:M" && (
                     <span className="badge badge--muted">N:M</span>
                   )}

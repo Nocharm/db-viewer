@@ -229,9 +229,18 @@ mark.hl {
   font-weight: 500;
 }
 
-/* ── 상세 패널 섹션 — 밀도 완화 / relaxed density ── */
+/* ── 카드 레이아웃 — 선 대신 바탕 톤 차이로 구분 / surface alternation, no dividers ── */
+.surface-muted {
+  background: color-mix(in srgb, var(--soft-stone) 60%, white);
+}
+.card {
+  background: var(--canvas);
+  border-radius: 14px;
+}
+
+/* ── 상세 패널 섹션 — 보더 없이 옅은 면으로 / borderless tinted sections ── */
 .panel-section {
-  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--soft-stone) 45%, white);
   border-radius: 10px;
   padding: 18px 20px;
 }

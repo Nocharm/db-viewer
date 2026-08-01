@@ -18,8 +18,7 @@ interface Props {
 export function CategoryList({ categories, selected, totalCount, onSelect }: Props) {
   return (
     <aside
-      className="scroll-area w-44 shrink-0 border-r py-2"
-      style={{ borderColor: "var(--hairline)" }}
+      className="card scroll-area w-44 shrink-0 py-3"
       data-testid="CategoryList-root"
     >
       <button

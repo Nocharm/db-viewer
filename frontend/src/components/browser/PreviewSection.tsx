@@ -27,8 +27,7 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
 
   return (
     <section
-      className="border-t px-6 py-5"
-      style={{ borderColor: "var(--hairline)" }}
+      className="card px-6 py-5"
       data-testid="PreviewSection-root"
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -80,8 +79,11 @@ export function PreviewSection({ preview, loading, onSearch, onClear }: Props) {
           onClick={() => onSearch(filterColumn, filterValue.trim())}
           data-testid="PreviewSection-searchButton"
         >
-          {loading ? "조회 중…" : "다시 검색"}
+          {loading ? "조회 중…" : "조건으로 재조회"}
         </button>
+        <span className="text-xs" style={{ color: "var(--muted)" }}>
+          원본에 새 질의를 보냅니다 (로컬은 합성 데이터)
+        </span>
         {preview.filter && (
           <button className="icon-button" onClick={onClear}
                   data-testid="PreviewSection-clearButton">
