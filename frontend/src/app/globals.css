@@ -410,6 +410,74 @@ mark.hl {
   50% { opacity: 1; }
 }
 
+/* ── PK 마크 — 이모지 대신 플랫 모노 라벨 / flat PK marker replacing the key emoji ── */
+.pk-mark {
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--stat-ink);
+}
+
+/* ── ⓘ 툴팁 — 호버·포커스에 설명 말풍선 / info icon with a hover tooltip ── */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-style: normal;
+  cursor: help;
+}
+.info-tip__bubble {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--surface-elevated);
+  color: var(--body-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-in-out;
+}
+.info-tip:hover .info-tip__bubble,
+.info-tip:focus .info-tip__bubble {
+  opacity: 1;
+}
+/* 우측 끝 섹션은 말풍선을 왼쪽 정렬로 / right-edge sections align the bubble left */
+.info-tip--left .info-tip__bubble {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+/* 좌측 끝 섹션은 오른쪽으로 펼침 / left-edge sections open rightward */
+.info-tip--right .info-tip__bubble {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+
 /* ── 브랜드 마크 — 옐로 사각 앵커 ── */
 .logo-mark {
   display: inline-block;

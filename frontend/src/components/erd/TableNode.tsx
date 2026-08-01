@@ -100,9 +100,9 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
               <Handle type="source" position={Position.Right} id={`s-${col.name}`}
                       style={HANDLE_STYLE} />
               <span className="truncate">
-                {col.is_pk ? "🔑 " : ""}
+                {col.is_pk && <span className="pk-mark">PK</span>}
                 {col.name}
-                {col.is_computed ? " ⚙" : ""}
+                {col.is_computed ? " ƒ" : ""}
               </span>
               <span className="erd-node__type">
                 {col.data_type}

@@ -210,7 +210,8 @@ function HomeInner() {
       <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
       {/* 카드 레이아웃 — 선 대신 바탕 톤·여백으로 구분 / cards on a muted surface */}
       <div className="scroll-area surface-muted min-h-0 flex-1">
-        <main className="box-border flex gap-4 p-4" style={{ height: "100%" }}>
+        {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
+        <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:h-full lg:flex-nowrap">
           <CategoryList
             categories={categories}
             selected={category}
@@ -226,7 +227,7 @@ function HomeInner() {
             onTypeFilter={setTypeFilter}
             onSelect={selectTable}
           />
-          <section className="card min-w-0 flex-1 overflow-hidden">
+          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0">
             <TableDetail
               detail={detail}
               loading={detailLoading}

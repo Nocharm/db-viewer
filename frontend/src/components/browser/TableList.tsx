@@ -3,6 +3,7 @@
 /** 좌측 2열 — 테이블명 목록 + 강화 검색(초성·컬럼·하이라이트). / table list with rich search. */
 
 import { useI18n } from "@/components/i18n";
+import { InfoTip } from "@/components/InfoTip";
 import type { SearchMatch } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 
@@ -44,7 +45,7 @@ export function TableList({
   const { t } = useI18n();
   return (
     <aside
-      className="card flex w-80 shrink-0 flex-col"
+      className="card flex max-h-[60vh] w-80 min-w-0 grow flex-col lg:max-h-none lg:grow-0"
       data-testid="TableList-root"
     >
       <div className="p-3 pb-2">
@@ -57,7 +58,7 @@ export function TableList({
           data-testid="TableList-filterInput"
         />
         {/* 타입 필터 — 뷰도 1급 시민 / views browse like tables */}
-        <div className="mt-2 flex gap-1.5">
+        <div className="mt-2 flex items-center gap-1.5">
           {TYPE_FILTERS.map(({ value, labelKey }) => (
             <button
               key={value}
@@ -68,6 +69,7 @@ export function TableList({
               {t(labelKey)}
             </button>
           ))}
+          <InfoTip text={t("tip.tableList")} />
         </div>
       </div>
       <div className="scroll-area min-h-0 flex-1 pb-3">

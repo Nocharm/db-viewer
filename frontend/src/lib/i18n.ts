@@ -181,6 +181,53 @@ export const MESSAGES = {
   "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },
 
+  "browser.categories": { ko: "카테고리", en: "Categories" },
+
+  "tip.joinKeys": {
+    ko: "FK·뷰 JOIN·검증된 관계에서 집계한 조인 키입니다. 칩을 누르면 그 키로 조인되는 테이블만 목록에 남습니다.",
+    en: "Join keys aggregated from FKs, view JOINs and validated relations. Pick one to keep only tables joinable by it.",
+  },
+  "tip.categories": {
+    ko: "테이블명 접두어(HR·ORD 등)로 나눈 업무 분류입니다. 뷰는 V_ 접두어를 벗겨 같은 기준으로 분류합니다.",
+    en: "Business buckets derived from name prefixes (HR, ORD…). Views classify the same way after stripping V_.",
+  },
+  "tip.tableList": {
+    ko: "테이블·뷰 목록입니다. 이름·컬럼·카테고리로 검색(한글 초성 지원)하고 타입 칩으로 좁힙니다.",
+    en: "Tables and views. Search by name, column or category (Korean initials supported); narrow with the type chips.",
+  },
+  "tip.columns": {
+    ko: "이 객체의 컬럼입니다. 칩을 누르면 ERD 검증 패널이 열려 그 컬럼의 조인 후보를 실데이터로 검증할 수 있습니다. 초록 테두리는 키로 쓰이는 컬럼.",
+    en: "Columns of this object. Click a chip to open the ERD validation panel and verify join candidates with real data. Green border = key column.",
+  },
+  "tip.joinCheck": {
+    ko: "타깃 테이블별 최고 후보 컬럼 페어에 실데이터 포함률(T2) 검증을 일괄 실행합니다. 값 데이터가 없는 페어는 배지로만 표시됩니다.",
+    en: "Runs containment (T2) on the best candidate pair per target table. Pairs without value data are just badged.",
+  },
+  "tip.usingViews": {
+    ko: "lineage 역추적으로 찾은, 이 테이블을 원천으로 쓰는 뷰들입니다. depth는 중첩 단계입니다.",
+    en: "Views that resolve to this table via lineage. Depth is the nesting level.",
+  },
+  "tip.baseTables": {
+    ko: "이 뷰가 최종적으로 읽는 원천 테이블입니다. 뷰 정의 파싱과 lineage로 복원했습니다.",
+    en: "Base tables this view ultimately reads, recovered from definition parsing and lineage.",
+  },
+  "tip.similar": {
+    ko: "컬럼명 일치율 30% 이상인 테이블입니다. 구조가 비슷하면 같은 도메인일 가능성이 있고, 검증 버튼으로 조인 가능성을 바로 확인할 수 있습니다.",
+    en: "Tables sharing ≥30% of column names. Similar structure hints at the same domain; Check verifies joinability.",
+  },
+  "tip.fk": {
+    ko: "카탈로그에 선언된 실제 FK 제약입니다. →는 이 테이블이 참조, ←는 피참조.",
+    en: "Real FK constraints from the catalog. → outgoing, ← incoming.",
+  },
+  "tip.relations": {
+    ko: "실데이터 검증을 통과했거나(추정) 사람이 확정(✓)한 관계입니다. 숫자는 신뢰도.",
+    en: "Relations that passed validation (inferred) or were confirmed (✓). The number is confidence.",
+  },
+  "tip.preview": {
+    ko: "원본 소스에 새 질의를 보내 받은 상위 N행입니다. 필터·행수 변경은 재질의하고, 정렬·고유값은 로드된 행 기준입니다.",
+    en: "Top-N rows from a fresh source query. Filter and limit re-query; sort and unique values use the loaded rows.",
+  },
+
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },
 } as const;

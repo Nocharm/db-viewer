@@ -5,6 +5,7 @@
 import { useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { InfoTip } from "@/components/InfoTip";
 import type { JoinKeyItem } from "@/lib/api";
 
 // 한눈에 스캔 가능한 칩 수 — 나머지는 +N 뒤로 / chips scannable at a glance
@@ -30,7 +31,10 @@ export function JoinKeyBar({ items, selected, onSelect }: Props) {
       className="flex shrink-0 items-start gap-3 px-5 py-3"
       data-testid="JoinKeyBar-root"
     >
-      <span className="erd-node__type mt-1.5 shrink-0">JOIN KEYS</span>
+      <span className="mt-1.5 flex shrink-0 items-center gap-1.5">
+        <span className="erd-node__type">JOIN KEYS</span>
+        <InfoTip text={t("tip.joinKeys")} align="right" />
+      </span>
       <div className={`flex items-center gap-1.5 ${expanded ? "flex-wrap" : "scroll-area overflow-x-auto pb-0.5"}`}>
         <button
           className={`pressable key-chip ${selected === null ? "key-chip--selected" : ""}`}

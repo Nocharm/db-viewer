@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { InfoTip } from "@/components/InfoTip";
 import { PreviewTable } from "@/components/PreviewTable";
 import type { TablePreview } from "@/lib/api";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -233,8 +234,10 @@ export function PreviewSection({
       {/* 탭 바 — 같은 테이블은 탭 활성화로만 (중복 열기 차단은 page에서) */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5"
            data-testid="PreviewSection-tabBar">
-        <h3 className="mr-2 text-base font-semibold tracking-tight" style={{ color: "var(--ink)" }}>
+        <h3 className="flex items-center gap-1.5 mr-2 text-base font-semibold tracking-tight"
+            style={{ color: "var(--ink)" }}>
           {t("preview.title")}
+          <InfoTip text={t("tip.preview")} />
         </h3>
         {tabs.map((tab) => (
           <span key={tab.id}

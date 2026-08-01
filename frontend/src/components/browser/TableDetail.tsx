@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { InfoTip } from "@/components/InfoTip";
 import {
   explainViewAi,
   generateAiSummary,
@@ -149,7 +150,7 @@ export function TableDetail({
   return (
     <div className="scroll-area h-full min-h-0 p-7" data-testid="TableDetail-root">
       {/* 헤더 — 시선 앵커: title-lg 24px/700 / eye anchor per ClickHouse title-lg */}
-      <div className="mb-2 flex items-baseline gap-3">
+      <div className="mb-2 flex flex-wrap items-baseline gap-3">
         <h2 className="font-mono text-2xl font-bold tracking-tight"
             style={{ color: "var(--ink)" }}>
           {detail.name}
@@ -203,7 +204,7 @@ export function TableDetail({
         )}
       </div>
 
-      <div className="mb-7 flex gap-3">
+      <div className="mb-7 flex flex-wrap gap-3">
         <button
           className="btn-primary"
           onClick={onPreview}
@@ -223,8 +224,9 @@ export function TableDetail({
 
       <div className="flex max-w-4xl flex-col gap-5">
         <section className="panel-section">
-          <div className="panel-section__title">
-            {t("detail.columns")} ({detail.column_count}) — {t("detail.columnsHint")}
+          <div className="panel-section__title flex items-center gap-1.5">
+            {t("detail.columns")} ({detail.column_count})
+            <InfoTip text={t("tip.columns")} />
           </div>
           <div className="flex flex-wrap gap-2">
             {detail.columns.map((column) => (
@@ -239,7 +241,7 @@ export function TableDetail({
                 onClick={() => onOpenColumn(column.id, column.name)}
                 data-testid={`TableDetail-column-${column.id}`}
               >
-                {column.is_pk ? "🔑 " : ""}{column.name}
+                {column.is_pk && <span className="pk-mark">PK</span>}{column.name}
               </button>
             ))}
           </div>
@@ -248,8 +250,11 @@ export function TableDetail({
         {/* 조인 가능성 검증 — 타깃별 최고 페어 T2 일괄 실행 / table-level join check */}
         {detail.type === "table" && (
           <section className="panel-section" data-testid="TableDetail-joinCheck">
-            <div className="mb-1 flex items-center gap-3">
-              <div className="panel-section__title !mb-0">{t("joincheck.title")}</div>
+            <div className="mb-1 flex flex-wrap items-center gap-3">
+              <div className="panel-section__title !mb-0 flex items-center gap-1.5">
+                {t("joincheck.title")}
+                <InfoTip text={t("tip.joinCheck")} />
+              </div>
               <button
                 className="btn-secondary !py-1 text-xs"
                 disabled={checking}
@@ -284,12 +289,14 @@ export function TableDetail({
           </section>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        {/* 좁은 폭에선 1열로 — 깨짐 방지 / single column when narrow */}
+        <div className="grid gap-5 md:grid-cols-2">
           {/* 뷰의 구성 테이블 — lineage 역추적 / base tables a view resolves to */}
           {detail.type === "view" && (
             <section className="panel-section" data-testid="TableDetail-baseTables">
-              <div className="panel-section__title">
+              <div className="panel-section__title flex items-center gap-1.5">
                 {t("detail.baseTables")} ({detail.base_tables.length})
+                <InfoTip text={t("tip.baseTables")} />
               </div>
               {detail.base_tables.length === 0 && (
                 <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.none")}</p>
@@ -308,8 +315,9 @@ export function TableDetail({
           )}
 
           <section className="panel-section" data-testid="TableDetail-usingViews">
-            <div className="panel-section__title">
+            <div className="panel-section__title flex items-center gap-1.5">
               {t("detail.usingViews")} ({detail.using_views.length})
+              <InfoTip text={t("tip.usingViews")} />
             </div>
             {detail.using_views.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.none")}</p>
@@ -326,7 +334,10 @@ export function TableDetail({
 
           {detail.type === "table" && (
           <section className="panel-section" data-testid="TableDetail-similarTables">
-            <div className="panel-section__title">{t("detail.similar")}</div>
+            <div className="panel-section__title flex items-center gap-1.5">
+              {t("detail.similar")}
+              <InfoTip text={t("tip.similar")} align="left" />
+            </div>
             {detail.similar_tables.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>
                 {t("detail.noSimilar")}
@@ -365,8 +376,9 @@ export function TableDetail({
 
           {detail.type === "table" && (
           <section className="panel-section">
-            <div className="panel-section__title">
+            <div className="panel-section__title flex items-center gap-1.5">
               {t("detail.fk")} ({t("detail.fkOut")} {detail.fk_out.length} · {t("detail.fkIn")} {detail.fk_in.length})
+              <InfoTip text={t("tip.fk")} />
             </div>
             {detail.fk_out.length + detail.fk_in.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.noFk")}</p>
@@ -387,7 +399,10 @@ export function TableDetail({
           )}
 
           <section className="panel-section" data-testid="TableDetail-relations">
-            <div className="panel-section__title">{t("detail.relations")} ({detail.relations.length})</div>
+            <div className="panel-section__title flex items-center gap-1.5">
+              {t("detail.relations")} ({detail.relations.length})
+              <InfoTip text={t("tip.relations")} align="left" />
+            </div>
             {detail.relations.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>
                 {t("detail.noRelations")}

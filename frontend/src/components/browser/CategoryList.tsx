@@ -3,6 +3,7 @@
 /** 좌측 1열 — 테이블 카테고리 / business categories. */
 
 import { useI18n } from "@/components/i18n";
+import { InfoTip } from "@/components/InfoTip";
 
 export interface CategoryEntry {
   code: string;
@@ -21,9 +22,13 @@ export function CategoryList({ categories, selected, totalCount, onSelect }: Pro
   const { t } = useI18n();
   return (
     <aside
-      className="card scroll-area w-44 shrink-0 py-3"
+      className="card scroll-area max-h-[60vh] w-44 shrink-0 py-3 lg:max-h-none"
       data-testid="CategoryList-root"
     >
+      <div className="flex items-center gap-1.5 px-4 pb-1.5">
+        <span className="erd-node__type">{t("browser.categories")}</span>
+        <InfoTip text={t("tip.categories")} align="right" />
+      </div>
       <button
         className={`pressable list-row ${selected === null ? "list-row--selected" : ""}`}
         onClick={() => onSelect(null)}
