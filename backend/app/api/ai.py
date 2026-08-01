@@ -10,10 +10,27 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
-from app.adapters.ai import AiClient, ColumnMeta, TableMeta, create_ai_client
+from app.adapters.ai import (
+    AiClient,
+    ColumnMeta,
+    TableMeta,
+    ValidationFacts,
+    ViewFacts,
+    create_ai_client,
+)
 from app.api.objects import resolve_snapshot
+from app.api.validate import resolve_column_ref
 from app.db import get_db
-from app.models import AiSummary, CatalogColumn, CatalogObject, Relation, ViewLineageFlat
+from app.domain.confidence import Observation, compute_confidence
+from app.models import (
+    AiSummary,
+    CatalogColumn,
+    CatalogObject,
+    JoinValidationHistory,
+    Relation,
+    ViewJoin,
+    ViewLineageFlat,
+)
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -162,3 +179,88 @@ def summarize_object(
         cached.summary = summary
         cached.created_at = datetime.now(UTC)
     return {"object": qname, "summary": summary, "cached": False}
+
+
+@router.post("/explain-validation")
+def explain_validation(
+    src_column_id: int,
+    tgt_column_id: int,
+    db: Session = Depends(get_db),
+    ai: AiClient = Depends(get_ai_client),
+) -> dict:
+    """T2 관측 통계 → 자연어 진단 — 원본 값은 입력에 없다. / narrate the latest observation."""
+    src_ref, _ = resolve_column_ref(db, src_column_id)
+    tgt_ref, _ = resolve_column_ref(db, tgt_column_id)
+    history = db.execute(
+        select(JoinValidationHistory)
+        .where(
+            JoinValidationHistory.src_object == src_ref.object_qname,
+            JoinValidationHistory.src_column == src_ref.column,
+            JoinValidationHistory.tgt_object == tgt_ref.object_qname,
+            JoinValidationHistory.tgt_column == tgt_ref.column,
+        )
+        .order_by(JoinValidationHistory.observed_at.desc())
+    ).scalars().all()
+    if not history:
+        raise HTTPException(404, {"message": "no validation history for this pair",
+                                  "context": {"src": str(src_ref), "tgt": str(tgt_ref)}})
+    latest = history[0]
+    # 패턴은 이력에서 재산출 — 단일 소스는 서버 (계획 §3.4의 confidence 규칙 재사용)
+    conf = compute_confidence([
+        Observation(h.containment, h.src_row_count, h.observed_at) for h in history
+    ])
+    text = ai.explain_validation(ValidationFacts(
+        src=str(src_ref), tgt=str(tgt_ref),
+        containment=latest.containment,
+        cardinality=latest.cardinality,
+        orphan_count=latest.orphan_count,
+        observation_count=len(history),
+        pattern=conf.pattern,
+    ))
+    return {"src": str(src_ref), "tgt": str(tgt_ref), "explanation": text}
+
+
+@router.post("/explain-view/{object_id}")
+def explain_view(
+    object_id: int,
+    db: Session = Depends(get_db),
+    ai: AiClient = Depends(get_ai_client),
+) -> dict:
+    """뷰 정의·lineage → 자연어 설명 (스키마 메타데이터만). / narrate a view's definition."""
+    obj = db.get(CatalogObject, object_id)
+    if obj is None or obj.type != "view":
+        raise HTTPException(404, {"message": "view not found", "context": {"object_id": object_id}})
+    qname = f"{obj.schema}.{obj.name}"
+
+    base = aliased(CatalogObject)
+    base_tables = sorted({
+        f"{schema}.{name}"
+        for schema, name in db.execute(
+            select(base.schema, base.name)
+            .join(ViewLineageFlat, ViewLineageFlat.base_object_id == base.id)
+            .where(ViewLineageFlat.view_object_id == obj.id)
+        )
+    })
+    left_col, right_col = aliased(CatalogColumn), aliased(CatalogColumn)
+    join_pairs = [
+        f"{left} = {right}"
+        for left, right in db.execute(
+            select(left_col.name, right_col.name)
+            .select_from(ViewJoin)
+            .join(left_col, ViewJoin.left_column_id == left_col.id)
+            .join(right_col, ViewJoin.right_column_id == right_col.id)
+            .where(ViewJoin.view_object_id == obj.id)
+        )
+    ]
+    output_columns = [
+        c.name for c in db.execute(
+            select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
+            .order_by(CatalogColumn.ordinal)
+        ).scalars()
+    ]
+    text = ai.explain_view(ViewFacts(
+        qname=qname, base_tables=base_tables, join_pairs=join_pairs,
+        output_columns=output_columns,
+        definition_excerpt=(obj.definition or "")[:400] or None,
+    ))
+    return {"object": qname, "explanation": text}

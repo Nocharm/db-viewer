@@ -120,3 +120,58 @@ def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
     graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
     me = next(n for n in graph["nodes"] if n["id"] == anchor["id"])
     assert me["ai_summary"] == first["summary"]
+
+
+
+def test_explain_view_narrates_lineage_and_columns(client, load_fixture):
+    _seed(client, load_fixture)
+    view = client.get("/api/objects?q=V_&type=view&limit=1").json()["items"][0]
+    body = client.post(f"/api/ai/explain-view/{view['id']}").json()
+    assert body["object"] == f"{view['schema']}.{view['name']}"
+    assert "컬럼" in body["explanation"]
+
+    # 테이블에는 거부 / rejected for tables
+    table_id = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]["id"]
+    assert client.post(f"/api/ai/explain-view/{table_id}").status_code == 404
+
+
+def test_explain_validation_requires_history_then_narrates(
+    client, migrated_engine, fixture_dir, load_fixture,
+):
+    from app.adapters.fake_validator import FakeJoinValidator
+    from app.api.validate import get_join_validator
+
+    _seed(client, load_fixture)
+    rel = next(
+        r for r in load_fixture("expected/relations.json")["rows"]
+        if r["kind"] == "real_no_fk" and r["orphan_count"] == 0
+    )
+    col_t, obj_t = Base.metadata.tables["columns"], Base.metadata.tables["objects"]
+
+    def column_id(qname: str, column: str) -> int:
+        schema, name = qname.split(".", 1)
+        with migrated_engine.connect() as conn:
+            return conn.execute(
+                sa.select(col_t.c.id)
+                .join(obj_t, col_t.c.object_id == obj_t.c.id)
+                .where(obj_t.c.schema == schema, obj_t.c.name == name,
+                       col_t.c.name == column)
+            ).scalar_one()
+
+    src_id = column_id(rel["src_object"], rel["src_column"])
+    tgt_id = column_id(rel["tgt_object"], rel["tgt_column"])
+    params = f"src_column_id={src_id}&tgt_column_id={tgt_id}"
+
+    # 이력 없음 → 404 / no history yet
+    assert client.post(f"/api/ai/explain-validation?{params}").status_code == 404
+
+    # T2 관측 1회 후 진단 문장 생성 / narrates after one observation
+    client.app.dependency_overrides[get_join_validator] = lambda: FakeJoinValidator(
+        fixture_dir / "value_sets.json"
+    )
+    client.post("/api/validate/containment", json={
+        "src_column_id": src_id, "tgt_column_id": tgt_id,
+    })
+    body = client.post(f"/api/ai/explain-validation?{params}").json()
+    assert "100.0%" in body["explanation"]
+    assert "우연" in body["explanation"]  # 관측 1회 → small_sample_only 진단

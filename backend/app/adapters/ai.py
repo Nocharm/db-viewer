@@ -41,12 +41,40 @@ class AiTableHit:
     reason: str
 
 
+@dataclass(frozen=True)
+class ValidationFacts:
+    """T2 관측 통계만 — 원본 값 없음 / observation stats only, never raw values."""
+
+    src: str
+    tgt: str
+    containment: float
+    cardinality: str | None
+    orphan_count: int
+    observation_count: int
+    pattern: str
+
+
+@dataclass(frozen=True)
+class ViewFacts:
+    """뷰 정의(DDL 텍스트)와 lineage — 스키마 메타데이터 / schema metadata of a view."""
+
+    qname: str
+    base_tables: list[str]
+    join_pairs: list[str]
+    output_columns: list[str]
+    definition_excerpt: str | None
+
+
 class AiClient(Protocol):
     def suggest_relations(self, tables: list[TableMeta]) -> list[AiRelationSuggestion]: ...
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]: ...
 
     def summarize_table(self, table: TableMeta, base_tables: list[str]) -> str: ...
+
+    def explain_validation(self, facts: ValidationFacts) -> str: ...
+
+    def explain_view(self, facts: ViewFacts) -> str: ...
 
 
 def _normalize(name: str) -> str:
@@ -102,6 +130,41 @@ class FakeAiClient:
         if base_tables:
             summary += f" / 원천: {', '.join(base_tables[:3])}"
         return summary
+
+    # 패턴 라벨 → 진단 문장 골격 / diagnosis skeleton per confidence pattern
+    _PATTERN_NOTES = {
+        "stable_confirmed": "관측이 반복적으로 1.0 — 사실상 FK로 봐도 무방합니다.",
+        "stable_with_orphans": "관계는 유효하나 고아 행이 남습니다 — 마스터 삭제 이력이나 이관 잔여일 가능성이 큽니다.",
+        "drop_alert": "직전 관측 대비 급락 — 스키마 변경이나 데이터 이관을 의심하고 원인 확인이 필요합니다.",
+        "small_sample_only": "행 수가 적어 우연 일치 가능성을 배제할 수 없습니다 — 데이터가 쌓인 뒤 재검증을 권합니다.",
+        "unstable": "관측마다 값이 흔들립니다 — 관계로 확정하기 전 원인 파악이 필요합니다.",
+    }
+
+    def explain_validation(self, facts: ValidationFacts) -> str:
+        pct = f"{facts.containment * 100:.1f}%"
+        head = f"{facts.src} → {facts.tgt}: 포함률 {pct}"
+        if facts.cardinality == "N:M":
+            head += ", N:M 교차 관계라 FK 후보는 아닙니다"
+        elif facts.cardinality:
+            head += f", {facts.cardinality}"
+        body = self._PATTERN_NOTES.get(facts.pattern, "패턴 미분류 — 관측을 더 쌓아 주세요.")
+        orphan = (
+            f" 고아 {facts.orphan_count}건은 타깃에 없는 소스 값입니다."
+            if facts.orphan_count > 0 else ""
+        )
+        return f"{head}. {body}{orphan} (관측 {facts.observation_count}회 기준)"
+
+    def explain_view(self, facts: ViewFacts) -> str:
+        parts = [f"{facts.qname}"]
+        if facts.base_tables:
+            parts.append(f"{', '.join(facts.base_tables[:4])}을(를) 원천으로")
+        if facts.join_pairs:
+            parts.append(f"{', '.join(facts.join_pairs[:3])} 조건으로 조인해")
+        head = ", ".join(facts.output_columns[:5])
+        parts.append(f"{head} 등 {len(facts.output_columns)}개 컬럼을 노출하는 뷰입니다.")
+        if facts.definition_excerpt and "GROUP BY" in facts.definition_excerpt.upper():
+            parts.append("집계(GROUP BY)를 포함합니다.")
+        return " ".join(parts)
 
 
 def create_ai_client() -> AiClient:

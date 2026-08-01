@@ -189,6 +189,22 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
         )
     }
 
+    # 뷰의 구성 테이블 — lineage flat 역방향 / base tables a view resolves to
+    base_tables = []
+    if obj.type == "view":
+        base_obj = aliased(CatalogObject)
+        base_tables = [
+            {"id": bid, "name": f"{schema}.{name}", "min_depth": depth}
+            for bid, schema, name, depth in db.execute(
+                select(base_obj.id, base_obj.schema, base_obj.name,
+                       func.min(ViewLineageFlat.depth))
+                .join(ViewLineageFlat, ViewLineageFlat.base_object_id == base_obj.id)
+                .where(ViewLineageFlat.view_object_id == obj.id)
+                .group_by(base_obj.id, base_obj.schema, base_obj.name)
+                .order_by(func.min(ViewLineageFlat.depth), base_obj.name)
+            )
+        ]
+
     return {
         "id": obj.id, "name": qname, "type": obj.type, "row_count": obj.row_count,
         "column_count": len(columns),
@@ -199,6 +215,7 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
             for c in columns
         ],
         "using_views": using_views,
+        "base_tables": base_tables,
         "similar_tables": similar,
         "fk_out": sorted(fk_out), "fk_in": sorted(fk_in),
         "relations": relations,
