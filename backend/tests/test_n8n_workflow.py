@@ -14,6 +14,7 @@ WORKFLOW_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
 RECON_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
 W1A_PATH = REPO_ROOT / "n8n" / "workflows" / "w1a_collect_catalog.json"
 W1B_PATH = REPO_ROOT / "n8n" / "workflows" / "w1b_collect_viewdeps.json"
+W2_PATH = REPO_ROOT / "n8n" / "workflows" / "w2_query_executor.json"
 
 
 def test_committed_workflow_matches_regeneration():
@@ -51,6 +52,27 @@ def test_collect_workflows_echo_job_id_and_split_sql():
     # 2단계는 snapshot_id를 webhook body에서 받는다 / step 2 reads snapshot_id from the trigger
     w1b_code = next(n for n in w1b["nodes"] if n["type"] == "n8n-nodes-base.code")
     assert "trigger.snapshot_id" in w1b_code["parameters"]["jsCode"]
+
+
+def test_committed_query_executor_matches_regeneration():
+    assert json.loads(W2_PATH.read_text()) == build_n8n_workflow.build_query_executor_workflow()
+
+
+def test_query_executor_contract():
+    """W2 계약 — 동기 응답, 고정 템플릿 3종, 이스케이프, 동적 SQL 미수신."""
+    wf = json.loads(W2_PATH.read_text())
+    trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
+    assert trigger["parameters"]["responseMode"] == "lastNode"  # 쿼리 결과가 곧 응답
+    code = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.code")
+    js = code["parameters"]["jsCode"]
+    for kind in ("containment", "join_preview", "table_preview"):
+        assert kind in js
+    assert "']]'" in js or "]]" in js      # 식별자 브래킷 이스케이프
+    assert "''" in js                       # 리터럴 이스케이프
+    assert "unknown kind" in js             # 그 외 kind 거부
+    mssql = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.microsoftSql")
+    # SQL은 Code 노드 산출물만 — 외부에서 온 문자열을 직접 실행하지 않는다
+    assert mssql["parameters"]["query"] == "={{ $json.query }}"
 
 
 def test_recon_workflow_structure():

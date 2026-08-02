@@ -16,6 +16,47 @@ OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
 RECON_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
 W1A_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1a_collect_catalog.json"
 W1B_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1b_collect_viewdeps.json"
+W2_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w2_query_executor.json"
+
+# W2 — 파라미터 → 고정 템플릿 쿼리. 동적 SQL 문자열은 절대 받지 않는다 (보안 경계).
+# parameters become one of three fixed templates; raw SQL is never accepted
+BUILD_QUERY_JS = """\
+// 식별자는 브래킷, 리터럴은 '' 이스케이프 — 템플릿 밖 SQL 조립 금지
+// bracket-escape identifiers, quote-escape literals; no free-form SQL
+const esc = (s) => '[' + String(s).replace(/\\]/g, ']]') + ']';
+const lit = (s) => String(s).replace(/'/g, "''");
+const b = $json.body ?? {};
+const limit = Math.min(Math.max(parseInt(b.limit, 10) || 20, 1), 500);
+let query;
+if (b.kind === 'containment') {
+  const src = esc(b.src_schema) + '.' + esc(b.src_table);
+  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);
+  const sc = esc(b.src_column), tc = esc(b.tgt_column);
+  query = `SELECT
+  (SELECT COUNT(*) FROM ${src}) AS src_rows,
+  (SELECT COUNT(*) FROM ${tgt}) AS tgt_rows,
+  (SELECT COUNT(DISTINCT ${tc}) FROM ${tgt}) AS tgt_distinct,
+  COUNT(DISTINCT a.${sc}) AS src_distinct,
+  COUNT(DISTINCT CASE WHEN b.${tc} IS NOT NULL THEN a.${sc} END) AS matched
+FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
+} else if (b.kind === 'join_preview') {
+  const src = esc(b.src_schema) + '.' + esc(b.src_table);
+  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);
+  const sc = esc(b.src_column), tc = esc(b.tgt_column);
+  query = `SELECT TOP ${limit} a.${sc} AS ${esc('src.' + b.src_column)}, ` +
+    `b.${tc} AS ${esc('tgt.' + b.tgt_column)} ` +
+    `FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
+} else if (b.kind === 'table_preview') {
+  const tbl = esc(b.schema) + '.' + esc(b.table);
+  query = `SELECT TOP ${limit} * FROM ${tbl}`;
+  if (b.filter_column && b.filter_value) {
+    query += ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;
+  }
+} else {
+  throw new Error('unknown kind: ' + b.kind);
+}
+return [{ json: { query } }];
+"""
 
 # (노드 이름, 정찰 SQL 파일) — 연결 단계 정지점 16 / recon queries, connection step 16
 RECON_SQL_NODES = [
@@ -296,6 +337,40 @@ def build_collect_viewdeps_workflow() -> dict:
     }
 
 
+def build_query_executor_workflow() -> dict:
+    """W2 — T2 검증·미리보기용 동기 쿼리 실행 webhook / synchronous query executor.
+
+    백엔드가 kind + 식별자 파라미터만 보내고, SQL은 여기 고정 템플릿에서만 만들어진다.
+    응답은 마지막 노드(MSSQL) 출력 — webhook이 결과 행을 그대로 돌려준다.
+    """
+    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
+    nodes = [
+        _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
+            "httpMethod": "POST", "path": "dbv-query",
+            # 동기 응답 — 쿼리 결과가 HTTP 응답이 된다 / last node's output is the response
+            "responseMode": "lastNode",
+        }, type_version=2),
+        _node("Build query", "n8n-nodes-base.code", [220, 0],
+              {"jsCode": BUILD_QUERY_JS}, type_version=2),
+        _node("Run query", "n8n-nodes-base.microsoftSql", [440, 0], {
+            "operation": "executeQuery",
+            "query": "={{ $json.query }}",
+        }, credentials=mssql_cred, type_version=1.1),
+    ]
+    return {
+        "name": "W2 query executor (webhook)",
+        "nodes": nodes,
+        "connections": _chain(nodes),
+        "settings": {"executionOrder": "v1"},
+        "meta": {
+            "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/join_preview/"
+                     "table_preview)와 식별자 파라미터를 보내면 고정 템플릿 쿼리만 실행한다. "
+                     "동적 SQL 문자열은 받지 않는다. credentials는 읽기 전용 계정 권장. "
+                     "N8N_WEBHOOK_BASE(백엔드)와 webhook 경로(dbv-query)가 일치해야 한다.",
+        },
+    }
+
+
 def build_recon_workflow() -> dict:
     """정찰 워크플로 — 수동 트리거, 6종 쿼리 → 종합 리포트 1건 / manual recon run."""
     mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
@@ -338,6 +413,7 @@ def main() -> None:
         (RECON_OUT_PATH, build_recon_workflow()),
         (W1A_OUT_PATH, build_collect_catalog_workflow()),
         (W1B_OUT_PATH, build_collect_viewdeps_workflow()),
+        (W2_OUT_PATH, build_query_executor_workflow()),
     ]
     for path, workflow in outputs:
         path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2) + "\n")
