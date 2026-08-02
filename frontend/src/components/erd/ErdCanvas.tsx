@@ -90,6 +90,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [previewHidden, setPreviewHidden] = useState<string[]>([]);
   const [previewSort, setPreviewSort] = useState<SortSpec | null>(null);
   const [pending, setPending] = useState<MergePlan | null>(null);
+  // 그래프 조회·레이아웃 계산 중 표시 / graph fetch + ELK layout in flight
+  const [graphBusy, setGraphBusy] = useState(false);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -123,16 +125,21 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
 
   const expandNeighbors = useCallback(
     (id: number) => {
+      setGraphBusy(true);
       fetchGraph(id, 1)
         .then((incoming) => setGraph((cur) => {
           const plan = planMerge(cur, incoming);
           if (plan.needsConfirm) {
             setPending(plan);
+            setGraphBusy(false); // 모달 대기 — 레이아웃 없음 / no layout while confirming
             return cur;
           }
           return plan.merged;
         }))
-        .catch((e) => setError(e.message));
+        .catch((e) => {
+          setError(e.message);
+          setGraphBusy(false);
+        });
     },
     [],
   );
@@ -150,6 +157,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   useEffect(() => {
     if (anchorId === null) return;
     setError(null);
+    setGraphBusy(true);
     fetchGraph(anchorId, 1)
       .then((incoming) => {
         setGraph(null);
@@ -161,7 +169,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         manualPosRef.current = new Map(); // 새 캔버스 — 수동 배치 초기화
         applyIncoming(incoming, null);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        setError(e.message);
+        setGraphBusy(false);
+      });
   }, [anchorId, applyIncoming]);
 
   // 드래그 반영 — position 변경만 수동 배치로 기록 / record drags as manual placements
@@ -341,6 +352,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           } as Edge;
         }),
       );
+      setGraphBusy(false); // 레이아웃 반영 완료 / layout applied
       // 전체 맞춤 대신 앵커 좌표로 직접 센터링 — ELK 좌표를 알고 있어 측정 타이밍에 무관
       // center on the anchor's ELK coordinates; no dependence on node measurement timing
       if (centeredAnchorRef.current !== graph.anchor_id) {
@@ -415,6 +427,17 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         <Controls />
       </ReactFlow>
       <Legend />
+
+      {/* 그래프 계산 배지 — 확장·레이아웃 대기 표시 / graph-busy badge */}
+      {graphBusy && (
+        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
+             style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+                      color: "var(--body-text)" }}
+             data-testid="ErdCanvas-graphBusy">
+          <span className="skeleton h-2 w-16" />
+          {t("erd.graphLoading")}
+        </div>
+      )}
 
       {/* 전체 펼침/접힘 툴바 — 선택적 정보 열람 보조 / bulk expand-collapse toolbar */}
       {graph && (

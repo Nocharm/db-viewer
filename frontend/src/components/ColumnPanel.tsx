@@ -10,8 +10,11 @@ import {
   explainValidationAi,
   fetchCandidates,
   fetchHistory,
+  fetchScanJob,
   runContainment,
   runPreview,
+  startScan,
+  type ScanJobStatus,
 } from "@/lib/api";
 import type {
   CandidateItem,
@@ -55,6 +58,9 @@ export function ColumnPanel({ column, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiText, setAiText] = useState<string | null>(null);
+  // T3 전수 탐색 — 202 + 폴링 진행도 / exploratory scan job with polled progress
+  const [scanJob, setScanJob] = useState<ScanJobStatus | null>(null);
+  const [scanRunning, setScanRunning] = useState(false);
 
   useEffect(() => {
     setCandidates(null);
@@ -65,10 +71,29 @@ export function ColumnPanel({ column, onClose }: Props) {
     setConfirmed(false);
     setError(null);
     setAiText(null);
+    setScanJob(null);
+    setScanRunning(false);
     if (column) {
       fetchCandidates(column.id).then(setCandidates).catch((e) => setError(e.message));
     }
   }, [column]);
+
+  // 스캔 폴링 — 완료·실패까지 1.5초 간격 / poll until done or failed
+  useEffect(() => {
+    if (!scanRunning || !scanJob) return;
+    const timer = setInterval(() => {
+      fetchScanJob(scanJob.job_id)
+        .then((job) => {
+          setScanJob(job);
+          if (job.status === "done" || job.status === "failed") setScanRunning(false);
+        })
+        .catch((e) => {
+          setError(e.message);
+          setScanRunning(false);
+        });
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [scanRunning, scanJob]);
 
   if (!column) return null;
 
@@ -161,6 +186,85 @@ export function ColumnPanel({ column, onClose }: Props) {
             </li>
           )}
         </ul>
+      )}
+
+      {/* T3 전수 탐색 — 이름 무관 전수조사, 진행도 폴링 / full scan with polled progress */}
+      {candidates && !candidates.excluded && (
+        <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--hairline)" }}
+             data-testid="ColumnPanel-scanSection">
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary !py-1 text-xs"
+              disabled={scanRunning}
+              onClick={() => {
+                setError(null);
+                setScanJob(null);
+                startScan(column.id)
+                  .then((res) => {
+                    setScanJob({ job_id: res.job_id, status: "queued",
+                                 progress: { done: 0, total: 0 }, error: null, results: [] });
+                    setScanRunning(true);
+                  })
+                  .catch((e) => setError(e.message));
+              }}
+              data-testid="ColumnPanel-scanButton"
+            >
+              {t("scan.button")}
+            </button>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              {t("scan.hint")}
+            </span>
+          </div>
+
+          {scanJob && scanRunning && (
+            <div className="mt-2" data-testid="ColumnPanel-scanProgress">
+              <p className="mb-1 text-xs" style={{ color: "var(--body-text)" }}>
+                {scanJob.status === "queued"
+                  ? t("scan.queued")
+                  : `${t("scan.running")} (${scanJob.progress.done}/${scanJob.progress.total})`}
+              </p>
+              <div className="rate-bar !w-full">
+                <div className="rate-bar__fill transition-all duration-300 ease-in-out"
+                     style={{
+                       width: scanJob.progress.total > 0
+                         ? `${Math.round((scanJob.progress.done / scanJob.progress.total) * 100)}%`
+                         : "6%",
+                     }} />
+              </div>
+            </div>
+          )}
+
+          {scanJob && !scanRunning && scanJob.status === "failed" && (
+            <p className="mt-2 text-xs" style={{ color: "var(--error)" }}
+               data-testid="ColumnPanel-scanError">
+              {t("scan.failed")} — {scanJob.error}
+            </p>
+          )}
+
+          {scanJob && !scanRunning && scanJob.status === "done" && (
+            <div className="mt-2" data-testid="ColumnPanel-scanResults">
+              <div className="text-xs font-medium">{t("scan.results")}</div>
+              {scanJob.results.length === 0 && (
+                <p className="text-xs" style={{ color: "var(--muted)" }}>{t("scan.none")}</p>
+              )}
+              {scanJob.results.map((hit) => (
+                <div key={`${hit.tgt_object}.${hit.tgt_column}`}
+                     className="flex items-center gap-2 py-0.5 text-xs">
+                  <span className="truncate font-mono">
+                    {hit.tgt_object}.{hit.tgt_column}
+                  </span>
+                  <span className="ml-auto font-semibold tabular-nums"
+                        style={{ color: "var(--stat-ink)" }}>
+                    {((hit.containment_full ?? hit.containment_sample) * 100).toFixed(1)}%
+                  </span>
+                  {hit.cardinality && (
+                    <span className="badge badge--muted">{hit.cardinality}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {selected && (

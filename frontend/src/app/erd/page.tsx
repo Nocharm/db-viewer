@@ -46,6 +46,7 @@ function ErdPageInner() {
     return null;
   });
   const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const handleSelectColumn = useCallback(
     (columnId: number, columnName: string, objectQname: string) =>
@@ -69,13 +70,17 @@ function ErdPageInner() {
         </span>
         <button
           className="icon-button"
+          disabled={aiBusy}
           onClick={() => {
-            void suggestRelationsAi().then((res) =>
-              setAiNotice(t("erd.aiNotice").replace("{n}", String(res.created))));
+            setAiBusy(true);
+            void suggestRelationsAi()
+              .then((res) =>
+                setAiNotice(t("erd.aiNotice").replace("{n}", String(res.created))))
+              .finally(() => setAiBusy(false));
           }}
           data-testid="Home-aiSuggestButton"
         >
-          {t("erd.aiSuggest")}
+          {aiBusy ? t("ai.working") : t("erd.aiSuggest")}
         </button>
         {aiNotice && (
           <span className="text-sm" style={{ color: "var(--slate)" }}

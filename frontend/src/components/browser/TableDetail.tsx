@@ -13,6 +13,7 @@ import {
   type JoinCheckItem,
   type ObjectDetail,
 } from "@/lib/api";
+import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface Props {
   detail: ObjectDetail | null;
@@ -80,6 +81,8 @@ export function TableDetail({
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  // 장시간 검증의 살아있음 표시 / liveness indicator for long-running checks
+  const checkElapsed = useElapsedSeconds(checking);
 
   // 테이블 전환 시 검증·AI 상태 초기화 / reset per-table state on switch
   useEffect(() => {
@@ -261,8 +264,11 @@ export function TableDetail({
                 onClick={() => runCheck()}
                 data-testid="TableDetail-joinCheckAllButton"
               >
-                {checking ? t("joincheck.running") : t("joincheck.checkAll")}
+                {checking
+                  ? `${t("joincheck.running")} ${t("common.seconds").replace("{n}", String(checkElapsed))}`
+                  : t("joincheck.checkAll")}
               </button>
+              {checking && <div className="skeleton h-4 w-24" />}
             </div>
             <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>
               {t("joincheck.hint")}

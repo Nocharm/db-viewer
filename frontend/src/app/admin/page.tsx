@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { CollectPanel } from "@/components/admin/CollectPanel";
 import { useMe } from "@/components/providers";
+import { useElapsedSeconds } from "@/lib/use-elapsed";
 import {
   addWhitelist,
   fetchWhitelist,
@@ -22,6 +23,9 @@ export default function AdminPage() {
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // AD 전체 동기화는 분 단위로 걸릴 수 있다 — 경과 표시 / full AD sync can take minutes
+  const [syncing, setSyncing] = useState(false);
+  const syncElapsed = useElapsedSeconds(syncing);
 
   const reload = () =>
     fetchWhitelist().then((r) => setItems(r.items)).catch((e) => setError(e.message));
@@ -67,17 +71,24 @@ export default function AdminPage() {
           <h2 className="text-sm font-medium">로그인 화이트리스트</h2>
           <button
             className="icon-button ml-auto"
-            onClick={() =>
+            disabled={syncing}
+            onClick={() => {
+              setSyncing(true);
               run(async () => {
-                const summary = await syncUsers();
-                setMessage(
-                  `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / ` +
-                  `제외 ${summary.excluded} / 정리 ${summary.purged}`,
-                );
-              }, "AD 동기화 완료")}
+                try {
+                  const summary = await syncUsers();
+                  setMessage(
+                    `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / ` +
+                    `제외 ${summary.excluded} / 정리 ${summary.purged}`,
+                  );
+                } finally {
+                  setSyncing(false);
+                }
+              }, "AD 동기화 완료");
+            }}
             data-testid="AdminPage-syncButton"
           >
-            AD 전체 동기화
+            {syncing ? `동기화 중… ${syncElapsed}초` : "AD 전체 동기화"}
           </button>
         </div>
 

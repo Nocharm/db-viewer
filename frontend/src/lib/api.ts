@@ -262,6 +262,27 @@ export function fetchCollectJobs(): Promise<{ items: CollectJob[] }> {
   return getJson("/api/collect/jobs");
 }
 
+export interface ScanJobStatus {
+  job_id: number;
+  status: "queued" | "running" | "done" | "failed";
+  progress: { done: number; total: number };
+  error: string | null;
+  results: {
+    rank: number; tgt_object: string; tgt_column: string;
+    containment_sample: number; containment_full: number | null;
+    cardinality: string | null;
+  }[];
+}
+
+/** T3 전수 탐색 시작 — 202 + 폴링 규약 / start an exploratory scan. */
+export function startScan(columnId: number): Promise<{ job_id: number; status: string }> {
+  return postJson("/api/scan", { column_id: columnId });
+}
+
+export function fetchScanJob(jobId: number): Promise<ScanJobStatus> {
+  return getJson(`/api/jobs/${jobId}`);
+}
+
 /** AI 요약 생성·갱신 (캐시 무시) / regenerate the cached AI summary. */
 export function generateAiSummary(objectId: number): Promise<{ summary: string }> {
   return postJson(`/api/ai/summarize/${objectId}?force=true`, {});
