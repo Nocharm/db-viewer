@@ -90,6 +90,14 @@ export const MESSAGES = {
   "preview.countHeader": { ko: "건수", en: "Count" },
   "preview.split": { ko: "분할", en: "Split" },
   "preview.single": { ko: "단일", en: "Single" },
+  "preview.sqlView": { ko: "SQL로 보기", en: "View as SQL" },
+  "preview.sqlHint": {
+    ko: "현재 화면(보이는 컬럼·필터·정렬·행수)과 동치인 쿼리입니다.",
+    en: "The query equivalent of the current view (visible columns, filter, sort, limit).",
+  },
+  "preview.copy": { ko: "클립보드 복사", en: "Copy to clipboard" },
+  "preview.copied": { ko: "복사됨 ✓", en: "Copied ✓" },
+  "preview.copyFailed": { ko: "복사 실패 — 직접 선택해 복사하세요", en: "Copy failed — select manually" },
 
   "parsing.title": { ko: "파싱 지표", en: "Parse metrics" },
   "parsing.snapshot": { ko: "스냅샷", en: "snapshot" },

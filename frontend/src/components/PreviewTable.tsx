@@ -22,11 +22,49 @@ interface HeaderMenu {
   y: number;
 }
 
+// 컬럼 폭 드래그 한계(px) / drag clamp for column widths
+const MIN_COL_WIDTH = 48;
+const MAX_COL_WIDTH = 800;
+
 export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
   const [uniqueColumn, setUniqueColumn] = useState<string | null>(null);
+  // 세로선 드래그로 지정한 폭 — 더블클릭이 지우면 내용 맞춤(자연 폭)으로 복귀
+  // dragged widths; double-click clears back to natural (content-fit) width
+  const [widths, setWidths] = useState<Record<string, number>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // 다른 테이블 데이터로 바뀌면 폭 초기화 / reset widths when the object changes
+  useEffect(() => {
+    setWidths({});
+  }, [data.object]);
+
+  const startColumnResize = (event: React.PointerEvent, column: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const th = (event.currentTarget as HTMLElement).closest("th");
+    if (!th) return;
+    const startX = event.clientX;
+    const startWidth = th.getBoundingClientRect().width;
+    const onMove = (e: PointerEvent) => {
+      const next = Math.min(Math.max(startWidth + (e.clientX - startX), MIN_COL_WIDTH), MAX_COL_WIDTH);
+      setWidths((cur) => ({ ...cur, [column]: Math.round(next) }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // 지정 폭 컬럼은 말줄임 처리 / overridden columns ellipsize overflowing content
+  const cellStyle = (column: string): React.CSSProperties | undefined => {
+    const width = widths[column];
+    if (width === undefined) return undefined;
+    return { width, maxWidth: width, overflow: "hidden", textOverflow: "ellipsis" };
+  };
 
   useEffect(() => {
     if (!menu) return;
@@ -55,7 +93,8 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
             {columns.map((column) => (
               <th
                 key={column}
-                className="cursor-context-menu whitespace-nowrap px-3 py-1.5 font-mono font-medium"
+                className="relative cursor-context-menu whitespace-nowrap px-3 py-1.5 font-mono font-medium"
+                style={cellStyle(column)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ column, x: e.clientX, y: e.clientY });
@@ -68,6 +107,21 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
                     {" "}{sort.dir === "asc" ? "▲" : "▼"}
                   </span>
                 )}
+                {/* 세로선 핸들 — 드래그 폭 조절, 더블클릭 내용 맞춤 / drag to size, dbl-click to fit */}
+                <span
+                  className="col-resize"
+                  onPointerDown={(e) => startColumnResize(e, column)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setWidths((cur) => {
+                      const next = { ...cur };
+                      delete next[column];
+                      return next;
+                    });
+                  }}
+                  onContextMenu={(e) => e.stopPropagation()}
+                  data-testid={`PreviewTable-resizeHandle-${column}`}
+                />
               </th>
             ))}
           </tr>
@@ -77,7 +131,9 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
             <tr key={index} className="border-t transition-colors duration-150 ease-in-out hover:bg-[var(--soft-stone)]"
                 style={{ borderColor: "var(--hairline)" }}>
               {columns.map((column) => (
-                <td key={column} className="whitespace-nowrap px-3 py-1">
+                <td key={column} className="whitespace-nowrap px-3 py-1"
+                    style={cellStyle(column)}
+                    title={String(row[column] ?? "")}>
                   {String(row[column] ?? "")}
                 </td>
               ))}

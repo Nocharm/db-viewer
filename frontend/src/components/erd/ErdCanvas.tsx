@@ -15,6 +15,7 @@ import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { useI18n } from "@/components/i18n";
+import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
@@ -540,6 +541,13 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                 <option key={option} value={option}>TOP {option}</option>
               ))}
             </select>
+            {preview && (
+              <PreviewSqlButton
+                state={{ object: preview.object, limit: preview.limit, filter: preview.filter }}
+                visibleColumns={preview.columns.filter((c) => !previewHidden.includes(c))}
+                sort={previewSort}
+              />
+            )}
             <button
               className="icon-button"
               disabled={!preview}

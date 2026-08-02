@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
+import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import type { TablePreview } from "@/lib/api";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -177,6 +178,14 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
           )}
         </div>
 
+        {data && (
+          <PreviewSqlButton
+            state={{ object: data.object, limit: data.limit, filter: data.filter }}
+            visibleColumns={data.columns.filter((column) => !tab.hidden.includes(column))}
+            sort={tab.sort}
+            buttonClassName="icon-button h-10"
+          />
+        )}
         <button className="icon-button h-10" disabled={!data} onClick={downloadCsv}
                 data-testid="PreviewSection-csvButton">
           {t("preview.csv")}

@@ -58,3 +58,60 @@ export function buildCsv(columns: string[], rows: PreviewRow[]): string {
   }
   return `﻿${lines.join("\r\n")}`;
 }
+
+function escapeIdentifier(name: string): string {
+  return `[${name.replace(/]/g, "]]")}]`;
+}
+
+export interface PreviewQueryState {
+  object: string; // schema.name
+  limit: number;
+  filter: { column: string; value: string | null } | null;
+}
+
+/** 현재 미리보기 상태와 동치인 T-SQL 생성 — 보이는 컬럼·필터·정렬·행수 그대로.
+ * 재현용 참고 쿼리다: 필터의 부분 일치 의미(LIKE)와 식별자 이스케이프를 보존한다.
+ * The T-SQL equivalent of the current preview state, for reproduction elsewhere. */
+export function buildPreviewSql(
+  state: PreviewQueryState,
+  visibleColumns: string[],
+  sort: SortSpec | null,
+): string {
+  const [schema, ...rest] = state.object.split(".");
+  const table = `${escapeIdentifier(schema)}.${escapeIdentifier(rest.join("."))}`;
+  const columns = visibleColumns.map(escapeIdentifier).join(",\n       ");
+  let sql = `SELECT TOP ${state.limit}\n       ${columns}\nFROM ${table}`;
+  if (state.filter?.column && state.filter.value) {
+    const value = state.filter.value.replace(/'/g, "''");
+    sql += `\nWHERE ${escapeIdentifier(state.filter.column)} LIKE N'%${value}%'`;
+  }
+  if (sort) {
+    sql += `\nORDER BY ${escapeIdentifier(sort.column)} ${sort.dir.toUpperCase()}`;
+  }
+  return `${sql};`;
+}
+
+/** 클립보드 복사 — 평문 HTTP(insecure context)에선 navigator.clipboard가 없어
+ * textarea+execCommand 폴백을 쓴다 (bpm 운영 레슨: 사내 서버는 HTTP).
+ * Copies text with an execCommand fallback so plain-HTTP deployments work. */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // 권한 거부 등 — 폴백으로 진행 / fall through to the legacy path
+    }
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand("copy");
+  } finally {
+    area.remove();
+  }
+}

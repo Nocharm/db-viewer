@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCsv, countUniqueValues, sortRows } from "./preview-utils";
+import { buildCsv, buildPreviewSql, countUniqueValues, sortRows } from "./preview-utils";
 
 const ROWS = [
   { QTY: 20, NM: "b" },
@@ -26,6 +26,30 @@ describe("countUniqueValues", () => {
       { value: "b", count: 1 },
       { value: "c", count: 1 },
     ]);
+  });
+});
+
+describe("buildPreviewSql", () => {
+  const STATE = {
+    object: "dbo.HR_EMP",
+    limit: 50,
+    filter: { column: "EMP_NM", value: "김'철수" },
+  };
+
+  it("renders the current state as T-SQL with escaping", () => {
+    const sql = buildPreviewSql(STATE, ["EMP_NO", "we]ird"], { column: "EMP_NO", dir: "desc" });
+    expect(sql).toContain("SELECT TOP 50");
+    expect(sql).toContain("[EMP_NO]");
+    expect(sql).toContain("[we]]ird]"); // ] 는 ]] 로 / bracket escape
+    expect(sql).toContain("FROM [dbo].[HR_EMP]");
+    expect(sql).toContain("WHERE [EMP_NM] LIKE N'%김''철수%'"); // ' 는 '' 로
+    expect(sql).toContain("ORDER BY [EMP_NO] DESC");
+  });
+
+  it("omits WHERE and ORDER BY when absent", () => {
+    const sql = buildPreviewSql({ ...STATE, filter: null }, ["A"], null);
+    expect(sql).not.toContain("WHERE");
+    expect(sql).not.toContain("ORDER BY");
   });
 });
 
