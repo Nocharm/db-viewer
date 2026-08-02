@@ -39,6 +39,7 @@ docker compose up -d --build
 ```
 
 배포 전 로컬 리허설(로컬 Keycloak + 선택적 MSSQL/n8n 수집 리허설): `docs/local-test.md`
+실DB 연결(정찰 → 수집 → live 전환) 순서와 체크리스트: **`docs/connect.md`**
 
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
 - **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트
