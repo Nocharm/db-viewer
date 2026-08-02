@@ -184,6 +184,22 @@ export const MESSAGES = {
   "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
   "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
 
+  "check.title": { ko: "조인 검증", en: "Join validation" },
+  "check.fetchingCandidates": { ko: "후보 조회 중…", en: "Finding candidates…" },
+  "check.validating": { ko: "실데이터 검증 중", en: "Validating with real data" },
+  "check.longRunHint": {
+    ko: "원본에 집계 질의를 보내는 중입니다 — 큰 테이블은 수십 초 걸릴 수 있습니다.",
+    en: "Running aggregate queries on the source — large tables can take a while.",
+  },
+  "check.summaryTitle": { ko: "검증 요약", en: "Validation summary" },
+  "check.excluded": { ko: "검증 제외", en: "Excluded from validation" },
+  "check.noCandidates": { ko: "조인 후보 없음", en: "No join candidates" },
+  "check.noData": { ko: "값 데이터 없음", en: "no value data" },
+  "check.failed": { ko: "실패", en: "failed" },
+  "check.target": { ko: "대상", en: "Target" },
+  "check.goErd": { ko: "ERD에서 상세 검증 →", en: "Continue in the ERD →" },
+  "check.back": { ko: "돌아가기", en: "Back" },
+
   "ai.generateSummary": { ko: "AI 요약 생성", en: "Generate AI summary" },
   "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
   "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },

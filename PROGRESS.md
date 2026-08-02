@@ -4,6 +4,7 @@
 
 ## 2026-08-02
 
+- **컬럼 클릭 검증 흐름 개편** — ERD 즉시 이동 대신 진행 모달 → 요약 모달 → [ERD에서 상세 검증]/[돌아가기]. 컬럼 클릭 시 상위 3 후보에 T2를 순차 실행하며 진행 바(n/N + 현재 대상 + "수십 초 가능" 안내), 요약은 containment·카디널리티·패턴·고아 표시(값 없음/실패 구분). live 장시간 검증 대비 UX — 취소 안전(cancelled 플래그), 진행 중 ERD 버튼 비활성. 기존 API 재사용(백엔드 무변경).
 - **GitHub 퍼블리시 + main 통일 + 런북 실환경화** — private 리포(Nocharm/db-viewer, 사내 IP 포함이라 비공개), master→main 전환. 런북을 실제 경로(맥→GitHub→윈도우 git pull→서버 zip 업로드→Docker)로 재작성: LF 검증 한 줄(`git ls-files --eol`), n8n 신규 기동 docker run 스니펫(MSSQL 계정은 기발급), Keycloak 클라이언트 등록 표, **모든 통과 기준을 화면 눈 확인으로** 구성(사내 서버 복붙 제약 반영).
 - **연결 단계 준비 완료(정지점 16~18 코드측)** — live 실행 경로를 n8n W2 경유로 확정(계획 §4.3 pyodbc 직결 대신 — 사용자 방침, 편차 기록). ① W2 쿼리 실행 워크플로: webhook 동기 응답(lastNode), kind 3종(containment LEFT JOIN 집계·join_preview·table_preview WHERE LIKE) **고정 템플릿만** 실행 — 식별자 브래킷·리터럴 이스케이프, 동적 SQL 미수신, limit 1~500 클램프 (계약 테스트로 강제). ② N8nJoinValidator·N8nTablePreview 어댑터(재시도 1회+로깅, 빈 소스 0-나눗셈 가드) — DB 자격증명은 n8n에만. ③ 게이트 전환: live는 N8N_WEBHOOK_BASE 필수(없으면 명시 오류), preview 501 제거·팩토리化. 보안 승인 게이트는 SOURCE_MODE=live 전환 절차로 유지. ④ docs/connect.md 런북(정찰→수집→live 순서·체크리스트). 테스트 149건(HTTP 목킹 어댑터 4건·W2 계약 2건 포함).
 - **미리보기 컬럼 리사이즈 + SQL 보기** — ① 헤더 세로선 드래그로 컬럼 폭 조절(48~800px 클램프), 좁힌 컬럼은 말줄임(…)+호버 전체값, 더블클릭 시 오버라이드 제거로 내용 맞춤 자연 폭 복원(JS PointerEvent 검증 154→94→154px), 테이블 전환 시 초기화. ② "SQL로 보기": 현재 상태(보이는 컬럼·필터 LIKE·정렬·TOP N)와 동치인 T-SQL 생성(브래킷/따옴표 이스케이프, vitest 2건) + 클립보드 복사 — 평문 HTTP에선 navigator.clipboard가 없어 execCommand 폴백(bpm 레슨). 메인·ERD 카드 공용.

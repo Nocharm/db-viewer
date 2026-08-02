@@ -32,7 +32,7 @@ interface Props {
   onClose: () => void;
 }
 
-const PATTERN_LABELS: Record<string, string> = {
+export const PATTERN_LABELS: Record<string, string> = {
   stable_confirmed: "지속 1.0 — 사실상 확정 FK",
   stable_with_orphans: "관계 유효 · 고아 데이터 존재",
   drop_alert: "⚠ 급락 — 스키마·데이터 변경 의심",
