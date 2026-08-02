@@ -2,14 +2,13 @@
 
 from collections import deque
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.adapters.table_preview import FakeTablePreview
+from app.adapters import create_table_preview
 from app.auth import get_current_user
 from app.config import get_settings
 from app.db import get_db
@@ -242,9 +241,6 @@ def get_object_preview(
     if obj is None:
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     settings = get_settings()
-    if settings.source_mode == "live":
-        # 연결 단계(정지점 18)에서 pyodbc SELECT TOP 20 (+ WHERE)으로 교체 / swapped at step 18
-        raise HTTPException(501, {"message": "live table preview lands at connection step 18"})
 
     qname = f"{obj.schema}.{obj.name}"
     columns = db.execute(
@@ -257,7 +253,8 @@ def get_object_preview(
                                   "context": {"filter_column": filter_column}})
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
-    preview = FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
+    # live는 n8n W2 실행기, 그 외는 픽스처 합성 — 팩토리가 게이트 (docs/connect.md)
+    preview = create_table_preview(settings)
     rows = preview.rows(
         qname, column_specs, limit,
         filter_column=filter_column, filter_value=filter_value,

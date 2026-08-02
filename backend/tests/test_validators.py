@@ -82,9 +82,17 @@ def test_fake_agrees_with_fixture_ground_truth(fixture_dir, load_fixture):
         assert result.cardinality == rel["cardinality"], rel
 
 
-def test_live_mode_is_gated():
-    from app.adapters import create_join_validator
+def test_live_mode_requires_webhook_base_then_uses_n8n():
+    from app.adapters import create_join_validator, create_table_preview
+    from app.adapters.n8n_query import N8nJoinValidator, N8nTablePreview
     from app.config import Settings
 
-    with pytest.raises(RuntimeError, match="security approval"):
+    # webhook 미설정 live는 차단 — 게이트 유지 / gate holds without the executor
+    with pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
         create_join_validator(Settings(source_mode="live"))
+    with pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
+        create_table_preview(Settings(source_mode="live"))
+
+    live = Settings(source_mode="live", n8n_webhook_base="http://n8n/webhook")
+    assert isinstance(create_join_validator(live), N8nJoinValidator)
+    assert isinstance(create_table_preview(live), N8nTablePreview)

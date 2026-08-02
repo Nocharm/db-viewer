@@ -13,15 +13,32 @@ if TYPE_CHECKING:
 def create_join_validator(settings: Settings) -> JoinValidator:
     """SOURCE_MODE에 따른 검증기 선택 / pick the validator for the configured mode.
 
-    live는 보안 승인 게이트(계획 Phase 3) — 연결 단계(정지점 18) 전까지 차단.
+    live 전환은 보안 승인 후 운영자가 SOURCE_MODE=live로 명시할 때만 일어난다
+    (정지점 18 게이트 — 코드가 아니라 배포 절차가 지킨다, docs/connect.md).
+    실행 경로는 pyodbc 직결(계획 §4.3) 대신 n8n W2 경유 — 사용자 확정 편차.
     """
     if settings.source_mode == "live":
-        raise RuntimeError(
-            "live mode is blocked until security approval (connection step 18)"
-        )
+        if not settings.n8n_webhook_base:
+            raise RuntimeError("live mode requires N8N_WEBHOOK_BASE (W2 query executor)")
+        from app.adapters.n8n_query import N8nJoinValidator
+
+        return N8nJoinValidator(settings.n8n_webhook_base, settings.n8n_query_timeout)
     from app.adapters.fake_validator import FakeJoinValidator
 
     return FakeJoinValidator(Path(settings.fixture_dir) / "value_sets.json")
+
+
+def create_table_preview(settings: Settings):
+    """테이블 미리보기 실행기 — live는 n8n W2, 그 외는 픽스처 합성 / preview executor."""
+    if settings.source_mode == "live":
+        if not settings.n8n_webhook_base:
+            raise RuntimeError("live mode requires N8N_WEBHOOK_BASE (W2 query executor)")
+        from app.adapters.n8n_query import N8nTablePreview
+
+        return N8nTablePreview(settings.n8n_webhook_base, settings.n8n_query_timeout)
+    from app.adapters.table_preview import FakeTablePreview
+
+    return FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
 
 
 def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner":
