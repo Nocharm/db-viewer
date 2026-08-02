@@ -4,6 +4,7 @@
 
 ## 2026-08-02
 
+- **GitHub 퍼블리시 + main 통일 + 런북 실환경화** — private 리포(Nocharm/db-viewer, 사내 IP 포함이라 비공개), master→main 전환. 런북을 실제 경로(맥→GitHub→윈도우 git pull→서버 zip 업로드→Docker)로 재작성: LF 검증 한 줄(`git ls-files --eol`), n8n 신규 기동 docker run 스니펫(MSSQL 계정은 기발급), Keycloak 클라이언트 등록 표, **모든 통과 기준을 화면 눈 확인으로** 구성(사내 서버 복붙 제약 반영).
 - **연결 단계 준비 완료(정지점 16~18 코드측)** — live 실행 경로를 n8n W2 경유로 확정(계획 §4.3 pyodbc 직결 대신 — 사용자 방침, 편차 기록). ① W2 쿼리 실행 워크플로: webhook 동기 응답(lastNode), kind 3종(containment LEFT JOIN 집계·join_preview·table_preview WHERE LIKE) **고정 템플릿만** 실행 — 식별자 브래킷·리터럴 이스케이프, 동적 SQL 미수신, limit 1~500 클램프 (계약 테스트로 강제). ② N8nJoinValidator·N8nTablePreview 어댑터(재시도 1회+로깅, 빈 소스 0-나눗셈 가드) — DB 자격증명은 n8n에만. ③ 게이트 전환: live는 N8N_WEBHOOK_BASE 필수(없으면 명시 오류), preview 501 제거·팩토리化. 보안 승인 게이트는 SOURCE_MODE=live 전환 절차로 유지. ④ docs/connect.md 런북(정찰→수집→live 순서·체크리스트). 테스트 149건(HTTP 목킹 어댑터 4건·W2 계약 2건 포함).
 - **미리보기 컬럼 리사이즈 + SQL 보기** — ① 헤더 세로선 드래그로 컬럼 폭 조절(48~800px 클램프), 좁힌 컬럼은 말줄임(…)+호버 전체값, 더블클릭 시 오버라이드 제거로 내용 맞춤 자연 폭 복원(JS PointerEvent 검증 154→94→154px), 테이블 전환 시 초기화. ② "SQL로 보기": 현재 상태(보이는 컬럼·필터 LIKE·정렬·TOP N)와 동치인 T-SQL 생성(브래킷/따옴표 이스케이프, vitest 2건) + 클립보드 복사 — 평문 HTTP에선 navigator.clipboard가 없어 execCommand 폴백(bpm 레슨). 메인·ERD 카드 공용.
 - **반응형 wrap + ⓘ 툴팁 + 아이콘 통일** — ① 메인 3열이 lg 미만에서 wrap(카테고리+목록 위 60vh 캡, 상세는 아래 전체 폭 70vh — 950px 실측), 상세 그리드 md 미만 1열·버튼/헤더 행 flex-wrap. ② InfoTip 컴포넌트(순수 CSS 말풍선, 좌/우 가장자리 정렬 변형) — 조인키·카테고리·목록·상세 7개 섹션·미리보기에 의미 설명 툴팁(ko/en 사전 11건), 컬럼 섹션의 인라인 힌트를 툴팁으로 이동해 밀도 완화. ③ 아이콘 플랫 통일: 🔑→모노 "PK" 마크(옐로), 🔍→currentColor SVG 돋보기, ⚙→ƒ — 컬러 이모지 제거로 두 테마 일관.
