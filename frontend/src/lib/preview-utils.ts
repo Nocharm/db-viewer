@@ -91,6 +91,41 @@ export function buildPreviewSql(
   return `${sql};`;
 }
 
+export interface SqlToken {
+  type: "keyword" | "identifier" | "string" | "number" | "plain";
+  text: string;
+}
+
+const SQL_TOKEN_PATTERNS: [SqlToken["type"], RegExp][] = [
+  ["string", /^N?'(?:[^']|'')*'/],
+  ["identifier", /^\[(?:[^\]]|\]\])*\]/],
+  ["keyword", /^(?:SELECT|TOP|FROM|WHERE|LIKE|ORDER|BY|ASC|DESC)\b/i],
+  ["number", /^\d+(?:\.\d+)?/],
+];
+
+/** 자체 생성 SQL 전용 경량 토크나이저 — 하이라이트 렌더용 (라이브러리 무추가).
+ * Tiny tokenizer for our own generated SQL, used for syntax highlighting. */
+export function tokenizeSql(sql: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+  let rest = sql;
+  while (rest.length > 0) {
+    const match = SQL_TOKEN_PATTERNS
+      .map(([type, pattern]) => ({ type, hit: pattern.exec(rest)?.[0] }))
+      .find((m): m is { type: SqlToken["type"]; hit: string } => Boolean(m.hit));
+    if (match) {
+      tokens.push({ type: match.type, text: match.hit });
+      rest = rest.slice(match.hit.length);
+      continue;
+    }
+    // 매칭 안 되는 구간은 다음 토큰 시작 전까지 plain으로 병합
+    const last = tokens[tokens.length - 1];
+    if (last?.type === "plain") last.text += rest[0];
+    else tokens.push({ type: "plain", text: rest[0] });
+    rest = rest.slice(1);
+  }
+  return tokens;
+}
+
 /** 클립보드 복사 — 평문 HTTP(insecure context)에선 navigator.clipboard가 없어
  * textarea+execCommand 폴백을 쓴다 (bpm 운영 레슨: 사내 서버는 HTTP).
  * Copies text with an execCommand fallback so plain-HTTP deployments work. */

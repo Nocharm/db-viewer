@@ -8,9 +8,20 @@ import { useI18n } from "@/components/i18n";
 import {
   buildPreviewSql,
   copyTextToClipboard,
+  tokenizeSql,
   type PreviewQueryState,
   type SortSpec,
+  type SqlToken,
 } from "@/lib/preview-utils";
+
+// 토큰 타입별 색 — 두 테마에서 유효한 시맨틱 토큰만 사용 / theme-safe token colors
+const TOKEN_STYLES: Record<SqlToken["type"], React.CSSProperties> = {
+  keyword: { color: "var(--obj-view)", fontWeight: 600 },
+  identifier: { color: "var(--ink)" },
+  string: { color: "var(--rel-confirmed)" },
+  number: { color: "var(--rel-ai)" },
+  plain: { color: "var(--slate)" },
+};
 
 interface Props {
   state: PreviewQueryState;
@@ -61,7 +72,9 @@ export function PreviewSqlButton({ state, visibleColumns, sort, buttonClassName 
               style={{ borderColor: "var(--hairline)", background: "var(--surface-elevated)" }}
               data-testid="PreviewSqlButton-sqlText"
             >
-              {sql}
+              {tokenizeSql(sql).map((token, index) => (
+                <span key={index} style={TOKEN_STYLES[token.type]}>{token.text}</span>
+              ))}
             </pre>
             <div className="mt-3 flex items-center gap-2">
               <button

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCsv, buildPreviewSql, countUniqueValues, sortRows } from "./preview-utils";
+import {
+  buildCsv,
+  buildPreviewSql,
+  countUniqueValues,
+  sortRows,
+  tokenizeSql,
+} from "./preview-utils";
 
 const ROWS = [
   { QTY: 20, NM: "b" },
@@ -50,6 +56,20 @@ describe("buildPreviewSql", () => {
     const sql = buildPreviewSql({ ...STATE, filter: null }, ["A"], null);
     expect(sql).not.toContain("WHERE");
     expect(sql).not.toContain("ORDER BY");
+  });
+});
+
+describe("tokenizeSql", () => {
+  it("classifies keywords, identifiers, strings and numbers", () => {
+    const tokens = tokenizeSql("SELECT TOP 20 [EMP_NO] FROM [dbo].[HR] WHERE [A] LIKE N'%x''y%'");
+    const byType = (type: string) =>
+      tokens.filter((t) => t.type === type).map((t) => t.text);
+    expect(byType("keyword")).toEqual(["SELECT", "TOP", "FROM", "WHERE", "LIKE"]);
+    expect(byType("number")).toEqual(["20"]);
+    expect(byType("identifier")).toEqual(["[EMP_NO]", "[dbo]", "[HR]", "[A]"]);
+    expect(byType("string")).toEqual(["N'%x''y%'"]); // '' 이스케이프째로 한 토큰
+    // 재조립하면 원문과 동일 / tokens reassemble to the original text
+    expect(tokens.map((t) => t.text).join("")).toContain("FROM [dbo].[HR]");
   });
 });
 
