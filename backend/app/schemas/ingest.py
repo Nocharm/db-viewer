@@ -63,6 +63,9 @@ class CatalogPayload(BaseModel):
     view_definitions: list[RawViewDefinition] = []
     # 버튼 트리거 수집 잡 연동 — n8n이 webhook body를 그대로 되돌려준다 / echoed from the trigger
     collect_job_id: int | None = None
+    # 분할 전송 — 1/1이면 단일 페이로드(기존 계약) / chunked transport, 1/1 = legacy single
+    chunk_index: int = Field(default=1, ge=1)
+    chunk_total: int = Field(default=1, ge=1)
 
 
 class RawDep(BaseModel):
@@ -86,3 +89,6 @@ class ViewDepsPayload(BaseModel):
     deps: list[RawDep]
     unresolved_objects: list[RawUnresolvedObject] = []
     collect_job_id: int | None = None
+    # 분할 수집 — 마지막 청크에서만 lineage·파싱·ready 전환 / finalize on the last chunk only
+    chunk_index: int = Field(default=1, ge=1)
+    chunk_total: int = Field(default=1, ge=1)

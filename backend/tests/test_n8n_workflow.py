@@ -127,7 +127,11 @@ def test_sql_nodes_embed_current_sql_files():
     by_name = {n["name"]: n for n in wf["nodes"]}
     for name, filename in build_n8n_workflow.SQL_NODES:
         embedded = by_name[name]["parameters"]["query"]
-        assert embedded == (REPO_ROOT / "n8n" / "sql" / filename).read_text()
+        if filename in build_n8n_workflow.WINDOWED_SQL_FILES:
+            # 윈도우 파일은 전체 범위 치환본과 비교 / windowed files embed the full-range variant
+            assert embedded == build_n8n_workflow._read_sql(filename, "0", "1000000")
+        else:
+            assert embedded == (REPO_ROOT / "n8n" / "sql" / filename).read_text()
 
 
 def test_http_nodes_target_ingest_contract():

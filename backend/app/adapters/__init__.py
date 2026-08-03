@@ -49,4 +49,9 @@ def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner
         return FixtureCollectRunner(session_factory, settings.fixture_dir)
     if not settings.n8n_webhook_base:
         raise RuntimeError("N8N_WEBHOOK_BASE is required outside fixture mode")
-    return N8nWebhookRunner(settings.n8n_webhook_base)
+    return N8nWebhookRunner(
+        settings.n8n_webhook_base, session_factory,
+        catalog_chunk_size=settings.collect_catalog_chunk_size,
+        deps_chunk_size=settings.collect_deps_chunk_size,
+        chunk_timeout=settings.collect_chunk_timeout,
+    )

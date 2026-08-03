@@ -161,14 +161,54 @@ return [{ json: {
 CATALOG_SQL_NODES = SQL_NODES[:5]
 VIEW_DEPS_SQL_NODES = SQL_NODES[5:]
 
-# webhook body(collect_job_id)를 그대로 되돌려 FastAPI 잡 단계가 갱신되게 한다
-# echo collect_job_id from the webhook body so the backend can track stages
-BUILD_CATALOG_JS_W1A = BUILD_CATALOG_JS.replace(
-    "return [{ json: {",
-    "const trigger = $('Webhook').first().json.body ?? {};\n"
-    "return [{ json: {\n"
-    "  collect_job_id: trigger.collect_job_id ?? null,",
-)
+# W1a — 객체 슬라이스 청크로 분할 전송: Code가 N개 아이템을 반환하면
+# HTTP 노드가 아이템당 1회씩 순차 POST한다 (전송 크기 관리, DB 스캔은 단일 유지)
+# chunked transport: N items from Code → N sequential POSTs by the HTTP node
+BUILD_CATALOG_JS_W1A = """\
+// raw rows → catalog contract, 객체 슬라이스 청크로 분할 (기계적 그룹핑·분할만)
+// chunked by object slices to bound each POST; grouping and slicing only
+const trigger = $('Webhook').first().json.body ?? {};
+const chunkSize = Math.min(Math.max(parseInt(trigger.catalog_chunk_size, 10) || 300, 50), 2000);
+const objects = $('01 objects').all().map(i => i.json);
+const columns = $('02 columns').all().map(i => ({
+  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,
+}));
+const kcs = {};
+for (const { json: r } of $('03 key constraints').all()) {
+  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item
+  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })
+    .columns.push(r.column_name);
+}
+const fks = {};
+for (const { json: r } of $('04 foreign keys').all()) {
+  if (!r.name) continue;
+  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,
+                     tgt_object_id: r.tgt_object_id, columns: [] })
+    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });
+}
+const viewDefs = $('05 view definitions').all()
+  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));
+const collectedAt = new Date().toISOString();
+const chunkTotal = Math.max(1, Math.ceil(objects.length / chunkSize));
+const items = [];
+for (let c = 0; c < chunkTotal; c++) {
+  const slice = objects.slice(c * chunkSize, (c + 1) * chunkSize);
+  const ids = new Set(slice.map(o => o.object_id));
+  items.push({ json: {
+    collect_job_id: trigger.collect_job_id ?? null,
+    source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',
+    collected_at: collectedAt,
+    chunk_index: c + 1, chunk_total: chunkTotal,
+    objects: slice,
+    columns: columns.filter(col => ids.has(col.object_id)),
+    key_constraints: Object.values(kcs).filter(k => ids.has(k.object_id)),
+    // FK는 두 객체에 걸친다 — 전 객체가 적재된 마지막 청크에만 / FKs only on the last chunk
+    foreign_keys: c === chunkTotal - 1 ? Object.values(fks) : [],
+    view_definitions: viewDefs.filter(v => ids.has(v.object_id)),
+  } });
+}
+return items;
+"""
 
 BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
     "const snapshotId = $('POST catalog').first().json.snapshot_id;",
@@ -177,7 +217,10 @@ BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
     "const snapshotId = trigger.snapshot_id;",
 ).replace(
     "return [{ json: {",
-    "return [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,",
+    "return [{ json: {\n"
+    "  collect_job_id: trigger.collect_job_id ?? null,\n"
+    "  chunk_index: trigger.chunk_index ?? 1,\n"
+    "  chunk_total: trigger.chunk_total ?? 1,",
 )
 
 
@@ -201,6 +244,22 @@ EMPTYABLE_SQL_NODES = {
 }
 
 
+
+# 뷰 윈도우 치환 — W1b는 webhook body의 offset/limit(정수 강제 클램프), W1은 전체 범위
+# view-window substitution: W1b reads ints from the webhook body; W1 covers everything
+W1B_OFFSET_EXPR = "{{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}"
+W1B_LIMIT_EXPR = "{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 100, 1), 2000) }}"
+WINDOWED_SQL_FILES = {"06_view_deps.sql", "07_referenced_entities.sql"}
+
+
+def _read_sql(filename: str, view_offset: str | None = None,
+              view_limit: str | None = None, as_expression: bool = False) -> str:
+    sql = (SQL_DIR / filename).read_text()
+    if view_offset is not None and view_limit is not None:
+        sql = sql.replace("{{VIEW_OFFSET}}", view_offset).replace("{{VIEW_LIMIT}}", view_limit)
+    return ("=" + sql) if as_expression else sql
+
+
 def _node(name: str, node_type: str, position: list[int], parameters: dict,
           credentials: dict | None = None, type_version: float = 1) -> dict:
     node = {
@@ -222,9 +281,12 @@ def build_workflow() -> dict:
         }, type_version=1.2),
     ]
     for i, (name, filename) in enumerate(SQL_NODES):
+        # 주기 수집은 단일 실행 — 뷰 윈도우를 전체 범위로 고정 / full window for the scheduled run
+        query = (_read_sql(filename, "0", "1000000")
+                 if filename in WINDOWED_SQL_FILES else _read_sql(filename))
         nodes.append(_node(
             name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
-            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
+            {"operation": "executeQuery", "query": query},
             credentials=mssql_cred, type_version=1.1,
         ))
     nodes += [
@@ -341,7 +403,9 @@ def build_collect_viewdeps_workflow() -> dict:
     for i, (name, filename) in enumerate(VIEW_DEPS_SQL_NODES):
         nodes.append(_node(
             name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
-            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
+            {"operation": "executeQuery",
+             "query": _read_sql(filename, W1B_OFFSET_EXPR, W1B_LIMIT_EXPR,
+                                as_expression=True)},
             credentials=mssql_cred, type_version=1.1,
         ))
     nodes += [

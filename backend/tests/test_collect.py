@@ -87,3 +87,78 @@ def test_jobs_list_recent_first(cclient):
     second = cclient.post("/api/collect/catalog", json={}).json()["job_id"]
     items = cclient.get("/api/collect/jobs").json()["items"]
     assert [items[0]["job_id"], items[1]["job_id"]] == [second, first]
+
+
+def test_n8n_runner_pages_view_deps_and_waits_callbacks(migrated_engine):
+    """뷰 N개 단위 분할 호출 — 청크 콜백 확인 후 다음 청크 진행 / paged webhook calls."""
+    import json as jsonlib
+    from datetime import UTC, datetime
+
+    from app.adapters.collect_runner import N8nWebhookRunner
+    from app.models import CatalogObject, CollectJob, Snapshot
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
+        db.add(snapshot)
+        db.flush()
+        for i in range(5):
+            db.add(CatalogObject(snapshot_id=snapshot.id, schema="dbo",
+                                 name=f"V_{i}", type="view", object_id=i + 1))
+        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
+                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
+        db.add(job)
+        db.commit()
+        snapshot_id, job_id = snapshot.id, job.id
+
+    calls: list[dict] = []
+    runner = N8nWebhookRunner("http://n8n/webhook", session_factory,
+                              deps_chunk_size=2, chunk_timeout=5)
+
+    def fake_post(path: str, body: dict) -> None:  # ingest 콜백까지 즉시 시뮬레이션
+        calls.append(body)
+        with session_factory() as db:
+            j = db.get(CollectJob, job_id)
+            j.counts = jsonlib.dumps({
+                "deps_chunks_done": body["chunk_index"],
+                "deps_chunks_total": body["chunk_total"],
+            })
+            if body["chunk_index"] == body["chunk_total"]:
+                j.stage = "ready"
+            j.updated_at = datetime.now(UTC)
+            db.commit()
+
+    runner._post = fake_post  # HTTP 경계만 목킹 / mock only the HTTP boundary
+    runner.run_view_deps(job_id, snapshot_id)
+
+    assert [c["offset"] for c in calls] == [0, 2, 4]  # ceil(5/2) = 3청크
+    assert [c["chunk_index"] for c in calls] == [1, 2, 3]
+    assert all(c["chunk_total"] == 3 and c["limit"] == 2 for c in calls)
+
+
+def test_n8n_runner_raises_when_chunk_never_completes(migrated_engine):
+    from datetime import UTC, datetime
+
+    import pytest as _pytest
+
+    from app.adapters import collect_runner as cr
+    from app.models import CollectJob, Snapshot
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
+        db.add(snapshot)
+        db.flush()
+        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
+                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
+        db.add(job)
+        db.commit()
+        snapshot_id, job_id = snapshot.id, job.id
+
+    runner = cr.N8nWebhookRunner("http://n8n/webhook", session_factory,
+                                 deps_chunk_size=10, chunk_timeout=0)  # 즉시 만료
+    runner._post = lambda path, body: None  # 콜백이 오지 않는 상황
+    with _pytest.raises(RuntimeError, match="did not complete"):
+        runner.run_view_deps(job_id, snapshot_id)

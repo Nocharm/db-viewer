@@ -2,6 +2,10 @@
 -- ⚠ 객체별 개별 호출 필수 — 일괄 CROSS APPLY는 해석 불가 객체 "하나"로 전체가 실패한다
 -- ⚠ per-object calls only; one unresolvable object kills a batched CROSS APPLY
 -- 이 DMV는 "뷰가 참조하는 컬럼 집합"만 제공 — 출력 컬럼별 1:1 매핑은 Phase 2 (sqlglot)
+-- 뷰 윈도우 분할 — 생성기가 {{VIEW_OFFSET}}/{{VIEW_LIMIT}}를 치환 (커서 배치 크기 제한)
+-- windowed cursor batch; the generator substitutes the placeholders
+DECLARE @v_offset int = {{VIEW_OFFSET}};
+DECLARE @v_limit int = {{VIEW_LIMIT}};
 DECLARE @results TABLE (
     view_object_id int, referenced_object_id int NULL, referenced_database sysname NULL,
     referenced_name nvarchar(517) NULL, referenced_column sysname NULL, is_resolved bit
@@ -11,7 +15,9 @@ DECLARE @oid int, @qname nvarchar(517);
 
 DECLARE view_cursor CURSOR LOCAL FAST_FORWARD FOR
     SELECT v.object_id, QUOTENAME(s.name) + N'.' + QUOTENAME(v.name)
-    FROM sys.views v
+    FROM (SELECT object_id FROM sys.views ORDER BY object_id
+          OFFSET @v_offset ROWS FETCH NEXT @v_limit ROWS ONLY) w
+    JOIN sys.views v ON v.object_id = w.object_id
     JOIN sys.schemas s ON v.schema_id = s.schema_id;
 
 OPEN view_cursor;

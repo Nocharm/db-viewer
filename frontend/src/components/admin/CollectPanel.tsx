@@ -98,9 +98,16 @@ export function CollectPanel() {
   };
 
   const counts = current?.counts ?? {};
+  // 청크 카운터는 진행 바가 담당 — 숫자 나열에서 제외 / chunk counters render as the bar
   const countText = Object.entries(counts)
+    .filter(([key]) => !key.endsWith("_chunks_done") && !key.endsWith("_chunks_total"))
     .map(([key, value]) => `${key} ${value.toLocaleString()}`)
     .join(" · ");
+  const chunkProgress = current?.stage === "catalog_running"
+    ? { done: counts.catalog_chunks_done ?? 0, total: counts.catalog_chunks_total ?? 0 }
+    : current?.stage === "deps_running"
+      ? { done: counts.deps_chunks_done ?? 0, total: counts.deps_chunks_total ?? 0 }
+      : null;
 
   return (
     <section className="mb-6" data-testid="CollectPanel-root">
@@ -148,6 +155,19 @@ export function CollectPanel() {
             )}
           </div>
           <StageProgress job={current} />
+          {chunkProgress !== null && chunkProgress.total > 0 && (
+            <div data-testid="CollectPanel-chunkProgress">
+              <p className="mb-1 text-xs" style={{ color: "var(--body-text)" }}>
+                {t("collect.chunkProgress")} ({chunkProgress.done}/{chunkProgress.total})
+              </p>
+              <div className="rate-bar !w-full">
+                <div className="rate-bar__fill transition-all duration-300 ease-in-out"
+                     style={{
+                       width: `${Math.round((chunkProgress.done / chunkProgress.total) * 100)}%`,
+                     }} />
+              </div>
+            </div>
+          )}
           {countText && (
             <p className="font-mono text-xs" style={{ color: "var(--slate)" }}
                data-testid="CollectPanel-counts">

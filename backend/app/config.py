@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # Tuning: W2 쿼리 대기 상한(초) — 대형 테이블 containment는 수십 초 가능
     n8n_query_timeout: int = 120
 
+    # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
+    # W1a 전송 청크당 객체 수 — 커지면 POST 크기 증가 / objects per catalog POST chunk
+    collect_catalog_chunk_size: int = 300
+    # W1b 호출당 뷰 수 — DMV 커서 배치 크기, 커지면 소스 DB 점유 시간 증가 / views per deps call
+    collect_deps_chunk_size: int = 100
+    # 청크 하나의 ingest 콜백 대기 상한(초) / per-chunk callback wait cap
+    collect_chunk_timeout: int = 600
+
     # Tuning: T3 탐색 스캔 (계획 §4) / exploratory scan tuning
     scan_max_concurrent: int = 2
     scan_full_recheck_top: int = 20   # 풀 재검증 상위 후보 수 / top-K full recheck

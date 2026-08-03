@@ -180,6 +180,7 @@ export const MESSAGES = {
   "collect.stageDepsRunning": { ko: "뷰 의존·파싱 중", en: "Parsing view deps" },
   "collect.stageReady": { ko: "완료", en: "Ready" },
   "collect.failed": { ko: "실패", en: "Failed" },
+  "collect.chunkProgress": { ko: "분할 진행", en: "Chunk progress" },
   "collect.recent": { ko: "최근 수집 잡", en: "Recent jobs" },
   "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
   "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
