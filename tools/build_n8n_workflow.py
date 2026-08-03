@@ -110,11 +110,13 @@ const columns = $('02 columns').all().map(i => ({
 }));
 const kcs = {};
 for (const { json: r } of $('03 key constraints').all()) {
+  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item
   (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })
     .columns.push(r.column_name);
 }
 const fks = {};
 for (const { json: r } of $('04 foreign keys').all()) {
+  if (!r.name) continue;
   (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,
                      tgt_object_id: r.tgt_object_id, columns: [] })
     .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });
@@ -145,7 +147,7 @@ const deps07 = rows07.filter(r => r.kind === 'dep' && r.is_resolved).map(r => ({
   referenced_column: r.referenced_column, is_resolved: true,
 }));
 const deps06 = $('06 view deps').all().map(i => i.json)
-  .filter(d => !d.is_resolved || failedIds.has(d.view_object_id))
+  .filter(d => d.view_object_id != null && (!d.is_resolved || failedIds.has(d.view_object_id)))
   .map(d => ({ ...d, is_resolved: !!d.is_resolved }));
 return [{ json: {
   snapshot_id: snapshotId,
@@ -179,12 +181,25 @@ BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
 )
 
 
+# 정상적으로 0행일 수 있는 쿼리 노드 — n8n은 출력 0건이면 체인을 멈추므로
+# alwaysOutputData로 빈 아이템을 흘려보낸다 (FK 없는 레거시 DB가 이 프로젝트의 전제)
+# these queries can legitimately return zero rows; without alwaysOutputData n8n halts the chain
+EMPTYABLE_SQL_NODES = {
+    "recon 04 cross database refs",
+    "03 key constraints", "04 foreign keys",
+    "06 view deps", "07 referenced entities",
+    "Run query",  # W2 — 빈 테이블 미리보기·LIKE 무매칭 / empty preview or no LIKE match
+}
+
+
 def _node(name: str, node_type: str, position: list[int], parameters: dict,
           credentials: dict | None = None, type_version: float = 1) -> dict:
     node = {
         "name": name, "type": node_type, "typeVersion": type_version,
         "position": position, "parameters": parameters,
     }
+    if name in EMPTYABLE_SQL_NODES:
+        node["alwaysOutputData"] = True
     if credentials:
         node["credentials"] = credentials
     return node
@@ -406,8 +421,34 @@ def build_recon_workflow() -> dict:
     }
 
 
+# 배포 사본 — 실서버 n8n은 기존 운영분(UI 접근만, 컨테이너 env 불가)이라
+# $env 참조를 리터럴로 치환해 임포트만으로 동작하게 한다 (deploy/README.md)
+DEPLOY_DIR = REPO_ROOT / "n8n" / "workflows" / "deploy"
+DEPLOY_API_BASE = "http://182.199.63.71:6678"
+# 비밀키는 커밋 금지 — 임포트 후 UI에서 교체하는 플레이스홀더 / placeholder, replaced in the UI
+DEPLOY_KEY_PLACEHOLDER = "PASTE-INGEST-API-KEY-HERE"
+W1_DEPLOY_NOTES = (
+    "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
+    "배포용 사본: 값이 리터럴로 박혀 있다. 임포트 후 POST catalog / POST view-deps 노드의 "
+    "X-API-Key 값(PASTE-INGEST-API-KEY-HERE)만 .env의 INGEST_API_KEY로 교체할 것."
+)
+
+
+def build_deploy_variant(workflow: dict) -> dict:
+    """Replace $env refs with deploy literals. / $env 참조를 배포 리터럴로 치환."""
+    text = json.dumps(workflow, ensure_ascii=False)
+    text = text.replace("={{ $env.DB_VIEWER_API_BASE }}", DEPLOY_API_BASE)
+    text = text.replace("={{ $env.DB_VIEWER_INGEST_KEY }}", DEPLOY_KEY_PLACEHOLDER)
+    text = text.replace("$env.DB_VIEWER_SOURCE_DB ?? 'MSSQL'", "'MSSQL'")
+    variant = json.loads(text)
+    if "$env" in variant["meta"]["notes"]:  # W1만 해당 — env 안내를 배포 절차로 교체
+        variant["meta"]["notes"] = W1_DEPLOY_NOTES
+    return variant
+
+
 def main() -> None:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
     outputs = [
         (OUT_PATH, build_workflow()),
         (RECON_OUT_PATH, build_recon_workflow()),
@@ -418,6 +459,10 @@ def main() -> None:
     for path, workflow in outputs:
         path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2) + "\n")
         print(f"wrote {path}")
+        deploy_path = DEPLOY_DIR / path.name
+        deploy_path.write_text(
+            json.dumps(build_deploy_variant(workflow), ensure_ascii=False, indent=2) + "\n")
+        print(f"wrote {deploy_path}")
 
 
 if __name__ == "__main__":

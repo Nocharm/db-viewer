@@ -39,6 +39,7 @@
         "operation": "executeQuery",
         "query": "={{ $json.query }}"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",

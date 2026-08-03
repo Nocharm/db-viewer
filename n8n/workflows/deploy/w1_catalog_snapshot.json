@@ -70,6 +70,7 @@
         "operation": "executeQuery",
         "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nORDER BY kc.name, ic.key_ordinal;\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -89,6 +90,7 @@
         "operation": "executeQuery",
         "query": "-- FK 제약 + 컬럼 페어 / foreign keys with column pairs\n-- W1이 행을 {name, src_object_id, tgt_object_id, columns: [{src_column, tgt_column}]}로 그룹핑\nSELECT fk.name,\n       fk.parent_object_id AS src_object_id,\n       fk.referenced_object_id AS tgt_object_id,\n       sc.name AS src_column,\n       tc.name AS tgt_column,\n       fkc.constraint_column_id\nFROM sys.foreign_keys fk\nJOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id\nJOIN sys.columns sc\n  ON fkc.parent_object_id = sc.object_id AND fkc.parent_column_id = sc.column_id\nJOIN sys.columns tc\n  ON fkc.referenced_object_id = tc.object_id AND fkc.referenced_column_id = tc.column_id\nORDER BY fk.name, fkc.constraint_column_id;\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -127,6 +129,7 @@
         "operation": "executeQuery",
         "query": "-- 객체 수준 뷰 의존성 / object-level view dependencies → view_deps.json deps[] (1차)\n-- referenced_id IS NULL = 미해석 참조 — 버리지 말고 플래그로 보존해 Phase 2로 이관\n-- NULL referenced_id = unresolved ref; keep it flagged, defer to Phase 2\nSELECT d.referencing_id AS view_object_id,\n       d.referenced_id AS referenced_object_id,\n       d.referenced_database_name AS referenced_database,\n       ISNULL(d.referenced_schema_name + '.', '') + d.referenced_entity_name AS referenced_name,\n       CAST(NULL AS sysname) AS referenced_column,\n       CASE WHEN d.referenced_id IS NULL THEN 0 ELSE 1 END AS is_resolved\nFROM sys.sql_expression_dependencies d\nJOIN sys.objects o ON d.referencing_id = o.object_id AND o.type = 'V';\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -146,6 +149,7 @@
         "operation": "executeQuery",
         "query": "-- 컬럼 수준 lineage / column-grain deps → view_deps.json deps[] (2차) + unresolved_objects[]\n-- ⚠ 객체별 개별 호출 필수 — 일괄 CROSS APPLY는 해석 불가 객체 \"하나\"로 전체가 실패한다\n-- ⚠ per-object calls only; one unresolvable object kills a batched CROSS APPLY\n-- 이 DMV는 \"뷰가 참조하는 컬럼 집합\"만 제공 — 출력 컬럼별 1:1 매핑은 Phase 2 (sqlglot)\nDECLARE @results TABLE (\n    view_object_id int, referenced_object_id int NULL, referenced_database sysname NULL,\n    referenced_name nvarchar(517) NULL, referenced_column sysname NULL, is_resolved bit\n);\nDECLARE @failures TABLE (object_id int, reason nvarchar(400));\nDECLARE @oid int, @qname nvarchar(517);\n\nDECLARE view_cursor CURSOR LOCAL FAST_FORWARD FOR\n    SELECT v.object_id, QUOTENAME(s.name) + N'.' + QUOTENAME(v.name)\n    FROM sys.views v\n    JOIN sys.schemas s ON v.schema_id = s.schema_id;\n\nOPEN view_cursor;\nFETCH NEXT FROM view_cursor INTO @oid, @qname;\nWHILE @@FETCH_STATUS = 0\nBEGIN\n    BEGIN TRY\n        INSERT INTO @results\n        SELECT @oid,\n               r.referenced_id,\n               r.referenced_database_name,\n               ISNULL(r.referenced_schema_name + '.', '') + r.referenced_entity_name,\n               r.referenced_minor_name,\n               CASE WHEN r.referenced_id IS NULL THEN 0 ELSE 1 END\n        FROM sys.dm_sql_referenced_entities(@qname, 'OBJECT') r\n        WHERE r.referenced_minor_name IS NOT NULL OR r.referenced_id IS NULL;\n    END TRY\n    BEGIN CATCH\n        -- 실패 객체는 격리하고 계속 진행 / isolate the failing object, keep going\n        INSERT INTO @failures VALUES (@oid, LEFT(ERROR_MESSAGE(), 400));\n    END CATCH;\n    FETCH NEXT FROM view_cursor INTO @oid, @qname;\nEND\nCLOSE view_cursor;\nDEALLOCATE view_cursor;\n\n-- n8n MSSQL 노드는 단일 rowset만 반환 → kind 컬럼으로 두 결과를 합친다\n-- n8n's MSSQL node returns a single rowset; merge both with a kind discriminator\nSELECT 'dep' AS kind, view_object_id, referenced_object_id, referenced_database,\n       referenced_name, referenced_column, is_resolved,\n       CAST(NULL AS nvarchar(400)) AS reason\nFROM @results\nUNION ALL\nSELECT 'failure', object_id, NULL, NULL, NULL, NULL, NULL, reason\nFROM @failures;\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -162,7 +166,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nreturn [{ json: {\n  source_db: 'MSSQL',\n  collected_at: new Date().toISOString(),\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  foreign_keys: Object.values(fks),\n  view_definitions: viewDefs,\n} }];\n"
+        "jsCode": "// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  if (!r.name) continue;\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nreturn [{ json: {\n  source_db: 'MSSQL',\n  collected_at: new Date().toISOString(),\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  foreign_keys: Object.values(fks),\n  view_definitions: viewDefs,\n} }];\n"
       }
     },
     {
@@ -199,7 +203,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// deps 계약 조립 — 07 컬럼 단위 우선, 06은 미해석·DMV실패 뷰 보강 (계약 규칙, 판단 아님)\n// column-grain rows from 07; 06 fills unresolved refs and DMV-failed views per contract\nconst snapshotId = $('POST catalog').first().json.snapshot_id;\nconst rows07 = $('07 referenced entities').all().map(i => i.json);\nconst failures = rows07.filter(r => r.kind === 'failure')\n  .map(r => ({ object_id: r.view_object_id, reason: r.reason }));\nconst failedIds = new Set(failures.map(f => f.object_id));\nconst deps07 = rows07.filter(r => r.kind === 'dep' && r.is_resolved).map(r => ({\n  view_object_id: r.view_object_id, referenced_object_id: r.referenced_object_id,\n  referenced_database: r.referenced_database, referenced_name: r.referenced_name,\n  referenced_column: r.referenced_column, is_resolved: true,\n}));\nconst deps06 = $('06 view deps').all().map(i => i.json)\n  .filter(d => !d.is_resolved || failedIds.has(d.view_object_id))\n  .map(d => ({ ...d, is_resolved: !!d.is_resolved }));\nreturn [{ json: {\n  snapshot_id: snapshotId,\n  deps: [...deps07, ...deps06],\n  unresolved_objects: failures,\n} }];\n"
+        "jsCode": "// deps 계약 조립 — 07 컬럼 단위 우선, 06은 미해석·DMV실패 뷰 보강 (계약 규칙, 판단 아님)\n// column-grain rows from 07; 06 fills unresolved refs and DMV-failed views per contract\nconst snapshotId = $('POST catalog').first().json.snapshot_id;\nconst rows07 = $('07 referenced entities').all().map(i => i.json);\nconst failures = rows07.filter(r => r.kind === 'failure')\n  .map(r => ({ object_id: r.view_object_id, reason: r.reason }));\nconst failedIds = new Set(failures.map(f => f.object_id));\nconst deps07 = rows07.filter(r => r.kind === 'dep' && r.is_resolved).map(r => ({\n  view_object_id: r.view_object_id, referenced_object_id: r.referenced_object_id,\n  referenced_database: r.referenced_database, referenced_name: r.referenced_name,\n  referenced_column: r.referenced_column, is_resolved: true,\n}));\nconst deps06 = $('06 view deps').all().map(i => i.json)\n  .filter(d => d.view_object_id != null && (!d.is_resolved || failedIds.has(d.view_object_id)))\n  .map(d => ({ ...d, is_resolved: !!d.is_resolved }));\nreturn [{ json: {\n  snapshot_id: snapshotId,\n  deps: [...deps07, ...deps06],\n  unresolved_objects: failures,\n} }];\n"
       }
     },
     {

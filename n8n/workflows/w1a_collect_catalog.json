@@ -65,6 +65,7 @@
         "operation": "executeQuery",
         "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nORDER BY kc.name, ic.key_ordinal;\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -84,6 +85,7 @@
         "operation": "executeQuery",
         "query": "-- FK 제약 + 컬럼 페어 / foreign keys with column pairs\n-- W1이 행을 {name, src_object_id, tgt_object_id, columns: [{src_column, tgt_column}]}로 그룹핑\nSELECT fk.name,\n       fk.parent_object_id AS src_object_id,\n       fk.referenced_object_id AS tgt_object_id,\n       sc.name AS src_column,\n       tc.name AS tgt_column,\n       fkc.constraint_column_id\nFROM sys.foreign_keys fk\nJOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id\nJOIN sys.columns sc\n  ON fkc.parent_object_id = sc.object_id AND fkc.parent_column_id = sc.column_id\nJOIN sys.columns tc\n  ON fkc.referenced_object_id = tc.object_id AND fkc.referenced_column_id = tc.column_id\nORDER BY fk.name, fkc.constraint_column_id;\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -119,7 +121,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nconst trigger = $('Webhook').first().json.body ?? {};\nreturn [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,\n  source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',\n  collected_at: new Date().toISOString(),\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  foreign_keys: Object.values(fks),\n  view_definitions: viewDefs,\n} }];\n"
+        "jsCode": "// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  if (!r.name) continue;\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nconst trigger = $('Webhook').first().json.body ?? {};\nreturn [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,\n  source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',\n  collected_at: new Date().toISOString(),\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  foreign_keys: Object.values(fks),\n  view_definitions: viewDefs,\n} }];\n"
       }
     },
     {

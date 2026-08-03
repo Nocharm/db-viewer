@@ -78,6 +78,13 @@ def test_table_preview_sends_filter_params(captured):
     assert rows == [{"EMP_NO": 1000, "EMP_NM": "샘플"}]
 
 
+def test_table_preview_drops_empty_rows(captured):
+    # W2 alwaysOutputData: 0건 결과가 빈 아이템({}) 1개로 온다 → 빈 리스트 정규화
+    captured["response"] = [{}]
+    rows = N8nTablePreview("http://n8n/webhook", timeout=5).rows("dbo.HR_EMP", [], 50)
+    assert rows == []
+
+
 def test_failure_raises_after_retry(monkeypatch):
     from urllib.error import URLError
 

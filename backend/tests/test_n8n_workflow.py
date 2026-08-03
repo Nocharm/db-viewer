@@ -33,6 +33,22 @@ def test_committed_collect_workflows_match_regeneration():
     assert json.loads(W1B_PATH.read_text()) == build_n8n_workflow.build_collect_viewdeps_workflow()
 
 
+def test_committed_deploy_variants_match_regeneration():
+    """deploy/ 사본도 생성기 산출과 일치 + $env 참조 없음 / deploy copies regenerate cleanly."""
+    builders = {
+        WORKFLOW_PATH.name: build_n8n_workflow.build_workflow,
+        RECON_PATH.name: build_n8n_workflow.build_recon_workflow,
+        W1A_PATH.name: build_n8n_workflow.build_collect_catalog_workflow,
+        W1B_PATH.name: build_n8n_workflow.build_collect_viewdeps_workflow,
+        W2_PATH.name: build_n8n_workflow.build_query_executor_workflow,
+    }
+    deploy_dir = WORKFLOW_PATH.parent / "deploy"
+    for name, builder in builders.items():
+        text = (deploy_dir / name).read_text()
+        assert "$env." not in text, name
+        assert json.loads(text) == build_n8n_workflow.build_deploy_variant(builder()), name
+
+
 def test_collect_workflows_echo_job_id_and_split_sql():
     """단계 워크플로 계약 — webhook 트리거, collect_job_id 반향, SQL 분할이 W1 전체를 덮는다."""
     w1a = json.loads(W1A_PATH.read_text())

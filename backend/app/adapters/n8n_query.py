@@ -32,7 +32,9 @@ def _post_query(webhook_base: str, body: dict, timeout: int) -> list[dict]:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode())
-            return payload if isinstance(payload, list) else [payload]
+            rows = payload if isinstance(payload, list) else [payload]
+            # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 빈 리스트로 정규화
+            return [r for r in rows if r]
         except URLError as e:
             last_error = e
             logger.warning("n8n query attempt failed",
