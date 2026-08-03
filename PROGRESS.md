@@ -2,6 +2,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-03
+
+- **컨테이너 메모리 튜닝** — backend에 `MALLOC_ARENA_MAX=2`(glibc arena 제한으로 멀티스레드 상주 메모리 절감 — frontend/postgres는 alpine·musl이라 미적용), frontend에 `NODE_OPTIONS=--max-old-space-size=512`(Next.js 셀프호스팅 메모리 가이드). compose 리터럴로 고정 — 배포별 가변값이 아니라 .env 미등재.
+
 ## 2026-08-02
 
 - **로딩 UX 전면 감사·적용** — 비동기 전 지점 감사 후 6곳 적용: ① **T3 전수 탐색 UI 신설**(백엔드 202+폴링·진행도는 있었으나 UI 부재) — ERD 검증 패널에 버튼+진행 바(done/total 폴링 1.5s)+상위 결과 목록, 이름 무관 100% 발견 실증(LEAD_SEQ·PICKING_SEQ). ② 일괄 검증 경과초+스켈레톤, ③ AD 전체 동기화 경과초·중복 클릭 방지(실AD 분 단위 대비), ④ ERD 그래프 계산 배지(fetch+ELK 동안), ⑤ AI 관계 제안 busy, ⑥ 공용 useElapsedSeconds 훅. 기존 양호 지점(수집 스테퍼·상세 스켈레톤·미리보기 탭)은 유지.

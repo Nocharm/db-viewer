@@ -42,6 +42,8 @@ services:
       LDAP_BIND_CREDENTIALS: ${LDAP_BIND_CREDENTIALS}
       LDAP_USER_SEARCH_BASE: ${LDAP_USER_SEARCH_BASE}
       LDAP_START_TLS: ${LDAP_START_TLS}
+      # glibc malloc arena를 2개로 제한 — 멀티스레드 상주 메모리 절감 (frontend/postgres는 musl이라 무의미)
+      MALLOC_ARENA_MAX: "2"
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +65,8 @@ services:
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
     environment:
       BACKEND_URL: http://backend:8000
+      # Next.js 컨테이너 메모리 가이드 — V8 old space 상한 512MB
+      NODE_OPTIONS: --max-old-space-size=512
     ports:
       - "6678:3000"   # 배포 주소: http://182.199.63.71:6678
     depends_on:
