@@ -4,6 +4,7 @@
 
 ## 2026-08-03
 
+- **n8n 배포용 워크플로 사본** — 실서버 n8n이 기존 운영 중(UI 접근만 가능, 컨테이너 env 추가 불가)임이 확인되어 `n8n/workflows/deploy/`에 `$env` 참조를 리터럴로 치환한 임포트 전용 사본 5종 신설. INGEST 키만 플레이스홀더(비밀키 커밋 금지) — 임포트 후 UI에서 X-API-Key 필드 교체. 원본은 로컬 리허설(compose env 주입)용으로 유지 — 이원화 사유·동기화 규칙은 deploy/README.md에 기록. 런북 §4를 신규 docker run 전제에서 UI-only 절차로 재작성.
 - **컨테이너 메모리 튜닝** — backend에 `MALLOC_ARENA_MAX=2`(glibc arena 제한으로 멀티스레드 상주 메모리 절감 — frontend/postgres는 alpine·musl이라 미적용), frontend에 `NODE_OPTIONS=--max-old-space-size=512`(Next.js 셀프호스팅 메모리 가이드). compose 리터럴로 고정 — 배포별 가변값이 아니라 .env 미등재.
 
 ## 2026-08-02

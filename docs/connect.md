@@ -61,27 +61,23 @@ docker compose up -d --build
   - 미등록 계정이면 "화이트리스트에 없습니다" 화면이 정상 — 관리 콘솔(`/admin`, sysadmin 계정)에서 등록.
   - 로그인 복귀 시 `failed to fetch` → Web origins 누락 (README 트러블슈팅 표).
 
-## 4. n8n 설치 (세팅 전 → 신규 기동)
+## 4. n8n 워크플로 등록 (기존 n8n에 UI로만)
 
-MSSQL 계정·접근 제한은 발급되어 있으므로 n8n만 띄우면 된다. 서버에서:
+실서버 n8n은 이미 운영 중이고 **UI로만 접근 가능**하므로, 컨테이너 env 없이 동작하는
+배포용 사본 **`n8n/workflows/deploy/*.json`** 을 임포트한다 (원본 `n8n/workflows/*.json`은
+`$env` 참조라 이 환경에선 동작하지 않음 — 로컬 리허설 전용). MSSQL credential은
+기존 서비스가 쓰던 등록값을 그대로 쓴다.
 
-```bash
-docker run -d --name n8n --restart unless-stopped -p 5678:5678 \
-  -v n8n_data:/home/node/.n8n \
-  -e GENERIC_TIMEZONE=Asia/Seoul -e TZ=Asia/Seoul \
-  -e DB_VIEWER_API_BASE=http://182.199.63.71:6678 \
-  -e DB_VIEWER_INGEST_KEY=<.env의 INGEST_API_KEY와 동일값> \
-  -e DB_VIEWER_SOURCE_DB=<원본 DB 이름> \
-  n8nio/n8n
-```
+윈도우 PC의 `n8n/workflows/deploy/` 파일들을 브라우저(`http://182.199.63.71:5678`)에서
+Import from File — 파일별 후속 작업은 **`n8n/workflows/deploy/README.md` 표** 그대로:
 
-`http://182.199.63.71:5678` 접속 → 최초 관리자 계정 생성 → 두 가지 등록:
+1. 각 워크플로의 MSSQL 노드(⚠️)에 기존 credential 연결
+2. W1a·W1b의 `POST catalog`/`POST view-deps` 노드 → `X-API-Key` 값
+   `PASTE-INGEST-API-KEY-HERE` 를 `.env`의 `INGEST_API_KEY`로 교체
+3. W1a·W1b·W2 **Activate** (webhook은 활성일 때만 응답). W0는 수동 실행용, W1(주기 수집)은 선택.
 
-1. **Credentials → Microsoft SQL**: 발급받은 **읽기 전용 계정** 입력. 이름은 `MSSQL readonly` 권장.
-2. **워크플로 임포트**: 윈도우 PC의 `n8n/workflows/*.json` 5개를 UI에서 Import from file →
-   각 워크플로의 MSSQL 노드에 위 credential 지정 → W1a·W1b·W2는 **Activate** (webhook은 활성일 때만 응답).
-
-- ✅ 통과 기준: 워크플로 목록에 5개(W0·W1·W1a·W1b·W2)가 보이고, W1a/W1b/W2가 Active 토글 켜짐.
+- ✅ 통과 기준: 워크플로 목록에 W0·W1a·W1b·W2가 보이고, W1a/W1b/W2가 Active 토글 켜짐 +
+  세 워크플로의 노드에 ⚠️(credential 미연결) 표시 없음.
 
 ## 5. 정찰 — 정지점 16 (읽기 전용, 복붙 불필요)
 

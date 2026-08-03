@@ -42,10 +42,10 @@ docker compose up -d --build
 실DB 연결(정찰 → 수집 → live 전환) 순서와 체크리스트: **`docs/connect.md`**
 
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
-- **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트
+- **n8n**: http://182.199.63.71:5678 — 실서버는 **`n8n/workflows/deploy/*.json`** 임포트
+  (기존 n8n·UI 접근 전용, 값 리터럴 내장 — 절차: `n8n/workflows/deploy/README.md`.
+  원본 `n8n/workflows/*.json`은 `$env` 참조라 로컬 리허설 전용)
   - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
-  - `w1_catalog_snapshot.json` — 정기 카탈로그 수집. env: `DB_VIEWER_API_BASE=http://182.199.63.71:6678`,
-    `DB_VIEWER_INGEST_KEY` = 백엔드 `INGEST_API_KEY`와 동일 값
 - Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의)
 
 ## 인증 (Keycloak + LDAP + 화이트리스트)
