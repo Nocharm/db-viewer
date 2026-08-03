@@ -134,7 +134,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/catalog",
+        "url": "={{ $env.DB_VIEWER_API_BASE ?? 'http://182.199.63.71:6678' }}/api/ingest/catalog",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
@@ -143,7 +143,7 @@
           "parameters": [
             {
               "name": "X-API-Key",
-              "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"
+              "value": "={{ $env.DB_VIEWER_INGEST_KEY ?? 'PASTE-INGEST-API-KEY-HERE' }}"
             }
           ]
         }

@@ -179,7 +179,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/catalog",
+        "url": "={{ $env.DB_VIEWER_API_BASE ?? 'http://182.199.63.71:6678' }}/api/ingest/catalog",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
@@ -188,7 +188,7 @@
           "parameters": [
             {
               "name": "X-API-Key",
-              "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"
+              "value": "={{ $env.DB_VIEWER_INGEST_KEY ?? 'PASTE-INGEST-API-KEY-HERE' }}"
             }
           ]
         }
@@ -216,7 +216,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/view-deps",
+        "url": "={{ $env.DB_VIEWER_API_BASE ?? 'http://182.199.63.71:6678' }}/api/ingest/view-deps",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
@@ -225,7 +225,7 @@
           "parameters": [
             {
               "name": "X-API-Key",
-              "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"
+              "value": "={{ $env.DB_VIEWER_INGEST_KEY ?? 'PASTE-INGEST-API-KEY-HERE' }}"
             }
           ]
         }
@@ -359,6 +359,6 @@
     "executionOrder": "v1"
   },
   "meta": {
-    "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). credentials와 $env.DB_VIEWER_API_BASE(예: http://182.199.63.71:6678) / DB_VIEWER_SOURCE_DB / DB_VIEWER_INGEST_KEY(백엔드 INGEST_API_KEY와 동일)를 배포 환경에 맞게 설정할 것."
+    "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). 값은 DB_VIEWER_* 환경변수가 있으면 그 값, 없으면 리터럴 폴백. 실서버는 임포트 후 POST catalog / POST view-deps 노드의 X-API-Key 플레이스홀더만 .env의 INGEST_API_KEY로 교체할 것."
   }
 }

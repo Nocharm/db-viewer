@@ -33,20 +33,12 @@ def test_committed_collect_workflows_match_regeneration():
     assert json.loads(W1B_PATH.read_text()) == build_n8n_workflow.build_collect_viewdeps_workflow()
 
 
-def test_committed_deploy_variants_match_regeneration():
-    """deploy/ 사본도 생성기 산출과 일치 + $env 참조 없음 / deploy copies regenerate cleanly."""
-    builders = {
-        WORKFLOW_PATH.name: build_n8n_workflow.build_workflow,
-        RECON_PATH.name: build_n8n_workflow.build_recon_workflow,
-        W1A_PATH.name: build_n8n_workflow.build_collect_catalog_workflow,
-        W1B_PATH.name: build_n8n_workflow.build_collect_viewdeps_workflow,
-        W2_PATH.name: build_n8n_workflow.build_query_executor_workflow,
-    }
-    deploy_dir = WORKFLOW_PATH.parent / "deploy"
-    for name, builder in builders.items():
-        text = (deploy_dir / name).read_text()
-        assert "$env." not in text, name
-        assert json.loads(text) == build_n8n_workflow.build_deploy_variant(builder()), name
+def test_env_refs_all_have_literal_fallbacks():
+    """한 세트 전략 — $env 참조는 전부 `?? '폴백'` 형태 (실서버는 env 주입 불가)."""
+    for path in (WORKFLOW_PATH, RECON_PATH, W1A_PATH, W1B_PATH, W2_PATH):
+        text = path.read_text()
+        for m in re.finditer(r"\$env\.\w+(.{0,4})", text):
+            assert m.group(1).startswith(" ?? "), f"{path.name}: {m.group(0)}"
 
 
 def test_collect_workflows_echo_job_id_and_split_sql():

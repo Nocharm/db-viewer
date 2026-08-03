@@ -63,13 +63,12 @@ docker compose up -d --build
 
 ## 4. n8n 워크플로 등록 (기존 n8n에 UI로만)
 
-실서버 n8n은 이미 운영 중이고 **UI로만 접근 가능**하므로, 컨테이너 env 없이 동작하는
-배포용 사본 **`n8n/workflows/deploy/*.json`** 을 임포트한다 (원본 `n8n/workflows/*.json`은
-`$env` 참조라 이 환경에선 동작하지 않음 — 로컬 리허설 전용). MSSQL credential은
-기존 서비스가 쓰던 등록값을 그대로 쓴다.
+실서버 n8n은 이미 운영 중이고 **UI로만 접근 가능**하다. `n8n/workflows/*.json` 한 세트가
+로컬·실서버를 겸용한다 — 값이 `$env.DB_VIEWER_* ?? '리터럴'` 폴백이라 env 없는 실서버에서도
+임포트만으로 동작한다. MSSQL credential은 기존 서비스가 쓰던 등록값을 그대로 쓴다.
 
-윈도우 PC의 `n8n/workflows/deploy/` 파일들을 브라우저(`http://182.199.63.71:5678`)에서
-Import from File — 파일별 후속 작업은 **`n8n/workflows/deploy/README.md` 표** 그대로:
+윈도우 PC의 `n8n/workflows/` 파일들을 브라우저(`http://182.199.63.71:5678`)에서
+Import from File — 파일별 후속 작업은 **`n8n/workflows/README.md` 표** 그대로:
 
 1. 각 워크플로의 MSSQL 노드(⚠️)에 기존 credential 연결
 2. W1a·W1b의 `POST catalog`/`POST view-deps` 노드 → `X-API-Key` 값

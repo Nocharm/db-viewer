@@ -181,6 +181,15 @@ BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
 )
 
 
+# 한 세트 전략 — 워크플로는 $env가 있으면 그 값(로컬 리허설: compose가 주입),
+# 없으면 리터럴 폴백(실서버 n8n: UI 접근만 가능해 env 주입 불가)을 쓴다.
+# one set serves both: local compose injects $env; production falls back to literals
+PROD_API_BASE = "http://182.199.63.71:6678"
+# 비밀키는 커밋 금지 — 임포트 후 n8n UI에서 실제 키로 교체 / replace in the n8n UI after import
+KEY_PLACEHOLDER = "PASTE-INGEST-API-KEY-HERE"
+API_BASE_EXPR = "$env.DB_VIEWER_API_BASE ?? '" + PROD_API_BASE + "'"
+KEY_VALUE = "={{ $env.DB_VIEWER_INGEST_KEY ?? '" + KEY_PLACEHOLDER + "' }}"
+
 # 정상적으로 0행일 수 있는 쿼리 노드 — n8n은 출력 0건이면 체인을 멈추므로
 # alwaysOutputData로 빈 아이템을 흘려보낸다 (FK 없는 레거시 DB가 이 프로젝트의 전제)
 # these queries can legitimately return zero rows; without alwaysOutputData n8n halts the chain
@@ -223,25 +232,25 @@ def build_workflow() -> dict:
               {"jsCode": BUILD_CATALOG_JS}, type_version=2),
         _node("POST catalog", "n8n-nodes-base.httpRequest", [220 * 9, 0], {
             "method": "POST",
-            "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/catalog",
+            "url": "={{ " + API_BASE_EXPR + " }}/api/ingest/catalog",
             "sendBody": True, "specifyBody": "json",
             "jsonBody": "={{ JSON.stringify($json) }}",
             # ingest 머신 게이트 — 백엔드 INGEST_API_KEY와 동일 값 / machine auth key
             "sendHeaders": True,
             "headerParameters": {"parameters": [
-                {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+                {"name": "X-API-Key", "value": KEY_VALUE},
             ]},
         }, type_version=4.2),
         _node("Build view-deps payload", "n8n-nodes-base.code", [220 * 10, 0],
               {"jsCode": BUILD_VIEW_DEPS_JS}, type_version=2),
         _node("POST view-deps", "n8n-nodes-base.httpRequest", [220 * 11, 0], {
             "method": "POST",
-            "url": "={{ $env.DB_VIEWER_API_BASE }}/api/ingest/view-deps",
+            "url": "={{ " + API_BASE_EXPR + " }}/api/ingest/view-deps",
             "sendBody": True, "specifyBody": "json",
             "jsonBody": "={{ JSON.stringify($json) }}",
             "sendHeaders": True,
             "headerParameters": {"parameters": [
-                {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+                {"name": "X-API-Key", "value": KEY_VALUE},
             ]},
         }, type_version=4.2),
     ]
@@ -258,9 +267,9 @@ def build_workflow() -> dict:
         "settings": {"executionOrder": "v1"},
         "meta": {
             "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
-                     "credentials와 $env.DB_VIEWER_API_BASE(예: http://182.199.63.71:6678) / "
-                     "DB_VIEWER_SOURCE_DB / DB_VIEWER_INGEST_KEY(백엔드 INGEST_API_KEY와 동일)를 "
-                     "배포 환경에 맞게 설정할 것.",
+                     "값은 DB_VIEWER_* 환경변수가 있으면 그 값, 없으면 리터럴 폴백. "
+                     "실서버는 임포트 후 POST catalog / POST view-deps 노드의 X-API-Key "
+                     "플레이스홀더만 .env의 INGEST_API_KEY로 교체할 것.",
         },
     }
 
@@ -268,12 +277,12 @@ def build_workflow() -> dict:
 def _post_ingest_node(name: str, endpoint: str, position: list[int]) -> dict:
     return _node(name, "n8n-nodes-base.httpRequest", position, {
         "method": "POST",
-        "url": f"={{{{ $env.DB_VIEWER_API_BASE }}}}{endpoint}",
+        "url": "={{ " + API_BASE_EXPR + " }}" + endpoint,
         "sendBody": True, "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "sendHeaders": True,
         "headerParameters": {"parameters": [
-            {"name": "X-API-Key", "value": "={{ $env.DB_VIEWER_INGEST_KEY }}"},
+            {"name": "X-API-Key", "value": KEY_VALUE},
         ]},
     }, type_version=4.2)
 
@@ -421,34 +430,8 @@ def build_recon_workflow() -> dict:
     }
 
 
-# 배포 사본 — 실서버 n8n은 기존 운영분(UI 접근만, 컨테이너 env 불가)이라
-# $env 참조를 리터럴로 치환해 임포트만으로 동작하게 한다 (deploy/README.md)
-DEPLOY_DIR = REPO_ROOT / "n8n" / "workflows" / "deploy"
-DEPLOY_API_BASE = "http://182.199.63.71:6678"
-# 비밀키는 커밋 금지 — 임포트 후 UI에서 교체하는 플레이스홀더 / placeholder, replaced in the UI
-DEPLOY_KEY_PLACEHOLDER = "PASTE-INGEST-API-KEY-HERE"
-W1_DEPLOY_NOTES = (
-    "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
-    "배포용 사본: 값이 리터럴로 박혀 있다. 임포트 후 POST catalog / POST view-deps 노드의 "
-    "X-API-Key 값(PASTE-INGEST-API-KEY-HERE)만 .env의 INGEST_API_KEY로 교체할 것."
-)
-
-
-def build_deploy_variant(workflow: dict) -> dict:
-    """Replace $env refs with deploy literals. / $env 참조를 배포 리터럴로 치환."""
-    text = json.dumps(workflow, ensure_ascii=False)
-    text = text.replace("={{ $env.DB_VIEWER_API_BASE }}", DEPLOY_API_BASE)
-    text = text.replace("={{ $env.DB_VIEWER_INGEST_KEY }}", DEPLOY_KEY_PLACEHOLDER)
-    text = text.replace("$env.DB_VIEWER_SOURCE_DB ?? 'MSSQL'", "'MSSQL'")
-    variant = json.loads(text)
-    if "$env" in variant["meta"]["notes"]:  # W1만 해당 — env 안내를 배포 절차로 교체
-        variant["meta"]["notes"] = W1_DEPLOY_NOTES
-    return variant
-
-
 def main() -> None:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
     outputs = [
         (OUT_PATH, build_workflow()),
         (RECON_OUT_PATH, build_recon_workflow()),
@@ -459,10 +442,6 @@ def main() -> None:
     for path, workflow in outputs:
         path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2) + "\n")
         print(f"wrote {path}")
-        deploy_path = DEPLOY_DIR / path.name
-        deploy_path.write_text(
-            json.dumps(build_deploy_variant(workflow), ensure_ascii=False, indent=2) + "\n")
-        print(f"wrote {deploy_path}")
 
 
 if __name__ == "__main__":
