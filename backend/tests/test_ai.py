@@ -2,7 +2,9 @@
 
 import sqlalchemy as sa
 
-from app.adapters.ai import ColumnMeta, FakeAiClient, TableMeta
+from app.adapters.ai import CandidatePair, ColumnMeta, FakeAiClient, TableMeta
+from app.api.ai import select_ai_candidates
+from app.domain import scoring
 from app.models import Base
 
 
@@ -12,16 +14,64 @@ def _seed(client, load_fixture) -> None:
                 json={**load_fixture("view_deps.json"), "snapshot_id": sid})
 
 
-def test_fake_client_suggests_naming_variants():
-    tables = [
-        TableMeta("dbo.T_EMP", [ColumnMeta("EMP_NO", "int", is_pk=True)]),
-        TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int", is_pk=True),
-                                ColumnMeta("EMPNO", "int")]),
+def _pair(src_object, src_column, tgt_object, tgt_column, signals):
+    return CandidatePair(
+        src_object=src_object, src_column=src_column, src_type="int",
+        src_is_pk=False, src_row_count=100,
+        tgt_object=tgt_object, tgt_column=tgt_column, tgt_type="int",
+        tgt_is_pk=True, tgt_row_count=50,
+        score=52, signals=signals,
+    )
+
+
+def test_fake_client_judges_by_name_affinity_and_view_join():
+    pairs = [
+        _pair("dbo.T_ORD", "EMPNO", "dbo.T_EMP", "EMP_NO", ["key", "naming"]),
+        _pair("dbo.T_A", "X_ID", "dbo.T_B", "Y_ID", ["view_join"]),
+        _pair("dbo.T_C", "AAA", "dbo.T_D", "BBB", ["key"]),
     ]
-    suggestions = FakeAiClient().suggest_relations(tables)
-    assert [(s.src_object, s.src_column, s.tgt_object, s.tgt_column) for s in suggestions] == [
-        ("dbo.T_ORD", "EMPNO", "dbo.T_EMP", "EMP_NO"),
-    ]
+    accepted = FakeAiClient().judge_relations(pairs)
+    keys = [(s.src_object, s.src_column, s.tgt_object, s.tgt_column) for s in accepted]
+    assert ("dbo.T_ORD", "EMPNO", "dbo.T_EMP", "EMP_NO") in keys
+    assert ("dbo.T_A", "X_ID", "dbo.T_B", "Y_ID") in keys
+    assert ("dbo.T_C", "AAA", "dbo.T_D", "BBB") not in keys  # 신호 없는 페어는 기각
+
+
+def _col(cid, qname, name, is_pk=False):
+    return scoring.ScoringColumn(
+        column_id=cid, object_qname=qname, object_type="table", name=name,
+        data_type="int", max_length=4, is_pk=is_pk, is_computed=False,
+        distinct_count=100,
+    )
+
+
+def test_select_ai_candidates_prefers_pk_direction_and_caps():
+    cols = {
+        1: _col(1, "dbo.T_EMP", "EMP_NO", is_pk=True),
+        2: _col(2, "dbo.T_ORD", "EMPNO"),
+        3: _col(3, "dbo.T_ORD", "ORD_NO", is_pk=True),
+        4: _col(4, "dbo.T_SHP", "ORD_NO"),
+    }
+    ranked = select_ai_candidates(cols, view_pairs=set(), fk_pairs=set(),
+                                  min_distinct=50, blacklist=set(), max_pairs=1)
+    assert len(ranked) == 1  # 상한 적용
+    src, cand = ranked[0]
+    # 정확 동명(40+key20=60) > 정규화 변형(32+20=52) — 방향은 PK 쪽이 타깃
+    assert (src.object_qname, src.name) == ("dbo.T_SHP", "ORD_NO")
+    assert (cand.target.object_qname, cand.target.name) == ("dbo.T_ORD", "ORD_NO")
+
+
+def test_select_ai_candidates_includes_view_join_pairs():
+    cols = {
+        1: _col(1, "dbo.T_A", "HDR_KEY"),
+        2: _col(2, "dbo.T_B", "REF_CODE"),
+    }
+    ranked = select_ai_candidates(cols, view_pairs={frozenset((1, 2))},
+                                  fk_pairs=set(), min_distinct=50,
+                                  blacklist=set(), max_pairs=10)
+    # 이름이 달라도 뷰 JOIN 증거만으로 후보가 된다
+    assert len(ranked) == 1
+    assert ranked[0][1].signals.get("view_join") == scoring.WEIGHT_VIEW_JOIN
 
 
 def test_fake_client_search_ranks_by_term_overlap():

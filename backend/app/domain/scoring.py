@@ -60,7 +60,7 @@ def is_type_compatible(src: ScoringColumn, tgt: ScoringColumn) -> bool:
     return src.data_type == tgt.data_type and src.max_length == tgt.max_length
 
 
-def _normalize(name: str) -> str:
+def normalize_name(name: str) -> str:
     return name.replace("_", "").upper()
 
 
@@ -89,7 +89,7 @@ def score_candidates(
             signals["view_join"] = WEIGHT_VIEW_JOIN
         if src.name == tgt.name:
             signals["naming"] = WEIGHT_NAMING_EXACT
-        elif _normalize(src.name) == _normalize(tgt.name):
+        elif normalize_name(src.name) == normalize_name(tgt.name):
             signals["naming"] = WEIGHT_NAMING_NORMALIZED
         # 키 보너스는 단독 신호가 아니다 — PK 전수가 후보가 되는 노이즈 방지
         # key bonus never stands alone; every PK would be a candidate otherwise

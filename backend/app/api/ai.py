@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.adapters.ai import (
     AiClient,
+    CandidatePair,
     ColumnMeta,
     TableMeta,
     ValidationFacts,
@@ -20,7 +21,9 @@ from app.adapters.ai import (
 )
 from app.api.objects import resolve_snapshot
 from app.api.validate import resolve_column_ref
+from app.config import get_settings
 from app.db import get_db
+from app.domain import scoring
 from app.domain.confidence import Observation, compute_confidence
 from app.models import (
     AiSummary,
@@ -66,6 +69,50 @@ def _load_table_meta(db: Session, snapshot_id: int) -> list[TableMeta]:
     ]
 
 
+def select_ai_candidates(
+    columns: dict[int, scoring.ScoringColumn],
+    view_pairs: set[frozenset],
+    fk_pairs: set[frozenset],
+    min_distinct: int,
+    blacklist: set[str],
+    max_pairs: int,
+) -> list[tuple[scoring.ScoringColumn, scoring.Candidate]]:
+    """스냅샷 전체 상위 후보 — 무순서 페어당 고점 방향 1건.
+
+    후보 우주는 뷰 JOIN 페어 + 정규화 동명 컬럼↔PK 페어로 한정한다.
+    전 컬럼 O(N²) 스코어링은 실 규모(2,342 테이블)에서 불가능하고,
+    스코어러 신호 자체가 이 두 우주 밖에서는 0점이라 손실도 없다
+    (비PK↔비PK 동명 페어만 제외되는데, 그쪽은 컬럼 단위 후보 API가 커버).
+    """
+    all_columns = list(columns.values())
+    pairs: set[frozenset] = {p for p in view_pairs if len(p) == 2}
+    pk_index: dict[str, list[scoring.ScoringColumn]] = {}
+    for col in all_columns:
+        if col.is_pk:
+            pk_index.setdefault(scoring.normalize_name(col.name), []).append(col)
+    for col in all_columns:
+        for pk in pk_index.get(scoring.normalize_name(col.name), []):
+            if pk.object_qname != col.object_qname:
+                pairs.add(frozenset((col.column_id, pk.column_id)))
+
+    best: dict[frozenset, tuple[scoring.ScoringColumn, scoring.Candidate]] = {}
+    for pair in pairs:
+        ids = tuple(pair)
+        for src_id, tgt_id in (ids, ids[::-1]):
+            src, tgt = columns.get(src_id), columns.get(tgt_id)
+            if src is None or tgt is None:
+                continue
+            if scoring.check_exclusion(src, min_distinct, blacklist) is not None:
+                continue
+            for cand in scoring.score_candidates(
+                src, [tgt], view_pairs, fk_pairs, min_distinct, blacklist
+            ):
+                if pair not in best or cand.score > best[pair][1].score:
+                    best[pair] = (src, cand)
+    ranked = sorted(best.values(), key=lambda p: (-p[1].score, p[0].object_qname, p[0].name))
+    return ranked[:max_pairs]
+
+
 @router.post("/suggest-relations")
 def suggest_relations(
     snapshot_id: int | None = None,
@@ -74,38 +121,57 @@ def suggest_relations(
 ) -> dict:
     """AI 관계 후보 생성 → 검증 큐 직행 (candidate/ai — confirmed 금지). / suggestions to the queue."""
     snapshot = resolve_snapshot(db, snapshot_id)
-    tables = _load_table_meta(db, snapshot.id)
-    suggestions = ai.suggest_relations(tables)
-
-    # 기존 FK·관계와 중복 제거 / dedupe against FKs and known relations
+    settings = get_settings()
     columns = load_scoring_columns(db, snapshot.id)
-    by_identity = {(c.object_qname, c.name): c.column_id for c in columns.values()}
-    _, fk_pairs = load_pair_sets(db, snapshot.id)
-    existing = {
-        (r.src_object, r.src_column, r.tgt_object, r.tgt_column)
-        for r in db.execute(select(Relation)).scalars()
+    view_pairs, fk_pairs = load_pair_sets(db, snapshot.id)
+    ranked = select_ai_candidates(
+        columns, view_pairs, fk_pairs,
+        settings.low_cardinality_min_distinct,
+        {b.upper() for b in settings.low_cardinality_blacklist},
+        settings.ai_suggest_max_pairs,
+    )
+
+    # 기존 관계와 중복 제거(양방향) — LLM 호출 전에 걸러 토큰 낭비·재실행 중복을 막는다
+    existing: set[tuple] = set()
+    for r in db.execute(select(Relation)).scalars():
+        existing.add((r.src_object, r.src_column, r.tgt_object, r.tgt_column))
+        existing.add((r.tgt_object, r.tgt_column, r.src_object, r.src_column))
+
+    row_counts = {
+        f"{o.schema}.{o.name}": o.row_count
+        for o in db.execute(
+            select(CatalogObject).where(CatalogObject.snapshot_id == snapshot.id)
+        ).scalars()
     }
+    pairs_meta = []
+    for src, cand in ranked:
+        tgt = cand.target
+        if (src.object_qname, src.name, tgt.object_qname, tgt.name) in existing:
+            continue
+        pairs_meta.append(CandidatePair(
+            src_object=src.object_qname, src_column=src.name,
+            src_type=src.data_type, src_is_pk=src.is_pk,
+            src_row_count=row_counts.get(src.object_qname),
+            tgt_object=tgt.object_qname, tgt_column=tgt.name,
+            tgt_type=tgt.data_type, tgt_is_pk=tgt.is_pk,
+            tgt_row_count=row_counts.get(tgt.object_qname),
+            score=cand.score, signals=sorted(cand.signals),
+        ))
+
+    suggestions = ai.judge_relations(pairs_meta)
 
     now = datetime.now(UTC)
     created = []
     for s in suggestions:
         key = (s.src_object, s.src_column, s.tgt_object, s.tgt_column)
-        if key in existing:
-            continue
-        src_id = by_identity.get((s.src_object, s.src_column))
-        tgt_id = by_identity.get((s.tgt_object, s.tgt_column))
-        if src_id is None or tgt_id is None:
-            continue
-        if frozenset((src_id, tgt_id)) in fk_pairs:
-            continue  # 이미 FK / already constrained
         db.add(Relation(
             src_object=s.src_object, src_column=s.src_column,
             tgt_object=s.tgt_object, tgt_column=s.tgt_column,
             status="candidate", origin="ai", created_at=now,
         ))
         created.append({**key_as_dict(key), "reason": s.reason})
-    return {"snapshot_id": snapshot.id, "suggested": len(suggestions), "created": len(created),
-            "items": created[:100]}
+    return {"snapshot_id": snapshot.id, "suggested": len(pairs_meta),
+            "created": len(created), "items": created[:100]}
 
 
 def key_as_dict(key: tuple) -> dict:

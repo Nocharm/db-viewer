@@ -42,6 +42,24 @@ class AiTableHit:
 
 
 @dataclass(frozen=True)
+class CandidatePair:
+    """스코어러가 뽑은 후보 페어 + 판정용 메타 / scored pair with judging metadata."""
+
+    src_object: str
+    src_column: str
+    src_type: str
+    src_is_pk: bool
+    src_row_count: int | None
+    tgt_object: str
+    tgt_column: str
+    tgt_type: str
+    tgt_is_pk: bool
+    tgt_row_count: int | None
+    score: int
+    signals: list[str]
+
+
+@dataclass(frozen=True)
 class ValidationFacts:
     """T2 관측 통계만 — 원본 값 없음 / observation stats only, never raw values."""
 
@@ -66,7 +84,7 @@ class ViewFacts:
 
 
 class AiClient(Protocol):
-    def suggest_relations(self, tables: list[TableMeta]) -> list[AiRelationSuggestion]: ...
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]: ...
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]: ...
 
@@ -84,26 +102,17 @@ def _normalize(name: str) -> str:
 class FakeAiClient:
     """결정론적 휴리스틱 — 실제 LLM의 퍼지 매칭을 흉내 / deterministic stand-in."""
 
-    def suggest_relations(self, tables: list[TableMeta]) -> list[AiRelationSuggestion]:
-        # PK 이름 인덱스 → 다른 테이블의 유사 컬럼 탐색 (EMP_NO ↔ EMPNO 류)
-        pk_index: dict[str, tuple[str, str]] = {}
-        for table in tables:
-            for col in table.columns:
-                if col.is_pk:
-                    pk_index.setdefault(_normalize(col.name), (table.qname, col.name))
-        suggestions = []
-        for table in tables:
-            for col in table.columns:
-                if col.is_pk:
-                    continue
-                hit = pk_index.get(_normalize(col.name))
-                if hit and hit[0] != table.qname:
-                    suggestions.append(AiRelationSuggestion(
-                        src_object=table.qname, src_column=col.name,
-                        tgt_object=hit[0], tgt_column=hit[1],
-                        reason=f"name affinity: {col.name} ~ {hit[1]}",
-                    ))
-        return sorted(suggestions, key=lambda s: (s.src_object, s.src_column))
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]:
+        # 뷰 JOIN 증거 또는 명명 유사면 수용 — 실 LLM의 판정을 결정론으로 흉내
+        accepted = []
+        for c in candidates:
+            if "view_join" in c.signals or _normalize(c.src_column) == _normalize(c.tgt_column):
+                accepted.append(AiRelationSuggestion(
+                    src_object=c.src_object, src_column=c.src_column,
+                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                    reason=f"signals: {', '.join(c.signals)}",
+                ))
+        return accepted
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
         terms = [t for t in _normalize(query).split() if t] or [_normalize(query)]
