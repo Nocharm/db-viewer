@@ -169,20 +169,27 @@ def suggest_relations(
             score=cand.score, signals=sorted(cand.signals),
         ))
 
-    suggestions = ai.judge_relations(pairs_meta)
+    judgements = ai.judge_relations(pairs_meta)
 
     now = datetime.now(UTC)
     created = []
-    for s in suggestions:
-        key = (s.src_object, s.src_column, s.tgt_object, s.tgt_column)
+    rejected_count = 0
+    for j in judgements:
         db.add(Relation(
-            src_object=s.src_object, src_column=s.src_column,
-            tgt_object=s.tgt_object, tgt_column=s.tgt_column,
-            status="candidate", origin="ai", created_at=now,
+            src_object=j.src_object, src_column=j.src_column,
+            tgt_object=j.tgt_object, tgt_column=j.tgt_column,
+            status="candidate" if j.accepted else "rejected",
+            origin="ai", reason=j.reason, created_at=now,
         ))
-        created.append({**key_as_dict(key), "reason": s.reason})
+        if j.accepted:
+            created.append({**key_as_dict((j.src_object, j.src_column,
+                                           j.tgt_object, j.tgt_column)),
+                            "reason": j.reason})
+        else:
+            rejected_count += 1
     return {"snapshot_id": snapshot.id, "suggested": len(pairs_meta),
-            "created": len(created), "items": created[:100]}
+            "created": len(created), "rejected": rejected_count,
+            "items": created[:100]}
 
 
 def key_as_dict(key: tuple) -> dict:

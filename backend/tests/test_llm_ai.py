@@ -118,10 +118,13 @@ def test_judge_relations_maps_accepted_indices(captured):
         {"index": 0, "accept": True, "reason": "사번 참조"},
         {"index": 1, "accept": False, "reason": "무관"},
     ]}, ensure_ascii=False)
-    accepted = _client().judge_relations([_pair(0), _pair(1)])
-    assert len(accepted) == 1
-    assert accepted[0].src_object == "dbo.SRC0"
-    assert accepted[0].reason == "사번 참조"
+    verdicts = _client().judge_relations([_pair(0), _pair(1)])
+    assert len(verdicts) == 2  # 판정 전체 반환 — 수용+기각
+    by_object = {v.src_object: v for v in verdicts}
+    assert by_object["dbo.SRC0"].accepted is True
+    assert by_object["dbo.SRC0"].reason == "사번 참조"
+    assert by_object["dbo.SRC1"].accepted is False
+    assert by_object["dbo.SRC1"].reason == "무관"
     # 프롬프트에 메타데이터가 실린다 — 판정 재료 검증
     user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
     assert "dbo.SRC0" in user_msg and "EMP_NO" in user_msg and "signals" in user_msg
@@ -143,10 +146,12 @@ def test_judge_relations_skips_llm_when_empty(captured):
 def test_judge_relations_defaults_reason_when_missing(captured):
     captured["content"] = json.dumps({"judgements": [
         {"index": 0, "accept": True},
+        {"index": 1, "accept": False},
     ]})
-    accepted = _client().judge_relations([_pair(0)])
-    assert len(accepted) == 1
-    assert accepted[0].reason == "LLM accepted"
+    verdicts = _client().judge_relations([_pair(0), _pair(1)])
+    by_object = {v.src_object: v for v in verdicts}
+    assert by_object["dbo.SRC0"].reason == "LLM accepted"
+    assert by_object["dbo.SRC1"].reason == "LLM rejected"
 
 
 def test_judge_relations_rejects_non_list_judgements(captured):

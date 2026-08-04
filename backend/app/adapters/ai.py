@@ -28,11 +28,14 @@ class TableMeta:
 
 
 @dataclass(frozen=True)
-class AiRelationSuggestion:
+class RelationJudgement:
+    """수용/기각 판정 — 둘 다 relations에 적재된다 (사이클2 §1·2). / full verdict."""
+
     src_object: str
     src_column: str
     tgt_object: str
     tgt_column: str
+    accepted: bool
     reason: str
 
 
@@ -86,7 +89,7 @@ class ViewFacts:
 
 
 class AiClient(Protocol):
-    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]: ...
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[RelationJudgement]: ...
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]: ...
 
@@ -104,17 +107,18 @@ def _normalize(name: str) -> str:
 class FakeAiClient:
     """결정론적 휴리스틱 — 실제 LLM의 퍼지 매칭을 흉내 / deterministic stand-in."""
 
-    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]:
-        # 뷰 JOIN 증거 또는 명명 유사면 수용 — 실 LLM의 판정을 결정론으로 흉내
-        accepted = []
-        for c in candidates:
-            if "view_join" in c.signals or _normalize(c.src_column) == _normalize(c.tgt_column):
-                accepted.append(AiRelationSuggestion(
-                    src_object=c.src_object, src_column=c.src_column,
-                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
-                    reason=f"signals: {', '.join(c.signals)}",
-                ))
-        return accepted
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[RelationJudgement]:
+        # 뷰 JOIN 증거 또는 명명 유사면 수용 — 결정론 판정 / deterministic verdicts
+        return [
+            RelationJudgement(
+                src_object=c.src_object, src_column=c.src_column,
+                tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                accepted="view_join" in c.signals
+                         or _normalize(c.src_column) == _normalize(c.tgt_column),
+                reason=f"signals: {', '.join(c.signals)}",
+            )
+            for c in candidates
+        ]
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
         terms = [t for t in _normalize(query).split() if t] or [_normalize(query)]

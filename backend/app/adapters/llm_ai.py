@@ -11,7 +11,7 @@ import math
 import urllib.request
 from urllib.error import URLError
 
-from app.adapters.ai import AiRelationSuggestion, AiTableHit, CandidatePair, TableMeta, ValidationFacts, ViewFacts
+from app.adapters.ai import AiTableHit, CandidatePair, RelationJudgement, TableMeta, ValidationFacts, ViewFacts
 
 logger = logging.getLogger(__name__)
 
@@ -218,15 +218,16 @@ class LlmAiClient:
                              self._timeout, _SYSTEM_PROMPT, user_prompt)
         return _extract_json(content)
 
-    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]:
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[RelationJudgement]:
         if not candidates:
             return []
         data = self._chat(build_judge_prompt(candidates))
         judgements = data.get("judgements", [])
         if not isinstance(judgements, list):
-            raise AiUnavailableError("llm returned malformed judgements", {"data": str(data)[:200]})
-        accepted = []
+            raise AiUnavailableError("llm returned malformed judgements",
+                                     {"data": str(data)[:200]})
         seen: set[int] = set()
+        verdicts = []
         for j in judgements:
             if not isinstance(j, dict):
                 continue
@@ -234,18 +235,20 @@ class LlmAiClient:
             # 모델이 지어낸 인덱스·타입은 버린다 / drop hallucinated or mistyped indices
             if not isinstance(idx, int) or isinstance(idx, bool) or not 0 <= idx < len(candidates):
                 continue
+            accepted = j.get("accept")
+            if not isinstance(accepted, bool):
+                continue  # 불량 accept는 미판정 처리 — 다음 실행에 재등장
             if idx in seen:
-                continue  # 이미 수용한 index — 동일 페어 이중 적재 시 uq_relations_pair 500 방지
-            if j.get("accept") is not True:
-                continue  # 문자열 "false" 등 truthy 오탐 차단 — bool True만 수용
+                continue  # 이미 판정한 index — 동일 페어 이중 적재 시 uq_relations_pair 500 방지
             seen.add(idx)
             c = candidates[idx]
-            accepted.append(AiRelationSuggestion(
+            fallback = "LLM accepted" if accepted else "LLM rejected"
+            verdicts.append(RelationJudgement(
                 src_object=c.src_object, src_column=c.src_column,
                 tgt_object=c.tgt_object, tgt_column=c.tgt_column,
-                reason=str(j.get("reason") or "LLM accepted"),
+                accepted=accepted, reason=str(j.get("reason") or fallback),
             ))
-        return accepted
+        return verdicts
 
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
         """사용자 질의 → 관련 테이블 재랭크 (프리필터 → LLM 판정 → 정렬) / query to ranked table hits."""

@@ -31,11 +31,12 @@ def test_fake_client_judges_by_name_affinity_and_view_join():
         _pair("dbo.T_A", "X_ID", "dbo.T_B", "Y_ID", ["view_join"]),
         _pair("dbo.T_C", "AAA", "dbo.T_D", "BBB", ["key"]),
     ]
-    accepted = FakeAiClient().judge_relations(pairs)
-    keys = [(s.src_object, s.src_column, s.tgt_object, s.tgt_column) for s in accepted]
-    assert ("dbo.T_ORD", "EMPNO", "dbo.T_EMP", "EMP_NO") in keys
-    assert ("dbo.T_A", "X_ID", "dbo.T_B", "Y_ID") in keys
-    assert ("dbo.T_C", "AAA", "dbo.T_D", "BBB") not in keys  # 신호 없는 페어는 기각
+    judgements = FakeAiClient().judge_relations(pairs)
+    assert len(judgements) == len(pairs)  # 판정 전체 반환 — 기각도 포함
+    by_key = {(j.src_object, j.src_column, j.tgt_object, j.tgt_column): j for j in judgements}
+    assert by_key[("dbo.T_ORD", "EMPNO", "dbo.T_EMP", "EMP_NO")].accepted is True
+    assert by_key[("dbo.T_A", "X_ID", "dbo.T_B", "Y_ID")].accepted is True
+    assert by_key[("dbo.T_C", "AAA", "dbo.T_D", "BBB")].accepted is False  # 신호 없는 페어는 기각(반환은 됨)
 
 
 def _col(cid, qname, name, is_pk=False):
@@ -114,22 +115,28 @@ def test_suggest_relations_creates_ai_candidates_only(client, migrated_engine, l
         rel_t = Base.metadata.tables["relations"]
         rows = conn.execute(sa.select(rel_t)).all()
     ai_rows = [r for r in rows if r.origin == "ai"]
-    assert len(ai_rows) == body["created"]
+    # 판정 전체(수용+기각)가 적재된다 — 기각도 origin='ai'로 기록 (사이클2 §1·2)
+    assert len(ai_rows) == body["created"] + body["rejected"]
     # AI 출력은 절대 confirmed로 저장되지 않는다 (계획 §5.2)
-    assert all(r.status == "candidate" for r in ai_rows)
+    assert all(r.status in ("candidate", "rejected") for r in ai_rows)
+    assert sum(1 for r in ai_rows if r.status == "candidate") == body["created"]
+    assert sum(1 for r in ai_rows if r.status == "rejected") == body["rejected"]
 
 
 def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_engine, load_fixture):
     _seed(client, load_fixture)
     total_created = 0
+    total_rejected = 0
     for _ in range(30):  # 597후보/40상한 ≈ 15회 — 여유 상한, 무한루프 가드
         body = client.post("/api/ai/suggest-relations").json()
         total_created += body["created"]
-        if body["created"] == 0:
+        total_rejected += body["rejected"]
+        if body["created"] + body["rejected"] == 0:
             break
     else:
         pytest.fail("paging never exhausted")
-    assert total_created > 40  # 상한 너머로 페이징됐다 — 구 버그(1회용 상한) 회귀 가드
+    # 상한 너머로 페이징됐다 — 구 버그(1회용 상한) 회귀 가드
+    assert total_created + total_rejected > 40
     # 소진 후 재실행도 0 — 멱등 종착
     assert client.post("/api/ai/suggest-relations").json()["created"] == 0
     # 전 구간 중복 적재 없음 (방향 키 기준)
@@ -139,7 +146,7 @@ def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_en
     keys = [(r.src_object, r.src_column, r.tgt_object, r.tgt_column)
             for r in rows if r.origin == "ai"]
     assert len(keys) == len(set(keys))
-    assert len(keys) == total_created
+    assert len(keys) == total_created + total_rejected
 
 
 def test_ai_candidate_cannot_be_confirmed_without_validation(client, migrated_engine, load_fixture):
@@ -288,3 +295,70 @@ def test_ai_endpoint_maps_unavailable_to_502(client, load_fixture):
     assert body["code"] == 502
     assert "llm" in body["message"]
     assert body["context"]["url"].startswith("http://llm")
+
+
+# Task 3 (사이클2): 판정 근거 영속 + 기각 이력
+
+
+def test_judgements_persist_reason_and_rejections(client, migrated_engine, load_fixture):
+    """수용은 candidate+reason, 기각은 rejected+reason — 재실행 자동 제외 (사이클2 §1·2)."""
+    from app.api.ai import get_ai_client
+    from app.adapters.ai import RelationJudgement
+
+    _seed(client, load_fixture)
+
+    class _SplitAi:
+        def judge_relations(self, candidates):
+            out = []
+            for i, c in enumerate(candidates):
+                out.append(RelationJudgement(
+                    src_object=c.src_object, src_column=c.src_column,
+                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                    accepted=(i % 2 == 0), reason=f"근거 {i}",
+                ))
+            return out
+
+    client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
+    try:
+        first = client.post("/api/ai/suggest-relations").json()
+        second = client.post("/api/ai/suggest-relations").json()
+    finally:
+        client.app.dependency_overrides.pop(get_ai_client)
+
+    assert first["created"] > 0 and first["rejected"] > 0
+
+    with migrated_engine.connect() as conn:
+        rel_t = Base.metadata.tables["relations"]
+        rows = conn.execute(sa.select(rel_t).where(rel_t.c.origin == "ai")).all()
+    assert all(r.reason for r in rows)
+    statuses = {r.status for r in rows}
+    assert statuses == {"candidate", "rejected"}
+    # 기각분이 dedupe에 걸려 두 번째 실행은 같은 페어를 재판정하지 않는다
+    first_keys = {(r.src_object, r.src_column, r.tgt_object, r.tgt_column) for r in rows}
+    assert len(first_keys) == len(rows)  # 중복 적재 없음
+    assert second["suggested"] == 0 or second["created"] + second["rejected"] > 0  # 다음 창으로 전진
+
+
+def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_fixture):
+    _seed(client, load_fixture)
+    client.post("/api/ai/suggest-relations")  # Fake — 수용/기각 혼재 가능
+    items = client.get("/api/objects", params={"limit": 1}).json()["items"]
+    graph = client.get(f"/api/objects/{items[0]['id']}/graph?depth=3").json()
+    with migrated_engine.connect() as conn:
+        rel_t = Base.metadata.tables["relations"]
+        rejected = conn.execute(
+            sa.select(rel_t).where(rel_t.c.status == "rejected")).all()
+    rejected_ids = {f"rel-{r.id}" for r in rejected}
+    assert all(e["id"] not in rejected_ids for e in graph["edges"])
+
+
+def test_ai_suggested_edges_carry_reason(client, load_fixture):
+    _seed(client, load_fixture)
+    body = client.post("/api/ai/suggest-relations").json()
+    assert body["created"] > 0
+    target = body["items"][0]
+    _, table = target["src_object"].split(".", 1)
+    anchor = client.get("/api/objects", params={"q": table}).json()["items"][0]
+    graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
+    ai_edges = [e for e in graph["edges"] if e["kind"] == "ai_suggested"]
+    assert ai_edges and all(e.get("reason") for e in ai_edges)

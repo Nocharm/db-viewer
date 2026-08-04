@@ -162,7 +162,7 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
             "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
             "src_column": rel.src_column, "tgt_column": rel.tgt_column,
             "status": rel.status, "confidence": rel.confidence,
-            "cardinality": rel.cardinality,
+            "cardinality": rel.cardinality, "reason": rel.reason,
         }
         for rel in db.execute(
             select(Relation).where(
@@ -378,6 +378,8 @@ def _load_relation_edges(db: Session, qname_to_id: dict[str, int]) -> list[dict]
             "last_verified_at": (
                 rel.last_verified_at.isoformat() if rel.last_verified_at else None
             ),
+            # ai_suggested만 판정 근거를 실어 UI에 노출 — 다른 kind는 None (사이클2 §2)
+            "reason": rel.reason if kind == "ai_suggested" else None,
         })
     return edges
 
