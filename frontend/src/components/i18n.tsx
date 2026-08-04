@@ -2,7 +2,7 @@
 
 /** 언어 컨텍스트 — localStorage 유지, 사전은 lib/i18n. / language context over the dictionary. */
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 import { getMessage, LANG_STORAGE_KEY, type Lang, type MessageKey } from "@/lib/i18n";
 
@@ -43,5 +43,8 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
 
 export function useI18n() {
   const { lang, toggleLang } = useContext(LangContext);
-  return { lang, toggleLang, t: (key: MessageKey) => getMessage(key, lang) };
+  // t를 lang에만 묶어 안정화 — 그렇지 않으면 소비 컴포넌트가 재렌더될 때마다
+  // 새 클로저가 생겨, t를 effect deps에 쓰는 폴링(erd/page.tsx)이 매번 재시작된다.
+  const t = useCallback((key: MessageKey) => getMessage(key, lang), [lang]);
+  return { lang, toggleLang, t };
 }
