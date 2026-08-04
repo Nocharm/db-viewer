@@ -167,6 +167,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         setHiddenNodes(new Set());
         setMenu(null);
         setEmphasis(null);
+        setEdgeReason(null);
         setPreview(null);
         manualPosRef.current = new Map(); // 새 캔버스 — 수동 배치 초기화
         applyIncoming(incoming, null);
@@ -269,6 +270,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   }, [graph]);
 
   const buildNodeEmphasis = useCallback((nodeId: number) => {
+    setEdgeReason(null); // 노드 hover로 전환 — 이전 엣지의 근거 카드 걷기
     if (!graph) return;
     const state: EmphasisState = { edgeIds: new Set(), columnsByNode: new Map() };
     for (const edge of graph.edges) {
