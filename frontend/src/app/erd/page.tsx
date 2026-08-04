@@ -2,7 +2,7 @@
 
 /** ERD 캔버스 화면 — 검색 + 캔버스 + 컬럼 패널 / the ERD canvas page. */
 
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
@@ -10,7 +10,7 @@ import { useI18n } from "@/components/i18n";
 import { ColumnPanel, type SelectedColumn } from "@/components/ColumnPanel";
 import { ErdCanvas } from "@/components/erd/ErdCanvas";
 import { SearchPanel } from "@/components/SearchPanel";
-import { searchObjects, suggestRelationsAi } from "@/lib/api";
+import { fetchAiJob, searchObjects, startAiSuggest } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
 
 export default function ErdPage() {
@@ -47,6 +47,35 @@ function ErdPageInner() {
   });
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiJobId, setAiJobId] = useState<number | null>(null);
+
+  // AI 제안 잡 폴링 — 완료·실패까지 1.5초 간격 (ColumnPanel 스캔 폴링과 동일 관용)
+  // poll until done or failed, same convention as the ColumnPanel scan job
+  useEffect(() => {
+    if (aiJobId === null) return;
+    const timer = setInterval(() => {
+      fetchAiJob(aiJobId)
+        .then((job) => {
+          if (job.status === "done" && job.result) {
+            setAiNotice(t("erd.aiNotice")
+              .replace("{s}", String(job.result.suggested))
+              .replace("{n}", String(job.result.created)));
+            setAiJobId(null);
+            setAiBusy(false);
+          } else if (job.status === "failed") {
+            setAiNotice(job.error ?? t("ai.failed"));
+            setAiJobId(null);
+            setAiBusy(false);
+          }
+        })
+        .catch((e) => {
+          setAiNotice(e.message);
+          setAiJobId(null);
+          setAiBusy(false);
+        });
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [aiJobId, t]);
 
   const handleSelectColumn = useCallback(
     (columnId: number, columnName: string, objectQname: string) =>
@@ -73,12 +102,12 @@ function ErdPageInner() {
           disabled={aiBusy}
           onClick={() => {
             setAiBusy(true);
-            void suggestRelationsAi()
-              .then((res) =>
-                setAiNotice(t("erd.aiNotice")
-                  .replace("{s}", String(res.suggested))
-                  .replace("{n}", String(res.created))))
-              .finally(() => setAiBusy(false));
+            void startAiSuggest()
+              .then((res) => setAiJobId(res.job_id))
+              .catch((e) => {
+                setAiNotice(e.message);
+                setAiBusy(false);
+              });
           }}
           data-testid="Home-aiSuggestButton"
         >

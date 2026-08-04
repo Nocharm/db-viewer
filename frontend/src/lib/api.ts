@@ -330,6 +330,21 @@ export function fetchColumnsIndex(): Promise<{
   return getJson("/api/objects/columns-index");
 }
 
-export function suggestRelationsAi(): Promise<{ suggested: number; created: number }> {
+export interface AiJobStatus {
+  job_id: number;
+  kind: string;
+  status: "queued" | "running" | "done" | "failed";
+  progress_done: number;
+  progress_total: number;
+  result: { suggested: number; created: number; rejected: number } | null;
+  error: string | null;
+}
+
+/** AI 관계 제안 잡 시작 — 202 + 폴링 규약 (T3 스캔과 동일) / start the async suggest job. */
+export function startAiSuggest(): Promise<{ job_id: number; status: string }> {
   return postJson("/api/ai/suggest-relations", {});
+}
+
+export function fetchAiJob(jobId: number): Promise<AiJobStatus> {
+  return getJson(`/api/ai/jobs/${jobId}`);
 }

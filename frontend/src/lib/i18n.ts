@@ -205,6 +205,7 @@ export const MESSAGES = {
   "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
   "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },
+  "ai.failed": { ko: "AI 작업 실패", en: "AI job failed" },
 
   "browser.categories": { ko: "카테고리", en: "Categories" },
 
