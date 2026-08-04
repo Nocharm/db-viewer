@@ -46,18 +46,39 @@ function buildOidcConfig() {
 function MeGate({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 재시도 카운터 — 버튼이 effect를 다시 발화시킨다 / bump to refetch
+  const [attempt, setAttempt] = useState(0);
   const pathname = usePathname();
 
   useEffect(() => {
+    setError(null);
     fetchMe().then(setMe).catch((e) => setError(e.message));
-  }, []);
+  }, [attempt]);
 
   if (pathname === "/login") return children;
   if (error) {
+    // 막다른 화면 금지 — 서버 장애·토큰 만료 어느 쪽이든 나갈 길을 준다
     return (
-      <p className="p-6" style={{ color: "var(--error)" }} data-testid="MeGate-errorText">
-        사용자 정보를 불러오지 못했습니다: {error}
-      </p>
+      <div className="flex h-screen items-center justify-center">
+        <div className="rounded-xl border p-8 text-center"
+             style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
+             data-testid="MeGate-errorCard">
+          <p className="mb-2 text-lg font-semibold" style={{ color: "var(--ink)" }}>
+            사용자 정보를 불러오지 못했습니다
+          </p>
+          <p className="mb-4 font-mono text-sm" style={{ color: "var(--error)" }}
+             data-testid="MeGate-errorText">
+            {error}
+          </p>
+          <div className="flex justify-center gap-2">
+            <button className="btn-primary" onClick={() => setAttempt((a) => a + 1)}
+                    data-testid="MeGate-retryButton">
+              다시 시도
+            </button>
+            {AUTH_ENABLED && <ReloginButton />}
+          </div>
+        </div>
+      </div>
     );
   }
   if (!me) return null;
@@ -80,6 +101,16 @@ function MeGate({ children }: { children: React.ReactNode }) {
     );
   }
   return <MeContext.Provider value={me}>{children}</MeContext.Provider>;
+}
+
+/** 에러 카드 전용 재로그인 — AUTH ON일 때만 렌더되므로 useAuth가 안전하다. */
+function ReloginButton() {
+  const logout = useLogout();
+  return (
+    <button className="icon-button" onClick={logout} data-testid="MeGate-reloginButton">
+      다시 로그인
+    </button>
+  );
 }
 
 function AuthGate({ children }: { children: React.ReactNode }) {
