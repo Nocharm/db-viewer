@@ -162,3 +162,32 @@ def test_n8n_runner_raises_when_chunk_never_completes(migrated_engine):
     runner._post = lambda path, body: None  # 콜백이 오지 않는 상황
     with _pytest.raises(RuntimeError, match="did not complete"):
         runner.run_view_deps(job_id, snapshot_id)
+
+
+def test_runner_selection_routes_on_webhook_base_not_source_mode(tmp_path):
+    """런북 6단계 재현 — SOURCE_MODE=fixture + n8n 연결이면 실수집으로 가야 한다."""
+    import pytest as _pytest
+
+    from app.adapters import create_collect_runner
+    from app.adapters.collect_runner import N8nWebhookRunner
+    from app.config import Settings
+
+    connected = Settings(source_mode="fixture", n8n_webhook_base="http://n8n/webhook")
+    assert isinstance(create_collect_runner(connected, None), N8nWebhookRunner)
+
+    offline = Settings(source_mode="fixture", n8n_webhook_base="", fixture_dir=str(tmp_path))
+    assert isinstance(create_collect_runner(offline, None), FixtureCollectRunner)
+
+    # n8n 없는 replay/live는 수집 경로가 없다 — 기존 게이트 유지
+    with _pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
+        create_collect_runner(Settings(source_mode="live", n8n_webhook_base=""), None)
+
+
+def test_fixture_runner_reports_missing_fixture_with_remedy(migrated_engine, tmp_path):
+    """픽스처 없는 배포에서 ENOENT 대신 조치 가능한 메시지 / actionable, not ENOENT."""
+    import pytest as _pytest
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    runner = FixtureCollectRunner(session_factory, str(tmp_path / "missing"))
+    with _pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
+        runner.run_catalog(1)

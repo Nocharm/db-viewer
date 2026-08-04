@@ -12,10 +12,15 @@ from app.domain.validation import ColumnRef, ContainmentResult, ValidationDataMi
 
 class FakeJoinValidator:
     def __init__(self, value_sets_path: Path):
-        payload = json.loads(value_sets_path.read_text())
-        self._sets: dict[tuple[str, str], dict] = {
-            (entry["object"], entry["column"]): entry for entry in payload["columns"]
-        }
+        # 값 집합이 없으면 빈 상태로 시작 — 실서버 fixture 모드엔 픽스처 파일이 없고,
+        # 이때 검증은 "값 데이터 없음"(ValidationDataMissing)이 정상 응답이다 (docs/connect.md 6단계)
+        # missing value sets must degrade to ValidationDataMissing, not crash the request
+        self._sets: dict[tuple[str, str], dict] = {}
+        if value_sets_path.exists():
+            payload = json.loads(value_sets_path.read_text())
+            self._sets = {
+                (entry["object"], entry["column"]): entry for entry in payload["columns"]
+            }
 
     def _entry(self, ref: ColumnRef) -> dict:
         entry = self._sets.get((ref.object_qname, ref.column))

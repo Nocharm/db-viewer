@@ -96,3 +96,10 @@ def test_live_mode_requires_webhook_base_then_uses_n8n():
     live = Settings(source_mode="live", n8n_webhook_base="http://n8n/webhook")
     assert isinstance(create_join_validator(live), N8nJoinValidator)
     assert isinstance(create_table_preview(live), N8nTablePreview)
+
+
+def test_fake_validator_without_value_sets_reports_data_missing(tmp_path):
+    """픽스처 없는 배포에서도 검증은 '값 데이터 없음'으로 떨어진다 (크래시 아님)."""
+    validator = FakeJoinValidator(tmp_path / "absent.json")
+    with pytest.raises(ValidationDataMissing):
+        validator.containment(ColumnRef("dbo", "O", "P_ID"), ColumnRef("dbo", "P", "ID"))

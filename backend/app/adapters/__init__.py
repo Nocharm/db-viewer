@@ -42,16 +42,23 @@ def create_table_preview(settings: Settings):
 
 
 def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner":
-    """수집 러너 선택 — fixture는 리플레이, 그 외는 n8n webhook / pick the collect runner."""
+    """수집 러너 선택 — n8n이 연결돼 있으면 실수집, 아니면 픽스처 리플레이.
+
+    수집 경로를 가르는 건 SOURCE_MODE가 아니라 N8N_WEBHOOK_BASE다. SOURCE_MODE는
+    질의·검증의 데이터 원천(fixture/replay/live)을 정하는 값이고, 실카탈로그 수집은
+    live 전환(정지점 18) *이전에* 해야 한다 — 런북 6단계는 `SOURCE_MODE=fixture` 상태로
+    [1단계 카탈로그 수집]을 눌러 실 스키마를 적재한다 (docs/connect.md).
+    Collection routes on the webhook base, not the query-source mode.
+    """
     from app.adapters.collect_runner import FixtureCollectRunner, N8nWebhookRunner
 
-    if settings.source_mode == "fixture":
-        return FixtureCollectRunner(session_factory, settings.fixture_dir)
-    if not settings.n8n_webhook_base:
+    if settings.n8n_webhook_base:
+        return N8nWebhookRunner(
+            settings.n8n_webhook_base, session_factory,
+            catalog_chunk_size=settings.collect_catalog_chunk_size,
+            deps_chunk_size=settings.collect_deps_chunk_size,
+            chunk_timeout=settings.collect_chunk_timeout,
+        )
+    if settings.source_mode != "fixture":
         raise RuntimeError("N8N_WEBHOOK_BASE is required outside fixture mode")
-    return N8nWebhookRunner(
-        settings.n8n_webhook_base, session_factory,
-        catalog_chunk_size=settings.collect_catalog_chunk_size,
-        deps_chunk_size=settings.collect_deps_chunk_size,
-        chunk_timeout=settings.collect_chunk_timeout,
-    )
+    return FixtureCollectRunner(session_factory, settings.fixture_dir)

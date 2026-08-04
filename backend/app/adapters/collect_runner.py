@@ -36,7 +36,16 @@ class FixtureCollectRunner:
         self._fixture_dir = Path(fixture_dir)
 
     def _load(self, name: str) -> dict:
-        return json.loads((self._fixture_dir / name).read_text())
+        path = self._fixture_dir / name
+        # 픽스처는 gitignore 대상이라 배포 이미지에 없다 — 원인·조치를 잡 오류로 남긴다
+        # fixtures are gitignored, so a container has none; say what to do instead of ENOENT
+        if not path.exists():
+            raise RuntimeError(
+                f"fixture {path} not found (cwd {Path.cwd()}) — real collection needs "
+                "N8N_WEBHOOK_BASE; for offline replay generate fixtures first "
+                f"(python tools/fixture_gen.py --out {self._fixture_dir})"
+            )
+        return json.loads(path.read_text())
 
     def run_catalog(self, job_id: int) -> None:
         # 순환 import 회피 — ingest는 이 어댑터의 팩토리를 모른다 / avoid circular import
