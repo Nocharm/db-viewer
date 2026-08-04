@@ -135,3 +135,12 @@ def test_judge_relations_drops_hallucinated_indices(captured):
 def test_judge_relations_skips_llm_when_empty(captured):
     assert _client().judge_relations([]) == []
     assert captured["requests"] == []  # 빈 입력엔 호출 자체가 없다
+
+
+def test_judge_relations_defaults_reason_when_missing(captured):
+    captured["content"] = json.dumps({"judgements": [
+        {"index": 0, "accept": True},
+    ]})
+    accepted = _client().judge_relations([_pair(0)])
+    assert len(accepted) == 1
+    assert accepted[0].reason == "LLM accepted"
