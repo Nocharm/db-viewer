@@ -31,7 +31,7 @@ class FixtureCollectRunner:
     """픽스처 페이로드를 ingest와 같은 코드 경로로 적재 — 오프라인 버튼 검증용.
     Replays fixture payloads through the real ingest path for offline testing."""
 
-    def __init__(self, session_factory: sessionmaker, fixture_dir: str) -> None:
+    def __init__(self, session_factory: sessionmaker, fixture_dir: str | Path) -> None:
         self._session_factory = session_factory
         self._fixture_dir = Path(fixture_dir)
 

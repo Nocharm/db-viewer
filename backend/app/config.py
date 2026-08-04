@@ -57,7 +57,20 @@ class Settings(BaseSettings):
     lineage_depth_limit: int = 10
 
     # Environment: FakeJoinValidator가 읽는 픽스처 디렉터리 / fixture dir for the fake validator
+    # 상대 경로는 CWD가 아니라 저장소 루트 기준 — resolved_fixture_dir 참조
     fixture_dir: str = "fixtures"
+
+    @property
+    def resolved_fixture_dir(self) -> Path:
+        """픽스처 디렉터리 절대 경로 / absolute fixture dir.
+
+        상대 경로를 CWD로 풀면 실행 위치마다 다른 곳을 본다 — 픽스처 생성기는 저장소
+        루트에 쓰는데(`python tools/fixture_gen.py --out fixtures`) 백엔드는 `backend/`
+        에서 띄우므로(docs/ui-review.md) 조용히 빈 값 집합을 읽게 된다. .env와 같은
+        앵커로 고정한다. 절대 경로는 그대로 통과 — 컨테이너 마운트 지점 지정용.
+        """
+        path = Path(self.fixture_dir)
+        return path if path.is_absolute() else _REPO_ROOT_ENV.parent / path
 
     # Environment: n8n webhook 베이스 URL — 버튼 수집(W1a/b)과 live 검증·미리보기(W2) 공용
     # (예: http://182.199.63.71:5678/webhook). 비우면 해당 기능이 비활성.

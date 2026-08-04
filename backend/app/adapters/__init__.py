@@ -1,6 +1,5 @@
 """External-IO adapters — validators, future AI clients. / 외부 IO 어댑터."""
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.config import Settings
@@ -25,7 +24,7 @@ def create_join_validator(settings: Settings) -> JoinValidator:
         return N8nJoinValidator(settings.n8n_webhook_base, settings.n8n_query_timeout)
     from app.adapters.fake_validator import FakeJoinValidator
 
-    return FakeJoinValidator(Path(settings.fixture_dir) / "value_sets.json")
+    return FakeJoinValidator(settings.resolved_fixture_dir / "value_sets.json")
 
 
 def create_table_preview(settings: Settings):
@@ -38,7 +37,7 @@ def create_table_preview(settings: Settings):
         return N8nTablePreview(settings.n8n_webhook_base, settings.n8n_query_timeout)
     from app.adapters.table_preview import FakeTablePreview
 
-    return FakeTablePreview(Path(settings.fixture_dir) / "value_sets.json")
+    return FakeTablePreview(settings.resolved_fixture_dir / "value_sets.json")
 
 
 def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner":
@@ -61,4 +60,4 @@ def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner
         )
     if settings.source_mode != "fixture":
         raise RuntimeError("N8N_WEBHOOK_BASE is required outside fixture mode")
-    return FixtureCollectRunner(session_factory, settings.fixture_dir)
+    return FixtureCollectRunner(session_factory, settings.resolved_fixture_dir)
