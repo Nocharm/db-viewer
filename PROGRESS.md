@@ -4,7 +4,7 @@
 
 ## 2026-08-05
 
-- **AI 후속 사이클(1~5) 설계 확정** — 브레인스토밍 결정: reason 영속·기각 이력은 relations 재사용(rejected+reason — 재실행 자동 제외로 페이징 정체 소멸), suggest·임베딩 인덱싱은 ai_jobs 202+폴링(챗·검색은 동기), 임베딩은 OpenAI 호환 /embeddings + **키워드 프리필터 자동 폴백**(서버 상태 나쁨 전제) + 잡 1회 상한 1,000(2,000 초과 금지 — 사용자 부하 제약), Q&A 챗은 전역 플로팅 패널·세션 메모리만. 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`.
+- **AI 후속 사이클(1~5) 설계 확정** — 브레인스토밍 결정: reason 영속·기각 이력은 relations 재사용(rejected+reason — 재실행 자동 제외로 페이징 정체 소멸), suggest·임베딩 인덱싱은 ai_jobs 202+폴링(챗·검색은 동기), 임베딩은 OpenAI 호환 /embeddings + **키워드 프리필터 자동 폴백**(서버 상태 나쁨 전제) + 잡 1회 상한 1,000(2,000 초과 금지 — 사용자 부하 제약), Q&A 챗은 전역 플로팅 패널·세션 메모리만. 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`, 계획(12태스크·푸시 3체크포인트): `docs/superpowers/plans/2026-08-05-ai-cycle2.md`.
 
 ## 2026-08-04
 
