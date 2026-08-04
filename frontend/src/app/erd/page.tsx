@@ -75,7 +75,9 @@ function ErdPageInner() {
             setAiBusy(true);
             void suggestRelationsAi()
               .then((res) =>
-                setAiNotice(t("erd.aiNotice").replace("{n}", String(res.created))))
+                setAiNotice(t("erd.aiNotice")
+                  .replace("{s}", String(res.suggested))
+                  .replace("{n}", String(res.created))))
               .finally(() => setAiBusy(false));
           }}
           data-testid="Home-aiSuggestButton"

@@ -149,6 +149,27 @@ def test_judge_relations_defaults_reason_when_missing(captured):
     assert accepted[0].reason == "LLM accepted"
 
 
+def test_judge_relations_rejects_non_list_judgements(captured):
+    captured["content"] = '{"judgements": null}'
+    with pytest.raises(AiUnavailableError):
+        _client().judge_relations([_pair(0)])
+
+
+def test_judge_relations_skips_duplicate_indices(captured):
+    captured["content"] = json.dumps({"judgements": [
+        {"index": 0, "accept": True, "reason": "첫 판정"},
+        {"index": 0, "accept": True, "reason": "중복 판정"},
+    ]}, ensure_ascii=False)
+    accepted = _client().judge_relations([_pair(0)])
+    assert len(accepted) == 1
+    assert accepted[0].reason == "첫 판정"
+
+
+def test_judge_relations_rejects_non_bool_accept(captured):
+    captured["content"] = '{"judgements": [{"index": 0, "accept": "false", "reason": "x"}]}'
+    assert _client().judge_relations([_pair(0)]) == []
+
+
 # Task 5: LlmAiClient.search_tables
 
 
@@ -212,6 +233,24 @@ def test_prefilter_returns_empty_for_blank_or_underscore_query():
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
     assert filter_search_candidates("   ", tables) == []
     assert filter_search_candidates("___", tables) == []
+
+
+def test_search_tables_rejects_non_list_items(captured):
+    captured["content"] = '{"items": null}'
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    with pytest.raises(AiUnavailableError):
+        _client().search_tables("ORD", tables)
+
+
+def test_search_tables_dedupes_duplicate_qnames(captured):
+    captured["content"] = json.dumps({"items": [
+        {"qname": "dbo.T_ORD", "score": 0.9, "reason": "a"},
+        {"qname": "dbo.T_ORD", "score": 0.5, "reason": "b"},
+    ]}, ensure_ascii=False)
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    hits = _client().search_tables("ORD", tables)
+    assert len(hits) == 1
+    assert hits[0].score == 0.9
 
 
 # Task 6: LlmAiClient.summarize_table, explain_validation, explain_view

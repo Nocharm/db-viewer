@@ -222,16 +222,23 @@ class LlmAiClient:
         if not candidates:
             return []
         data = self._chat(build_judge_prompt(candidates))
+        judgements = data.get("judgements", [])
+        if not isinstance(judgements, list):
+            raise AiUnavailableError("llm returned malformed judgements", {"data": str(data)[:200]})
         accepted = []
-        for j in data.get("judgements", []):
+        seen: set[int] = set()
+        for j in judgements:
             if not isinstance(j, dict):
                 continue
             idx = j.get("index")
             # 모델이 지어낸 인덱스·타입은 버린다 / drop hallucinated or mistyped indices
             if not isinstance(idx, int) or isinstance(idx, bool) or not 0 <= idx < len(candidates):
                 continue
-            if not j.get("accept"):
-                continue
+            if idx in seen:
+                continue  # 이미 수용한 index — 동일 페어 이중 적재 시 uq_relations_pair 500 방지
+            if j.get("accept") is not True:
+                continue  # 문자열 "false" 등 truthy 오탐 차단 — bool True만 수용
+            seen.add(idx)
             c = candidates[idx]
             accepted.append(AiRelationSuggestion(
                 src_object=c.src_object, src_column=c.src_column,
@@ -246,11 +253,19 @@ class LlmAiClient:
         if not candidates:
             return []
         data = self._chat(build_search_prompt(query, candidates))
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            raise AiUnavailableError("llm returned malformed items", {"data": str(data)[:200]})
         known = {t.qname for t in candidates}
+        seen_qnames: set[str] = set()
         hits = []
-        for item in data.get("items", []):
+        for item in items:
             if not isinstance(item, dict) or item.get("qname") not in known:
                 continue  # 입력에 없는 테이블명은 환각 — 버린다
+            qname = item["qname"]
+            if qname in seen_qnames:
+                continue  # 중복 qname 스킵 — 프론트 React key 중복 방지
+            seen_qnames.add(qname)
             try:
                 score = float(item.get("score", 0))
             except (TypeError, ValueError):
@@ -259,7 +274,7 @@ class LlmAiClient:
             if not math.isfinite(score):
                 score = 0.0
             score = min(max(score, 0.0), 1.0)
-            hits.append(AiTableHit(qname=item["qname"], score=round(score, 2),
+            hits.append(AiTableHit(qname=qname, score=round(score, 2),
                                    reason=str(item.get("reason") or "")))
         hits.sort(key=lambda h: (-h.score, h.qname))
         return hits[:SEARCH_RESULT_LIMIT]

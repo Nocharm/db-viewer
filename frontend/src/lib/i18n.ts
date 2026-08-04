@@ -123,7 +123,7 @@ export const MESSAGES = {
   "erd.noResults": { ko: "결과 없음", en: "No results" },
   "erd.startHint": { ko: "테이블을 검색해 시작하세요", en: "Search a table to start" },
   "erd.aiSuggest": { ko: "AI 관계 제안", en: "AI relation suggestions" },
-  "erd.aiNotice": { ko: "AI 제안 {n}건 생성 — 검증 큐에서 확인", en: "{n} AI suggestions created — see the validation queue" },
+  "erd.aiNotice": { ko: "AI 제안: {s}건 판정, {n}건 생성 — 검증 큐에서 확인", en: "AI suggestions: {s} judged, {n} created — see the validation queue" },
   "erd.emptyTitle": { ko: "앵커 테이블로 시작하세요", en: "Start from an anchor table" },
   "erd.emptyBody": {
     ko: "왼쪽에서 검색하거나, 예시를 눌러 바로 열 수 있습니다.",
