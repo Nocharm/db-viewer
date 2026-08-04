@@ -4,7 +4,7 @@
 
 ## 2026-08-05
 
-- **Task 7: 임베딩 설정 + 클라이언트 + 코사인(구현 중 — Task 7/12)** — Settings 4필드(ai_embed_model/batch/job_cap/sleep_ms) + .env.example + docker-compose int 3종 폴백(`${VAR:-기본값}`) + llm_ai.py의 `embed_texts`(OpenAI /embeddings 호환, index 정렬·개수 검증·재시도) + `cosine_similarity`(순파이썬, 케이스 6종) 모듈 함수 + 테스트(Settings 4+cosine 6+embed_texts 5 = 총 11건 신규, 전체 38→50). docker compose config·ruff 클린. (구현 중 — Task 7/12)
+- **Task 7: 임베딩 설정 + 클라이언트 + 코사인 완료** — Settings 4필드(ai_embed_model/batch/job_cap/sleep_ms) + .env.example + docker-compose int 3종 폴백(`${VAR:-기본값}`) + llm_ai.py의 `embed_texts`(OpenAI /embeddings 호환, index 정렬·개수 검증·재시도) + `cosine_similarity`(순파이썬, 케이스 6종) 모듈 함수 + 테스트(Settings 4+cosine 6+embed_texts 5 = 총 11건 신규, 전체 스위트 203 pass). docker compose config·ruff 클린. import 정리: cosine_similarity/embed_texts 파일 상단 호이스트, 함수 내 지역 import 제거.
 
 - **AI 후속 사이클(1~5) 설계 확정** — 브레인스토밍 결정: reason 영속·기각 이력은 relations 재사용(rejected+reason — 재실행 자동 제외로 페이징 정체 소멸), suggest·임베딩 인덱싱은 ai_jobs 202+폴링(챗·검색은 동기), 임베딩은 OpenAI 호환 /embeddings + **키워드 프리필터 자동 폴백**(서버 상태 나쁨 전제) + 잡 1회 상한 1,000(2,000 초과 금지 — 사용자 부하 제약), Q&A 챗은 전역 플로팅 패널·세션 메모리만. 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`, 계획(12태스크·푸시 3체크포인트): `docs/superpowers/plans/2026-08-05-ai-cycle2.md`.
 - **judge 판정 전체 반환 전환(사이클2 Task 2·3)** — `AiClient.judge_relations`가 수용만 반환하던 것을 판정 전체(`RelationJudgement`: accepted+reason)로 교체 — 기각도 relations에 `status='rejected'`+reason으로 적재하니 기존 양방향 dedupe가 재실행에서 자동 제외(추가 로직 없음, `AiRelationSuggestion` 제거). suggest 응답에 `rejected` 카운트 추가(기존 키 불변), 그래프 ai_suggested 엣지·상세 relations에 reason 노출.

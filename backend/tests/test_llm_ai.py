@@ -10,7 +10,7 @@ from app.adapters import llm_ai
 from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta, ValidationFacts, ViewFacts
 from app.adapters.llm_ai import (
     AiUnavailableError, LlmAiClient, _extract_json, _post_chat,
-    filter_search_candidates,
+    filter_search_candidates, embed_texts, cosine_similarity,
 )
 from app.config import Settings
 
@@ -308,37 +308,31 @@ def test_empty_text_raises(captured):
 
 def test_cosine_similarity_identical_vectors():
     """벡터가 같으면 1.0 반환 / identical vectors return 1.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) == 1.0
 
 
 def test_cosine_similarity_orthogonal_vectors():
     """직교 벡터는 0.0 반환 / orthogonal vectors return 0.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == 0.0
 
 
 def test_cosine_similarity_opposite_vectors():
     """반대 방향 벡터는 -1.0 반환 / opposite vectors return -1.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == -1.0
 
 
 def test_cosine_similarity_length_mismatch_returns_zero():
     """길이 불일치는 0.0 반환 / length mismatch returns 0.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([1.0, 2.0], [3.0, 4.0, 5.0]) == 0.0
 
 
 def test_cosine_similarity_zero_vector_returns_zero():
     """영벡터는 0.0 반환 / zero vector returns 0.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
 
 
 def test_cosine_similarity_empty_vectors_returns_zero():
     """빈 벡터는 0.0 반환 / empty vectors return 0.0."""
-    from app.adapters.llm_ai import cosine_similarity
     assert cosine_similarity([], []) == 0.0
 
 
@@ -366,7 +360,6 @@ def embed_captured(monkeypatch):
 
 def test_embed_texts_success(embed_captured):
     """임베딩 요청 성공 시 벡터 리스트 반환 / successful embeddings request returns vector list."""
-    from app.adapters.llm_ai import embed_texts
     embed_captured["response"] = _embed_response([
         [0.1, 0.2],
         [0.3, 0.4],
@@ -410,7 +403,6 @@ def test_embed_texts_reorders_by_index():
 
 def test_embed_texts_mismatch_count_raises(embed_captured):
     """응답 개수 불일치 시 raise / raise on count mismatch."""
-    from app.adapters.llm_ai import embed_texts, AiUnavailableError
     embed_captured["response"] = _embed_response([[0.1, 0.2], [0.3, 0.4]])  # 2개만
     with pytest.raises(AiUnavailableError):
         embed_texts("http://llm:11434/v1", "model", "key", 30, ["a", "b", "c"])  # 3개 요청
@@ -418,7 +410,6 @@ def test_embed_texts_mismatch_count_raises(embed_captured):
 
 def test_embed_texts_retries_on_timeout(monkeypatch):
     """타임아웃 시 재시도 후 raise / retry on timeout then raise."""
-    from app.adapters.llm_ai import embed_texts, AiUnavailableError
     attempts = []
 
     def failing_urlopen(request, timeout=None):
@@ -433,7 +424,6 @@ def test_embed_texts_retries_on_timeout(monkeypatch):
 
 def test_embed_texts_omits_auth_without_key(embed_captured):
     """API 키 없으면 Authorization 헤더 생략 / omit auth header without key."""
-    from app.adapters.llm_ai import embed_texts
     embed_captured["response"] = _embed_response([[0.1, 0.2]])
     embed_texts("http://llm:11434/v1", "model", "", 30, ["text"])
     req = embed_captured["requests"][0]
