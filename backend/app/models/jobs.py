@@ -90,3 +90,29 @@ class ScanResult(Base):
     rank: Mapped[int] = mapped_column(Integer)
 
     __table_args__ = (Index("ix_scan_results_job", "job_id"),)
+
+
+class AiJob(Base):
+    """AI background jobs — suggest judging, embedding indexing. / AI 백그라운드 잡 (사이클2 §5)."""
+
+    __tablename__ = "ai_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16))
+    progress_done: Mapped[int] = mapped_column(Integer)
+    progress_total: Mapped[int] = mapped_column(Integer)
+    # 완료 결과 JSON — suggest: {suggested, created, rejected, items} / embed: {indexed, skipped, remaining}
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('suggest', 'embed_index')", name="ck_ai_jobs_kind"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'done', 'failed')", name="ck_ai_jobs_status"
+        ),
+    )

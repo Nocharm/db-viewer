@@ -39,6 +39,8 @@ class Relation(Base):
     confidence: Mapped[float | None] = mapped_column(Float)
     cardinality: Mapped[str | None] = mapped_column(String(8))
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # LLM 판정 근거 — 수용/기각 공용, 규칙·사용자 기원은 NULL / judge reason, AI rows only
+    reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
@@ -90,6 +92,25 @@ class AiSummary(Base):
 
     __table_args__ = (
         UniqueConstraint("object_qname", name="uq_ai_summaries_qname"),
+    )
+
+
+class AiEmbedding(Base):
+    """Table embedding for semantic search. / 의미 검색용 테이블 임베딩 (사이클2 §3)."""
+
+    __tablename__ = "ai_embeddings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    object_qname: Mapped[str] = mapped_column(String(261))
+    model: Mapped[str] = mapped_column(String(128))
+    # JSON 배열 텍스트 — pgvector 없이 파이썬 코사인 (2,342×768차원 ≈ 수십 ms)
+    vector: Mapped[str] = mapped_column(Text)
+    # 원문 해시 — 변경분만 재임베딩 / re-embed only when source text changes
+    source_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("object_qname", name="uq_ai_embeddings_qname"),
     )
 
 
