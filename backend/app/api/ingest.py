@@ -100,13 +100,12 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
         )
     except ingest_mapping.MappingError as e:
         raise _bad_request(str(e), e.context) from e
-    returned_cols = db.execute(
+    db.execute(
         insert(CatalogColumn).returning(
             CatalogColumn.id, CatalogColumn.object_id, CatalogColumn.name
         ),
         col_rows,
     ).all()
-    col_map = {(obj_svc, name): col_id for col_id, obj_svc, name in returned_cols}
 
     for kc in payload.key_constraints:
         db.add(CatalogConstraint(snapshot_id=snapshot.id, type=kc.type, name=kc.name))
