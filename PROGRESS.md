@@ -4,7 +4,7 @@
 
 ## 2026-08-04
 
-- **AI 실 LLM 프로바이더 전환 설계 확정** — 브레인스토밍으로 결정: 사내 셀프호스트 LLM(OpenAI 호환) 직접 호출, 스코어러 상위 후보만 LLM 재판정(2,342 테이블 전량 프롬프트 불가), 기존 5기능 전환만(새 기능 없음), stdlib 동기 클라이언트(의존성 0). `AI_BASE_URL` 유무로 Fake/LLM 스위치 — 로컬·CI 오프라인 유지. 스펙: `docs/superpowers/specs/2026-08-04-ai-llm-provider-design.md`.
+- **AI 실 LLM 프로바이더 전환 설계 확정** — 브레인스토밍으로 결정: 사내 셀프호스트 LLM(OpenAI 호환) 직접 호출, 스코어러 상위 후보만 LLM 재판정(2,342 테이블 전량 프롬프트 불가), 기존 5기능 전환만(새 기능 없음), stdlib 동기 클라이언트(의존성 0). `AI_BASE_URL` 유무로 Fake/LLM 스위치 — 로컬·CI 오프라인 유지. 스펙: `docs/superpowers/specs/2026-08-04-ai-llm-provider-design.md`, 구현 계획(8태스크 TDD): `docs/superpowers/plans/2026-08-04-ai-llm-provider.md`.
 - **로그인 화면 리디자인 + 게이트 카드 통일** — "화면 대비 작아 답답" 피드백: 170px짜리 미니 카드를 브랜드 카드로 재구성(40px 옐로 마크 + DB-viewer 30px 타이틀 + 태그라인 + 풀폭 CTA `btn-primary--lg` + SSO 힌트, max-w-sm/p-10). silent 확인 중·수동 버튼 두 상태가 같은 카드 셸 공유(전환 점프 없음), 소문자 db-viewer 브랜딩 불일치 정정. MeGate 에러·화이트리스트 차단 카드도 같은 셸 규격으로 통일. 두 테마 실측 + 전 화면(메인·파싱·관리·ERD) 재검토 — 나머지는 기존 감사 수준 유지로 판단.
 - **인증 에러 화면 탈출 동선** — `/api/me` 실패 시 순수 텍스트로 갇히던 화면(실서버에서 프록시 500으로 재현)을 카드로 교체: [다시 시도] 재조회 + [다시 로그인] 세션 제거 후 /login 수동 카드(AUTH ON에서만 렌더 — useAuth 안전 경계). 원인이 서버 장애든 토큰 만료든 막다른 화면을 남기지 않는다.
 - **서버 로그인 500 근본 수정 — standalone 프록시 빌드 타임 베이크** — 실서버 첫 배포에서 로그인 시 "request failed (500)" = 전 `/api/*` 프록시 실패. 원인: `output: standalone`은 rewrites를 **빌드 시점**에 manifest로 굽는데 BACKEND_URL을 compose 런타임 env로만 주입 → 이미지에 기본값 `localhost:8000`이 고정(프론트 컨테이너 안엔 무존재). 로컬 재현 실험으로 확정(런타임 주입 9999 무시, 구운 8000만 응답) 후 BACKEND_URL을 빌드 ARG로 이동, 잘못된 Dockerfile 주석("기동 시 평가") 정정. 로컬 dev는 호스트 8000에 백엔드가 있어 절대 재현 안 되는 함정 — 런북 §2의 `/api/health` 눈 확인이 이 계층을 잡는 관문.

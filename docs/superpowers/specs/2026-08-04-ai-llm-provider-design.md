@@ -41,7 +41,8 @@ backend create_ai_client()          ← 스위치 한 곳 (adapters/ai.py)
 | `AI_TIMEOUT` | Tuning | `60` | LLM 응답 대기 상한(초) |
 | `AI_SUGGEST_MAX_PAIRS` | Tuning | `40` | LLM 재판정에 넘길 후보 페어 상한 |
 
-Environment 항목은 `.env` + Settings + Dockerfile ENV + docker-compose `${VAR}` 4곳 동기화.
+Environment 항목은 `.env` + Settings + docker-compose `${VAR}` 3곳 동기화
+(Dockerfile ENV는 `SOURCE_MODE`만 폴백으로 두는 기존 관행 유지 — compose 주입이 소스 오브 트루스).
 
 ## 에러 처리
 
