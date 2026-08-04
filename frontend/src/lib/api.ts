@@ -197,6 +197,7 @@ export interface ObjectDetail {
   relations: {
     other: string; src_column: string; tgt_column: string;
     status: string; confidence: number | null; cardinality: string | null;
+    reason?: string | null;
   }[];
 }
 

@@ -427,6 +427,13 @@ export function TableDetail({
                   {relation.confidence !== null && (
                     <span style={{ color: "var(--muted)" }}>{relation.confidence}</span>
                   )}
+                  {relation.reason && (
+                    <span className="block truncate text-xs" style={{ color: "var(--muted)" }}
+                          title={relation.reason}
+                          data-testid={`TableDetail-relationReason-${index}`}>
+                      {relation.reason}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

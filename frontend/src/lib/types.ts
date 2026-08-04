@@ -55,6 +55,7 @@ export interface GraphEdge {
   confidence?: number | null;
   cardinality?: string | null;
   last_verified_at?: string | null;
+  reason?: string | null;
 }
 
 export interface CandidateItem {

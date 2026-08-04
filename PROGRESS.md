@@ -5,7 +5,8 @@
 ## 2026-08-05
 
 - **AI 후속 사이클(1~5) 설계 확정** — 브레인스토밍 결정: reason 영속·기각 이력은 relations 재사용(rejected+reason — 재실행 자동 제외로 페이징 정체 소멸), suggest·임베딩 인덱싱은 ai_jobs 202+폴링(챗·검색은 동기), 임베딩은 OpenAI 호환 /embeddings + **키워드 프리필터 자동 폴백**(서버 상태 나쁨 전제) + 잡 1회 상한 1,000(2,000 초과 금지 — 사용자 부하 제약), Q&A 챗은 전역 플로팅 패널·세션 메모리만. 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`, 계획(12태스크·푸시 3체크포인트): `docs/superpowers/plans/2026-08-05-ai-cycle2.md`.
-- **judge 판정 전체 반환 전환(사이클2 Task 2·3)** — `AiClient.judge_relations`가 수용만 반환하던 것을 판정 전체(`RelationJudgement`: accepted+reason)로 교체 — 기각도 relations에 `status='rejected'`+reason으로 적재하니 기존 양방향 dedupe가 재실행에서 자동 제외(추가 로직 없음, `AiRelationSuggestion` 제거). suggest 응답에 `rejected` 카운트 추가(기존 키 불변), 그래프 ai_suggested 엣지·상세 relations에 reason 노출. (구현 중 — Task 3/12)
+- **judge 판정 전체 반환 전환(사이클2 Task 2·3)** — `AiClient.judge_relations`가 수용만 반환하던 것을 판정 전체(`RelationJudgement`: accepted+reason)로 교체 — 기각도 relations에 `status='rejected'`+reason으로 적재하니 기존 양방향 dedupe가 재실행에서 자동 제외(추가 로직 없음, `AiRelationSuggestion` 제거). suggest 응답에 `rejected` 카운트 추가(기존 키 불변), 그래프 ai_suggested 엣지·상세 relations에 reason 노출.
+- **프론트 reason 표시(사이클2 Task 4, Group A 체크포인트)** — `GraphEdge.reason`(types.ts) + `ObjectDetail.relations[].reason`(api.ts, 브리프 예상과 달리 인라인 타입이 실제 앵커) 타입 추가. TableDetail 관계 행에 reason 텍스트(확인 스팬 뒤, truncate+title). ErdCanvas는 기존 엣지 hover 강조 핸들러(`buildEdgeEmphasis`/leave)에 `edgeReason` 상태만 얹어 좌하단 부유 카드로 표시 — ai_suggested 한정, 레이아웃 재계산 없음(렌더 데코레이션만). (구현 중 — Task 4/12)
 
 ## 2026-08-04
 

@@ -82,6 +82,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [hiddenNodes, setHiddenNodes] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
+  // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
+  const [edgeReason, setEdgeReason] = useState<string | null>(null);
   // 우클릭 미리보기 — 하단 와이드 카드 / preview data for the bottom card
   const [preview, setPreview] = useState<TablePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -263,6 +265,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     const state: EmphasisState = { edgeIds: new Set(), columnsByNode: new Map() };
     collectEdgeEmphasis(edge, state);
     setEmphasis(state);
+    setEdgeReason(edge.kind === "ai_suggested" && edge.reason ? edge.reason : null);
   }, [graph]);
 
   const buildNodeEmphasis = useCallback((nodeId: number) => {
@@ -409,7 +412,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         onPaneContextMenu={(event) => openMenuAt(event, null)}
         onPaneClick={() => setMenu(null)}
         onEdgeMouseEnter={(_, edge) => buildEdgeEmphasis(edge.id)}
-        onEdgeMouseLeave={() => setEmphasis(null)}
+        onEdgeMouseLeave={() => { setEmphasis(null); setEdgeReason(null); }}
         onNodeMouseEnter={(_, node) => buildNodeEmphasis(Number(node.id))}
         onNodeMouseLeave={() => setEmphasis(null)}
         minZoom={0.1}
@@ -436,6 +439,16 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
              data-testid="ErdCanvas-graphBusy">
           <span className="skeleton h-2 w-16" />
           {t("erd.graphLoading")}
+        </div>
+      )}
+
+      {/* AI 제안 엣지 hover 판정 근거 — 렌더 데코레이션, 레이아웃 재계산 없음 / reason card, render-only */}
+      {edgeReason && (
+        <div className="absolute bottom-3 left-3 z-20 max-w-md rounded-lg border px-3 py-2 text-xs"
+             style={{ borderColor: "var(--hairline)", background: "var(--surface-card)",
+                      color: "var(--body-text)" }}
+             data-testid="ErdCanvas-edgeReasonCard">
+          <span className="font-semibold" style={{ color: "var(--stat-ink)" }}>AI</span> {edgeReason}
         </div>
       )}
 
