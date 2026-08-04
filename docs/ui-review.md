@@ -23,7 +23,7 @@ python3 tools/seed_ui_states.py --base http://localhost:8000
 가이드의 예시 칩(HR_EMP 등)을 누르면 바로 열리고, 선택 시 앵커 노드 중심으로 자동 줌된다.
 
 시드가 만드는 상태: 확정 관계 1건(✓), inferred 3건(관측 횟수·고아 다양화),
-AI 제안 엣지 ~700건, AI 요약 2건, 화이트리스트 2명.
+AI 제안 엣지(상한 `AI_SUGGEST_MAX_PAIRS`, 기본 40건까지), AI 요약 2건, 화이트리스트 2명.
 더미데이터는 제조 ERP 유사 네이밍(HR_EMP·ORD_SO_HDR·MES_BATCH_HDR·QC_SAMPLE_RSLT 류).
 
 ## 2. 체크리스트 (픽스처 seed 42 기준 — 검색어 그대로 사용)

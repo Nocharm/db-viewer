@@ -117,6 +117,26 @@ n8n에서 **W0 recon queries** 열기 → Execute Workflow → 마지막 **Recon
   - 마스킹 대상 컬럼이 ●●● 로 보임 (지정했다면)
 - 실패 시: W2가 Active인지, `.env`의 `N8N_WEBHOOK_BASE` 오타 여부 — 백엔드 오류 메시지에 원인이 명시된다.
 
+## 9. AI 실 LLM 연결 (선택 — 언제든 가능, n8n과 무관)
+
+서버 `.env`에 사내 LLM 정보를 채우고 backend만 재기동:
+
+```
+AI_BASE_URL=http://<사내LLM호스트>:<포트>/v1   # OpenAI 호환 (Ollama/vLLM/LiteLLM)
+AI_MODEL=<서버에 로드된 모델명>
+AI_API_KEY=            # 무인증 서버면 비워둔다
+```
+
+`docker compose up -d backend` (재기동).
+
+- ✅ 통과 기준 (전부 화면):
+  - 테이블 상세 → AI 요약 재생성 → 휴리스틱 문장("주요 컬럼: …")이 아닌 자연어 요약
+  - 검색창 `?` 프리픽스 질의 → 관련도 순위 + 한국어 근거
+  - 관리 → AI 관계 제안 → 후보에 판정 근거 문장이 붙음 (상한 `AI_SUGGEST_MAX_PAIRS`=40)
+- 실패 시: 화면에 502와 원인(url·모델)이 그대로 표시된다 — `AI_BASE_URL` 오타,
+  LLM 서버 다운, 모델명 불일치 순으로 확인. 응답이 느리면 `AI_TIMEOUT` 상향.
+- `AI_BASE_URL`을 비우면 즉시 기존 목업으로 복귀한다 (재기동 필요).
+
 ## 부하·안전 장치 (이미 코드에 있음)
 
 - T2는 후보 축소 뒤 **페어 단위 핀포인트** 질의만 — 일괄 검증도 타깃 상한 8.
@@ -127,5 +147,4 @@ n8n에서 **W0 recon queries** 열기 → Execute Workflow → 마지막 **Recon
 
 ## 남은 결정 (연결 후)
 
-- AI 실 프로바이더 교체 (현재 결정론적 목업 — `create_ai_client` 한 곳).
 - T3 탐색 스캔 야간 운용 정책 (동시 2개 제한은 기본 적용).
