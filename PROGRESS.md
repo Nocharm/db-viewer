@@ -2,6 +2,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-05
+
+- **AI 후속 사이클(1~5) 설계 확정** — 브레인스토밍 결정: reason 영속·기각 이력은 relations 재사용(rejected+reason — 재실행 자동 제외로 페이징 정체 소멸), suggest·임베딩 인덱싱은 ai_jobs 202+폴링(챗·검색은 동기), 임베딩은 OpenAI 호환 /embeddings + **키워드 프리필터 자동 폴백**(서버 상태 나쁨 전제) + 잡 1회 상한 1,000(2,000 초과 금지 — 사용자 부하 제약), Q&A 챗은 전역 플로팅 패널·세션 메모리만. 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`.
+
 ## 2026-08-04
 
 - **AI 실 LLM 프로바이더 전환 (설계→구현 완료)** — 사내 셀프호스트 LLM(OpenAI 호환 /v1/chat/completions)을 stdlib urllib 동기 클라이언트로 연결(의존성 0), `AI_BASE_URL` 유무로 Fake/LLM 스위치 — 로컬·CI는 오프라인 유지. 관계 제안은 스코어러 후보(뷰 JOIN + 정규화 동명↔PK 우주 — 전 컬럼 O(N²) 회피)를 LLM이 재판정하고, 기존 관계 중복 제거를 상한(40) 앞에 두어 재실행마다 다음 순위로 페이징(리뷰 룰링 — 픽스처 실측 597후보). 탐색은 프리필터 50 → LLM 재랭크(환각 qname 제거·NaN 점수 0 강등), 요약·검증 해석·뷰 해석은 1:1 교체(수치 창작 금지 지시). 장애는 AiUnavailableError → 502 명시(폴백 없음). 테스트 156→181. 스펙: `docs/superpowers/specs/2026-08-04-ai-llm-provider-design.md`, 계획: `docs/superpowers/plans/2026-08-04-ai-llm-provider.md`. 최종 전체 리뷰 반영: compose 기본값(구 .env 부팅 함정)·LLM 불량 출력 가드 3종·판정/생성 카운트 표기·런북 §9 검증 기준 재작성.
