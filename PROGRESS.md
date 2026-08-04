@@ -4,7 +4,7 @@
 
 ## 2026-08-05
 
-- **AI LLM 클라이언트 구현 — Task 6: 요약·검증 해석·뷰 해석** — `LlmAiClient` 메서드 3종 신설: `summarize_table(table, base_tables)`(테이블 요약 생성), `explain_validation(facts)`(검증 통계 진단), `explain_view(facts)`(뷰 정의 설명). 각 메서드는 프롬프트 빌더(`build_summary_prompt`, `build_validation_prompt`, `build_view_prompt`) + `_require_text()`(빈 응답 방지)로 구성. 프롬프트는 **메타데이터만**(TableMeta/ValidationFacts/ViewFacts) — 원본 값 금지, explain_validation은 "payload의 수치만 인용하고 새 수치를 만들지 마라" 지시 포함. TDD: 4개 테스트(요약 전달·검증 수치금지·뷰 반환·빈응답 실패) → RED → 구현 → GREEN. 전체 스위트 178 PASS, 1 SKIPPED + ruff 클린. (구현 중 — Task 6/8)
+- **AI LLM 클라이언트 구현 — Task 7: 실 LLM 스위치 + 502 게이트웨이 오류** — `create_ai_client()` AI_BASE_URL 조건 스위치 구현(활성화 시 `LlmAiClient`, 비활성 시 `FakeAiClient` 고정 — 연결 단계 결정 사항) + `backend/app/main.py`에 `AiUnavailableError` 예외 핸들러 추가(502 + 정규 에러 엔벨로프 `{"error": {"code": 502, "message", "context"}}`). 조용한 폴백 금지 — 스위치 한 곳에서만 결정, 런타임 폴백 없음. 순환 임포트 회피를 위해 `create_ai_client` 안에서 `LlmAiClient` 지연 임포트. TDD: 2개 스위치 테스트(base_url 활성/비활성) + 1개 502 핸들러 테스트 → RED(1회 부분 PASS) → 구현 → GREEN 3개 + 전체 스위트 181 PASS, 1 SKIPPED + ruff 클린. (Task 7/8 완료)
 - **AI LLM 클라이언트 구현 — Task 4: LlmAiClient.judge_relations** — 후보 페어를 LLM이 판정하는 핵심 메서드 구현: `_SYSTEM_PROMPT`(JSON-only·한국어 고정), `build_judge_prompt()`(메타데이터 → 프롬프트 순수함수), `LlmAiClient.judge_relations()`(환각 인덱스 필터·타입 검증·accepted만 반환). TDD로 진행: 3개 테스트(메타데이터 판정·환각방어·빈입력 스킵) → RED → 구현 → GREEN → ruff 클린. 구현 후속 작업 5~8(search/summarize 등)은 같은 클래스에 메서드 추가.
 
 ## 2026-08-04

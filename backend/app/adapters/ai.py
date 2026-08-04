@@ -10,6 +10,8 @@ stage; the fake keeps every feature testable offline.
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.config import get_settings
+
 
 @dataclass(frozen=True)
 class ColumnMeta:
@@ -177,5 +179,12 @@ class FakeAiClient:
 
 
 def create_ai_client() -> AiClient:
-    """실제 프로바이더 연결 전까지 Fake 고정 (연결 단계 결정 사항). / fake until connection stage."""
+    """AI_BASE_URL 설정 시 실 LLM, 아니면 Fake — 스위치 한 곳 (연결 단계 결정 이행)."""
+    # llm_ai가 이 모듈의 타입을 쓰므로 순환 임포트 회피를 위해 지연 임포트
+    from app.adapters.llm_ai import LlmAiClient
+
+    settings = get_settings()
+    if settings.ai_base_url:
+        return LlmAiClient(base_url=settings.ai_base_url, model=settings.ai_model,
+                           api_key=settings.ai_api_key, timeout=settings.ai_timeout)
     return FakeAiClient()

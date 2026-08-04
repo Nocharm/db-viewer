@@ -252,3 +252,36 @@ def test_empty_text_raises(captured):
     table = TableMeta("dbo.HR_EMP", [], row_count=None)
     with pytest.raises(AiUnavailableError):
         _client().summarize_table(table, base_tables=[])
+
+
+# Task 7: create_ai_client 스위치
+
+def test_create_ai_client_switches_on_base_url(monkeypatch):
+    """AI_BASE_URL 설정 시 실 LlmAiClient, 아니면 Fake — 연결 단계 결정 이행."""
+    from app.adapters import ai as ai_module
+    from app.adapters.llm_ai import LlmAiClient
+    from app.config import get_settings
+
+    monkeypatch.setenv("AI_BASE_URL", "http://llm:11434/v1")
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    get_settings.cache_clear()
+    try:
+        assert isinstance(ai_module.create_ai_client(), LlmAiClient)
+    finally:
+        monkeypatch.delenv("AI_BASE_URL", raising=False)
+        monkeypatch.delenv("AI_MODEL", raising=False)
+        get_settings.cache_clear()
+
+
+def test_create_ai_client_defaults_to_fake(monkeypatch):
+    """AI_BASE_URL 미설정 시 FakeAiClient — 개발자 로컬 .env 간섭 차단."""
+    from app.adapters import ai as ai_module
+    from app.config import get_settings
+
+    monkeypatch.setenv("AI_BASE_URL", "")  # 개발자 로컬 .env 간섭 차단
+    get_settings.cache_clear()
+    try:
+        assert isinstance(ai_module.create_ai_client(), ai_module.FakeAiClient)
+    finally:
+        monkeypatch.delenv("AI_BASE_URL", raising=False)
+        get_settings.cache_clear()

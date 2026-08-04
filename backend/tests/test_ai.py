@@ -261,3 +261,30 @@ def test_explain_validation_requires_history_then_narrates(
     body = client.post(f"/api/ai/explain-validation?{params}").json()
     assert "100.0%" in body["explanation"]
     assert "우연" in body["explanation"]  # 관측 1회 → small_sample_only 진단
+
+
+# Task 7: AiUnavailableError → 502 게이트웨이 오류 매핑
+
+def test_ai_endpoint_maps_unavailable_to_502(client, load_fixture):
+    """LLM 프로바이더 장애는 502 + 정규 에러 엔벨로프 — 조용한 Fake 폴백 없음."""
+    from app.adapters.llm_ai import AiUnavailableError
+    from app.api.ai import get_ai_client
+
+    _seed(client, load_fixture)
+
+    class _DownAi:
+        def judge_relations(self, candidates):
+            raise AiUnavailableError("llm request failed after retries",
+                                     {"url": "http://llm:11434/v1/chat/completions"})
+
+    client.app.dependency_overrides[get_ai_client] = lambda: _DownAi()
+    try:
+        res = client.post("/api/ai/suggest-relations")
+    finally:
+        client.app.dependency_overrides.pop(get_ai_client)
+
+    assert res.status_code == 502
+    body = res.json()["error"]
+    assert body["code"] == 502
+    assert "llm" in body["message"]
+    assert body["context"]["url"].startswith("http://llm")

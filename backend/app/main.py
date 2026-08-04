@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from fastapi import Depends
 
+from app.adapters.llm_ai import AiUnavailableError
 from app.api import (
     admin,
     ai,
@@ -61,6 +62,14 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": exc.status_code, **detail}},
+        )
+
+    # AI 프로바이더 장애는 게이트웨이 오류로 — 조용한 폴백 없음 (스펙 §에러 처리)
+    @app.exception_handler(AiUnavailableError)
+    async def handle_ai_unavailable(request: Request, exc: AiUnavailableError) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"code": 502, "message": str(exc), "context": exc.context}},
         )
 
     @app.exception_handler(RequestValidationError)
