@@ -7,8 +7,11 @@ from urllib.error import URLError
 import pytest
 
 from app.adapters import llm_ai
-from app.adapters.ai import CandidatePair
-from app.adapters.llm_ai import AiUnavailableError, LlmAiClient, _extract_json, _post_chat
+from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta
+from app.adapters.llm_ai import (
+    AiUnavailableError, LlmAiClient, _extract_json, _post_chat,
+    filter_search_candidates,
+)
 from app.config import Settings
 
 
@@ -144,3 +147,45 @@ def test_judge_relations_defaults_reason_when_missing(captured):
     accepted = _client().judge_relations([_pair(0)])
     assert len(accepted) == 1
     assert accepted[0].reason == "LLM accepted"
+
+
+# Task 5: LlmAiClient.search_tables
+
+
+def test_prefilter_matches_table_and_column_names():
+    tables = [
+        TableMeta("dbo.T_SHP_RSLT", [ColumnMeta("SHIP_QTY", "int")]),
+        TableMeta("dbo.T_QC_JUDGE", [ColumnMeta("LOT_NO", "varchar")]),
+        TableMeta("dbo.T_HR_MST", [ColumnMeta("EMP_NO", "int")]),
+    ]
+    # 테이블명 매칭 + 컬럼명 매칭 — 둘 다 잡혀야 한다
+    assert [t.qname for t in filter_search_candidates("SHP RSLT", tables)] == ["dbo.T_SHP_RSLT"]
+    assert [t.qname for t in filter_search_candidates("LOT_NO", tables)] == ["dbo.T_QC_JUDGE"]
+    assert filter_search_candidates("ZZQX_NOPE", tables) == []
+
+
+def test_prefilter_caps_results():
+    tables = [TableMeta(f"dbo.T_ORD_{i:04d}", []) for i in range(80)]
+    assert len(filter_search_candidates("ORD", tables, limit=50)) == 50
+
+
+def test_search_tables_reranks_and_drops_unknown_qnames(captured):
+    captured["content"] = json.dumps({"items": [
+        {"qname": "dbo.T_SHP_RSLT", "score": 0.9, "reason": "출하 실적"},
+        {"qname": "dbo.HALLUCINATED", "score": 1.0, "reason": "환각"},
+        {"qname": "dbo.T_SHP_PLAN", "score": "bad", "reason": "점수 불량"},
+    ]}, ensure_ascii=False)
+    tables = [
+        TableMeta("dbo.T_SHP_RSLT", [ColumnMeta("SHIP_QTY", "int")]),
+        TableMeta("dbo.T_SHP_PLAN", [ColumnMeta("PLAN_QTY", "int")]),
+    ]
+    hits = _client().search_tables("SHP", tables)
+    assert [h.qname for h in hits] == ["dbo.T_SHP_RSLT", "dbo.T_SHP_PLAN"]
+    assert hits[0].score == 0.9
+    assert hits[1].score == 0.0  # 불량 점수는 0으로 강등, 환각 qname은 제거
+
+
+def test_search_tables_skips_llm_when_prefilter_empty(captured):
+    tables = [TableMeta("dbo.T_HR_MST", [ColumnMeta("EMP_NO", "int")])]
+    assert _client().search_tables("ZZQX_NOPE", tables) == []
+    assert captured["requests"] == []

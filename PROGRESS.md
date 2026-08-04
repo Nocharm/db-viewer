@@ -4,7 +4,8 @@
 
 ## 2026-08-05
 
-- **AI LLM 클라이언트 구현 — Task 4: LlmAiClient.judge_relations** — 후보 페어를 LLM이 판정하는 핵심 메서드 구현: `_SYSTEM_PROMPT`(JSON-only·한국어 고정), `build_judge_prompt()`(메타데이터 → 프롬프트 순수함수), `LlmAiClient.judge_relations()`(환각 인덱스 필터·타입 검증·accepted만 반환). TDD로 진행: 3개 테스트(메타데이터 판정·환각방어·빈입력 스킵) → RED → 구현 → GREEN → ruff 클린. 구현 후속 작업 5~8(search/summarize 등)은 같은 클래스에 메서드 추가. (구현 중 — Task 4/8)
+- **AI LLM 클라이언트 구현 — Task 5: LlmAiClient.search_tables** — 사용자 질의 → 테이블 재랭크 탐색: 상수 3종(`SEARCH_PREFILTER_LIMIT=50`, `SEARCH_RESULT_LIMIT=20`, `SEARCH_COLUMNS_PER_TABLE=12`), 유틸함수 3종(`_normalize()`, `filter_search_candidates()`, `build_search_prompt()`), `LlmAiClient.search_tables()`(프리필터·LLM 판정·환각 차단·점수 정규화). TDD로 진행: 4개 테스트(이름·컬럼 매칭·결과 상한·재랭크 + 환각 차단·빈 프리필터 스킵) → RED → 구현 → GREEN. 전체 스위트 172 PASS + ruff 클린. (구현 중 — Task 5/8)
+- **AI LLM 클라이언트 구현 — Task 4: LlmAiClient.judge_relations** — 후보 페어를 LLM이 판정하는 핵심 메서드 구현: `_SYSTEM_PROMPT`(JSON-only·한국어 고정), `build_judge_prompt()`(메타데이터 → 프롬프트 순수함수), `LlmAiClient.judge_relations()`(환각 인덱스 필터·타입 검증·accepted만 반환). TDD로 진행: 3개 테스트(메타데이터 판정·환각방어·빈입력 스킵) → RED → 구현 → GREEN → ruff 클린. 구현 후속 작업 5~8(search/summarize 등)은 같은 클래스에 메서드 추가.
 
 ## 2026-08-04
 

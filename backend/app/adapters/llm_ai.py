@@ -10,7 +10,7 @@ import logging
 import urllib.request
 from urllib.error import URLError
 
-from app.adapters.ai import AiRelationSuggestion, CandidatePair
+from app.adapters.ai import AiRelationSuggestion, AiTableHit, CandidatePair, TableMeta
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 RETRY_COUNT = 1
 # 같은 입력이면 같은 출력 지향 / determinism-leaning decoding
 TEMPERATURE = 0
+
+# 프리필터 상한 — 프롬프트 크기 제어 (비즈니스 상수, 스펙 §기능 2) / prompt-size cap
+SEARCH_PREFILTER_LIMIT = 50
+# 결과 상한 — Fake와 동일 / same cap as the fake client
+SEARCH_RESULT_LIMIT = 20
+# 프롬프트에 싣는 테이블당 컬럼 수 — 대형 테이블 토큰 폭주 방지
+SEARCH_COLUMNS_PER_TABLE = 12
 
 
 class AiUnavailableError(RuntimeError):
@@ -85,6 +92,42 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _normalize(name: str) -> str:
+    """이름·컬럼 정규화: 언더스코어 제거 + 대문자 — 매칭 정규화 기준."""
+    return name.replace("_", "").upper()
+
+
+def filter_search_candidates(query: str, tables: list[TableMeta],
+                             limit: int = SEARCH_PREFILTER_LIMIT) -> list[TableMeta]:
+    """이름·컬럼 정규화 매칭 프리필터 — LLM 재랭크 입력을 상한 내로 줄인다.
+
+    이름·컬럼에 흔적 없는 순수 의미 질의는 여기서 리콜되지 않는다(스펙 명시 한계).
+    """
+    terms = [t for t in _normalize(query).split() if t] or [_normalize(query)]
+    scored: list[tuple[int, TableMeta]] = []
+    for table in tables:
+        haystack = _normalize(" ".join([table.qname, *(c.name for c in table.columns)]))
+        matched = sum(1 for term in terms if term in haystack)
+        if matched:
+            scored.append((matched, table))
+    scored.sort(key=lambda pair: (-pair[0], pair[1].qname))
+    return [table for _, table in scored[:limit]]
+
+
+def build_search_prompt(query: str, tables: list[TableMeta]) -> str:
+    """테이블 메타 → 탐색 프롬프트 (순수 함수, 페이로드는 메타만) / metadata to search prompt."""
+    payload = [{"qname": t.qname, "row_count": t.row_count,
+                "columns": [c.name for c in t.columns[:SEARCH_COLUMNS_PER_TABLE]]}
+               for t in tables]
+    return (
+        f'사용자 질의: "{query}"\n'
+        "다음 테이블 목록에서 질의와 관련 있는 것만 관련도 순으로 골라라.\n"
+        '출력 스키마: {"items": [{"qname": "<입력 목록의 qname 그대로>", '
+        '"score": <0~1 실수>, "reason": "<한국어 한 줄>"}]}\n\n'
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
 def build_judge_prompt(candidates: list[CandidatePair]) -> str:
     """후보 페어 → 판정 프롬프트 (순수 함수) / candidates to a judging prompt."""
     payload = [{
@@ -140,3 +183,23 @@ class LlmAiClient:
                 reason=str(j.get("reason") or "LLM accepted"),
             ))
         return accepted
+
+    def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
+        """사용자 질의 → 관련 테이블 재랭크 (프리필터 → LLM 판정 → 정렬) / query to ranked table hits."""
+        candidates = filter_search_candidates(query, tables)
+        if not candidates:
+            return []
+        data = self._chat(build_search_prompt(query, candidates))
+        known = {t.qname for t in candidates}
+        hits = []
+        for item in data.get("items", []):
+            if not isinstance(item, dict) or item.get("qname") not in known:
+                continue  # 입력에 없는 테이블명은 환각 — 버린다
+            try:
+                score = min(max(float(item.get("score", 0)), 0.0), 1.0)
+            except (TypeError, ValueError):
+                score = 0.0
+            hits.append(AiTableHit(qname=item["qname"], score=round(score, 2),
+                                   reason=str(item.get("reason") or "")))
+        hits.sort(key=lambda h: (-h.score, h.qname))
+        return hits[:SEARCH_RESULT_LIMIT]
