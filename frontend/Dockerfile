@@ -9,9 +9,13 @@ COPY . .
 ARG NEXT_PUBLIC_AUTH_ENABLED=false
 ARG NEXT_PUBLIC_KEYCLOAK_ISSUER=http://182.199.63.71:8080/realms/ai-portal
 ARG NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=db-viewer-frontend
+# BACKEND_URL도 빌드 시 고정 — standalone은 rewrites를 빌드 시점에 manifest로 굽는다
+# (런타임 env는 무시된다; 값 변경엔 재빌드 필요)
+ARG BACKEND_URL=http://backend:8000
 ENV NEXT_PUBLIC_AUTH_ENABLED=$NEXT_PUBLIC_AUTH_ENABLED \
     NEXT_PUBLIC_KEYCLOAK_ISSUER=$NEXT_PUBLIC_KEYCLOAK_ISSUER \
-    NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=$NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
+    NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=$NEXT_PUBLIC_KEYCLOAK_CLIENT_ID \
+    BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 FROM node:22-alpine
@@ -25,7 +29,6 @@ COPY --from=build /app/public ./public
 # non-root 실행 / node 유저 사용 (docker.md)
 USER node
 
-# BACKEND_URL은 기동 시 rewrites에서 평가된다 — compose가 주입 (config.md)
 ENV PORT=3000
 EXPOSE 3000
 CMD ["node", "server.js"]
