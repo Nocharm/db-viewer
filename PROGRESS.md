@@ -2,6 +2,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-05
+
+- **AI LLM 클라이언트 구현 — Task 4: LlmAiClient.judge_relations** — 후보 페어를 LLM이 판정하는 핵심 메서드 구현: `_SYSTEM_PROMPT`(JSON-only·한국어 고정), `build_judge_prompt()`(메타데이터 → 프롬프트 순수함수), `LlmAiClient.judge_relations()`(환각 인덱스 필터·타입 검증·accepted만 반환). TDD로 진행: 3개 테스트(메타데이터 판정·환각방어·빈입력 스킵) → RED → 구현 → GREEN → ruff 클린. 구현 후속 작업 5~8(search/summarize 등)은 같은 클래스에 메서드 추가. (구현 중 — Task 4/8)
+
 ## 2026-08-04
 
 - **AI 실 LLM 프로바이더 전환 설계 확정** — 브레인스토밍으로 결정: 사내 셀프호스트 LLM(OpenAI 호환) 직접 호출, 스코어러 상위 후보만 LLM 재판정(2,342 테이블 전량 프롬프트 불가), 기존 5기능 전환만(새 기능 없음), stdlib 동기 클라이언트(의존성 0). `AI_BASE_URL` 유무로 Fake/LLM 스위치 — 로컬·CI 오프라인 유지. 스펙: `docs/superpowers/specs/2026-08-04-ai-llm-provider-design.md`, 구현 계획(8태스크 TDD): `docs/superpowers/plans/2026-08-04-ai-llm-provider.md`. (구현 중 — Task 3/8)

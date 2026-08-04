@@ -7,7 +7,8 @@ from urllib.error import URLError
 import pytest
 
 from app.adapters import llm_ai
-from app.adapters.llm_ai import AiUnavailableError, _extract_json, _post_chat
+from app.adapters.ai import CandidatePair
+from app.adapters.llm_ai import AiUnavailableError, LlmAiClient, _extract_json, _post_chat
 from app.config import Settings
 
 
@@ -90,3 +91,47 @@ def test_extract_json_rejects_non_json():
         _extract_json("JSON 없이 사과문만")
     with pytest.raises(AiUnavailableError):
         _extract_json('{"broken": ')
+
+
+# Task 4: LlmAiClient.judge_relations
+
+
+def _pair(i: int) -> CandidatePair:
+    return CandidatePair(
+        src_object=f"dbo.SRC{i}", src_column="EMP_NO", src_type="int",
+        src_is_pk=False, src_row_count=1000,
+        tgt_object="dbo.HR_EMP", tgt_column="EMP_NO", tgt_type="int",
+        tgt_is_pk=True, tgt_row_count=200,
+        score=60, signals=["key", "naming"],
+    )
+
+
+def _client() -> LlmAiClient:
+    return LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+
+
+def test_judge_relations_maps_accepted_indices(captured):
+    captured["content"] = json.dumps({"judgements": [
+        {"index": 0, "accept": True, "reason": "사번 참조"},
+        {"index": 1, "accept": False, "reason": "무관"},
+    ]}, ensure_ascii=False)
+    accepted = _client().judge_relations([_pair(0), _pair(1)])
+    assert len(accepted) == 1
+    assert accepted[0].src_object == "dbo.SRC0"
+    assert accepted[0].reason == "사번 참조"
+    # 프롬프트에 메타데이터가 실린다 — 판정 재료 검증
+    user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
+    assert "dbo.SRC0" in user_msg and "EMP_NO" in user_msg and "signals" in user_msg
+
+
+def test_judge_relations_drops_hallucinated_indices(captured):
+    captured["content"] = json.dumps({"judgements": [
+        {"index": 7, "accept": True, "reason": "없는 인덱스"},
+        {"index": "0", "accept": True, "reason": "타입 오류"},
+    ]})
+    assert _client().judge_relations([_pair(0)]) == []
+
+
+def test_judge_relations_skips_llm_when_empty(captured):
+    assert _client().judge_relations([]) == []
+    assert captured["requests"] == []  # 빈 입력엔 호출 자체가 없다

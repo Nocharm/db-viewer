@@ -10,6 +10,8 @@ import logging
 import urllib.request
 from urllib.error import URLError
 
+from app.adapters.ai import AiRelationSuggestion, CandidatePair
+
 logger = logging.getLogger(__name__)
 
 # 일시 오류 1회 재시도 — n8n_query.py와 동일 규약 / one retry with logging, then raise
@@ -74,3 +76,67 @@ def _extract_json(text: str) -> dict:
     if not isinstance(parsed, dict):
         raise AiUnavailableError("llm returned non-object JSON", {"text": text[:200]})
     return parsed
+
+
+# 모든 기능 공통 시스템 프롬프트 — JSON-only·한국어 고정 / shared system prompt
+_SYSTEM_PROMPT = (
+    "너는 MSSQL 스키마 분석 도우미다. 답변은 반드시 한국어로 하고, "
+    "요청된 JSON 오브젝트 하나만 출력한다. 설명·마크다운·코드펜스를 덧붙이지 않는다."
+)
+
+
+def build_judge_prompt(candidates: list[CandidatePair]) -> str:
+    """후보 페어 → 판정 프롬프트 (순수 함수) / candidates to a judging prompt."""
+    payload = [{
+        "index": i,
+        "src": {"object": c.src_object, "column": c.src_column, "type": c.src_type,
+                "is_pk": c.src_is_pk, "row_count": c.src_row_count},
+        "tgt": {"object": c.tgt_object, "column": c.tgt_column, "type": c.tgt_type,
+                "is_pk": c.tgt_is_pk, "row_count": c.tgt_row_count},
+        "score": c.score, "signals": c.signals,
+    } for i, c in enumerate(candidates)]
+    return (
+        "다음은 스키마 메타데이터로 스코어링된 FK 후보 페어 목록이다.\n"
+        "각 페어가 실제 조인 관계(src 값이 tgt 값에 포함)일 가능성을 판정하라.\n"
+        '출력 스키마: {"judgements": [{"index": <int>, "accept": <bool>, '
+        '"reason": "<한국어 한 줄>"}]}\n'
+        "모든 index에 대해 판정을 반환하라.\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+class LlmAiClient:
+    """OpenAI 호환 서버 위 AiClient 구현 — 프롬프트는 순수 빌더로 분리."""
+
+    def __init__(self, base_url: str, model: str, api_key: str, timeout: int):
+        self._base_url = base_url
+        self._model = model
+        self._api_key = api_key
+        self._timeout = timeout
+
+    def _chat(self, user_prompt: str) -> dict:
+        content = _post_chat(self._base_url, self._model, self._api_key,
+                             self._timeout, _SYSTEM_PROMPT, user_prompt)
+        return _extract_json(content)
+
+    def judge_relations(self, candidates: list[CandidatePair]) -> list[AiRelationSuggestion]:
+        if not candidates:
+            return []
+        data = self._chat(build_judge_prompt(candidates))
+        accepted = []
+        for j in data.get("judgements", []):
+            if not isinstance(j, dict):
+                continue
+            idx = j.get("index")
+            # 모델이 지어낸 인덱스·타입은 버린다 / drop hallucinated or mistyped indices
+            if not isinstance(idx, int) or isinstance(idx, bool) or not 0 <= idx < len(candidates):
+                continue
+            if not j.get("accept"):
+                continue
+            c = candidates[idx]
+            accepted.append(AiRelationSuggestion(
+                src_object=c.src_object, src_column=c.src_column,
+                tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                reason=str(j.get("reason") or "LLM accepted"),
+            ))
+        return accepted
