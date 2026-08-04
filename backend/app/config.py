@@ -65,6 +65,18 @@ class Settings(BaseSettings):
     # Tuning: W2 쿼리 대기 상한(초) — 대형 테이블 containment는 수십 초 가능
     n8n_query_timeout: int = 120
 
+    # Environment: 사내 LLM OpenAI 호환 베이스 URL (예: http://<llm-host>:11434/v1).
+    # 비우면 FakeAiClient — 로컬·CI는 오프라인 유지 / empty keeps the offline fake
+    ai_base_url: str = ""
+    # Environment: LLM 서버에 로드된 모델명 그대로 / model name as loaded on the server
+    ai_model: str = ""
+    # Environment: LLM API 키 — 비우면 Authorization 헤더 생략 (사내 무인증 서버 대응)
+    ai_api_key: str = ""
+    # Tuning: LLM 응답 대기 상한(초) — CPU 추론 대비 여유 / LLM response wait cap
+    ai_timeout: int = 60
+    # Tuning: LLM 재판정에 넘길 후보 페어 상한 — 프롬프트 크기·응답 시간 제어
+    ai_suggest_max_pairs: int = 40
+
     # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
     # W1a 전송 청크당 객체 수 — 커지면 POST 크기 증가 / objects per catalog POST chunk
     collect_catalog_chunk_size: int = 300
