@@ -189,3 +189,26 @@ def test_search_tables_skips_llm_when_prefilter_empty(captured):
     tables = [TableMeta("dbo.T_HR_MST", [ColumnMeta("EMP_NO", "int")])]
     assert _client().search_tables("ZZQX_NOPE", tables) == []
     assert captured["requests"] == []
+
+
+def test_search_tables_clamps_rounds_and_zeroes_nan(captured):
+    # json.loads는 NaN 리터럴을 허용한다 — dumps로는 못 만들어 raw 문자열 사용
+    captured["content"] = (
+        '{"items": ['
+        '{"qname": "dbo.T_A", "score": 1.5, "reason": "over"},'
+        '{"qname": "dbo.T_B", "score": -0.4, "reason": "under"},'
+        '{"qname": "dbo.T_C", "score": 0.867, "reason": "round"},'
+        '{"qname": "dbo.T_D", "score": NaN, "reason": "nan"}]}'
+    )
+    tables = [TableMeta(f"dbo.T_{c}", [ColumnMeta("T_COL", "int")]) for c in "ABCD"]
+    hits = {h.qname: h.score for h in _client().search_tables("T", tables)}
+    assert hits["dbo.T_A"] == 1.0
+    assert hits["dbo.T_B"] == 0.0
+    assert hits["dbo.T_C"] == 0.87
+    assert hits["dbo.T_D"] == 0.0
+
+
+def test_prefilter_returns_empty_for_blank_or_underscore_query():
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    assert filter_search_candidates("   ", tables) == []
+    assert filter_search_candidates("___", tables) == []

@@ -7,6 +7,7 @@ Empty AI_BASE_URL keeps the offline fake; failures raise, never fall back.
 
 import json
 import logging
+import math
 import urllib.request
 from urllib.error import URLError
 
@@ -103,7 +104,9 @@ def filter_search_candidates(query: str, tables: list[TableMeta],
 
     이름·컬럼에 흔적 없는 순수 의미 질의는 여기서 리콜되지 않는다(스펙 명시 한계).
     """
-    terms = [t for t in _normalize(query).split() if t] or [_normalize(query)]
+    terms = [t for t in _normalize(query).split() if t]
+    if not terms:
+        return []  # 정규화 후 남는 용어가 없으면 매칭 없음 — 전체 반환 방지
     scored: list[tuple[int, TableMeta]] = []
     for table in tables:
         haystack = _normalize(" ".join([table.qname, *(c.name for c in table.columns)]))
@@ -196,9 +199,13 @@ class LlmAiClient:
             if not isinstance(item, dict) or item.get("qname") not in known:
                 continue  # 입력에 없는 테이블명은 환각 — 버린다
             try:
-                score = min(max(float(item.get("score", 0)), 0.0), 1.0)
+                score = float(item.get("score", 0))
             except (TypeError, ValueError):
                 score = 0.0
+            # NaN/Infinity는 비교를 통과해 클램프를 우회한다 — 불량 점수로 강등
+            if not math.isfinite(score):
+                score = 0.0
+            score = min(max(score, 0.0), 1.0)
             hits.append(AiTableHit(qname=item["qname"], score=round(score, 2),
                                    reason=str(item.get("reason") or "")))
         hits.sort(key=lambda h: (-h.score, h.qname))
