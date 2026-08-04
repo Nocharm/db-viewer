@@ -76,6 +76,7 @@ def select_ai_candidates(
     min_distinct: int,
     blacklist: set[str],
     max_pairs: int,
+    existing: set[tuple[str, str, str, str]],
 ) -> list[tuple[scoring.ScoringColumn, scoring.Candidate]]:
     """스냅샷 전체 상위 후보 — 무순서 페어당 고점 방향 1건.
 
@@ -83,6 +84,10 @@ def select_ai_candidates(
     전 컬럼 O(N²) 스코어링은 실 규모(2,342 테이블)에서 불가능하고,
     스코어러 신호 자체가 이 두 우주 밖에서는 0점이라 손실도 없다
     (비PK↔비PK 동명 페어만 제외되는데, 그쪽은 컬럼 단위 후보 API가 커버).
+
+    기존 관계 제거(existing, 양방향 채움은 호출측 책임)는 max_pairs 상한 **전**에
+    적용한다 — 순서가 반대면 재실행마다 같은 상위 페어만 뽑혀 전량 걸러지고
+    다음 순위 후보는 영원히 도달 불가해진다 (재실행 페이징 계약).
     """
     all_columns = list(columns.values())
     pairs: set[frozenset] = {p for p in view_pairs if len(p) == 2}
@@ -109,7 +114,12 @@ def select_ai_candidates(
             ):
                 if pair not in best or cand.score > best[pair][1].score:
                     best[pair] = (src, cand)
-    ranked = sorted(best.values(), key=lambda p: (-p[1].score, p[0].object_qname, p[0].name))
+    filtered = [
+        (src, cand) for src, cand in best.values()
+        if (src.object_qname, src.name, cand.target.object_qname, cand.target.name)
+        not in existing
+    ]
+    ranked = sorted(filtered, key=lambda p: (-p[1].score, p[0].object_qname, p[0].name))
     return ranked[:max_pairs]
 
 
@@ -124,18 +134,21 @@ def suggest_relations(
     settings = get_settings()
     columns = load_scoring_columns(db, snapshot.id)
     view_pairs, fk_pairs = load_pair_sets(db, snapshot.id)
+
+    # 기존 관계와 중복 제거(양방향) — 상한 적용 전에 걸러야 재실행마다 다음 순위
+    # 후보가 올라온다(순서가 반대면 매번 같은 상위 40건만 뽑혀 걸러진다)
+    existing: set[tuple] = set()
+    for r in db.execute(select(Relation)).scalars():
+        existing.add((r.src_object, r.src_column, r.tgt_object, r.tgt_column))
+        existing.add((r.tgt_object, r.tgt_column, r.src_object, r.src_column))
+
     ranked = select_ai_candidates(
         columns, view_pairs, fk_pairs,
         settings.low_cardinality_min_distinct,
         {b.upper() for b in settings.low_cardinality_blacklist},
         settings.ai_suggest_max_pairs,
+        existing,
     )
-
-    # 기존 관계와 중복 제거(양방향) — LLM 호출 전에 걸러 토큰 낭비·재실행 중복을 막는다
-    existing: set[tuple] = set()
-    for r in db.execute(select(Relation)).scalars():
-        existing.add((r.src_object, r.src_column, r.tgt_object, r.tgt_column))
-        existing.add((r.tgt_object, r.tgt_column, r.src_object, r.src_column))
 
     row_counts = {
         f"{o.schema}.{o.name}": o.row_count
@@ -146,8 +159,6 @@ def suggest_relations(
     pairs_meta = []
     for src, cand in ranked:
         tgt = cand.target
-        if (src.object_qname, src.name, tgt.object_qname, tgt.name) in existing:
-            continue
         pairs_meta.append(CandidatePair(
             src_object=src.object_qname, src_column=src.name,
             src_type=src.data_type, src_is_pk=src.is_pk,

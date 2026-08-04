@@ -1,5 +1,6 @@
 """AI endpoint tests — suggestions never become facts. / AI 엔드포인트 테스트 (계획 Phase 5)."""
 
+import pytest
 import sqlalchemy as sa
 
 from app.adapters.ai import CandidatePair, ColumnMeta, FakeAiClient, TableMeta
@@ -53,7 +54,8 @@ def test_select_ai_candidates_prefers_pk_direction_and_caps():
         4: _col(4, "dbo.T_SHP", "ORD_NO"),
     }
     ranked = select_ai_candidates(cols, view_pairs=set(), fk_pairs=set(),
-                                  min_distinct=50, blacklist=set(), max_pairs=1)
+                                  min_distinct=50, blacklist=set(), max_pairs=1,
+                                  existing=set())
     assert len(ranked) == 1  # 상한 적용
     src, cand = ranked[0]
     # 정확 동명(40+key20=60) > 정규화 변형(32+20=52) — 방향은 PK 쪽이 타깃
@@ -68,10 +70,29 @@ def test_select_ai_candidates_includes_view_join_pairs():
     }
     ranked = select_ai_candidates(cols, view_pairs={frozenset((1, 2))},
                                   fk_pairs=set(), min_distinct=50,
-                                  blacklist=set(), max_pairs=10)
+                                  blacklist=set(), max_pairs=10, existing=set())
     # 이름이 달라도 뷰 JOIN 증거만으로 후보가 된다
     assert len(ranked) == 1
     assert ranked[0][1].signals.get("view_join") == scoring.WEIGHT_VIEW_JOIN
+
+
+def test_select_ai_candidates_dedupes_before_cap_so_reruns_page_onward():
+    cols = {
+        1: _col(1, "dbo.T_EMP", "EMP_NO", is_pk=True),
+        2: _col(2, "dbo.T_ORD", "EMPNO"),
+        3: _col(3, "dbo.T_ORD", "ORD_NO", is_pk=True),
+        4: _col(4, "dbo.T_SHP", "ORD_NO"),
+    }
+    # 1위 페어(T_SHP.ORD_NO -> T_ORD.ORD_NO, 60점)가 이미 관계로 존재한다고 가정
+    existing = {("dbo.T_SHP", "ORD_NO", "dbo.T_ORD", "ORD_NO")}
+    ranked = select_ai_candidates(cols, view_pairs=set(), fk_pairs=set(),
+                                  min_distinct=50, blacklist=set(), max_pairs=1,
+                                  existing=existing)
+    assert len(ranked) == 1
+    src, cand = ranked[0]
+    # 상한(1) 적용 전에 1위가 걸러져야 2위가 다음 실행에서 판정 대상이 된다
+    assert (src.object_qname, src.name) == ("dbo.T_ORD", "EMPNO")
+    assert (cand.target.object_qname, cand.target.name) == ("dbo.T_EMP", "EMP_NO")
 
 
 def test_fake_client_search_ranks_by_term_overlap():
@@ -98,12 +119,27 @@ def test_suggest_relations_creates_ai_candidates_only(client, migrated_engine, l
     assert all(r.status == "candidate" for r in ai_rows)
 
 
-def test_suggest_relations_is_idempotent(client, load_fixture):
+def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_engine, load_fixture):
     _seed(client, load_fixture)
-    first = client.post("/api/ai/suggest-relations").json()
-    second = client.post("/api/ai/suggest-relations").json()
-    assert first["created"] > 0
-    assert second["created"] == 0  # 기존 관계와 중복 생성 금지 / dedupe on rerun
+    total_created = 0
+    for _ in range(30):  # 597후보/40상한 ≈ 15회 — 여유 상한, 무한루프 가드
+        body = client.post("/api/ai/suggest-relations").json()
+        total_created += body["created"]
+        if body["created"] == 0:
+            break
+    else:
+        pytest.fail("paging never exhausted")
+    assert total_created > 40  # 상한 너머로 페이징됐다 — 구 버그(1회용 상한) 회귀 가드
+    # 소진 후 재실행도 0 — 멱등 종착
+    assert client.post("/api/ai/suggest-relations").json()["created"] == 0
+    # 전 구간 중복 적재 없음 (방향 키 기준)
+    with migrated_engine.connect() as conn:
+        rel_t = Base.metadata.tables["relations"]
+        rows = conn.execute(sa.select(rel_t)).all()
+    keys = [(r.src_object, r.src_column, r.tgt_object, r.tgt_column)
+            for r in rows if r.origin == "ai"]
+    assert len(keys) == len(set(keys))
+    assert len(keys) == total_created
 
 
 def test_ai_candidate_cannot_be_confirmed_without_validation(client, migrated_engine, load_fixture):
