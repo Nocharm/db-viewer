@@ -321,6 +321,32 @@ def test_ai_unavailable_marks_suggest_job_failed(ai_job_client, migrated_engine,
     assert "llm" in job["error"]
 
 
+def test_ai_unavailable_maps_to_502_on_sync_endpoint(client, load_fixture):
+    """동기 엔드포인트(search-tables 등)는 여전히 502 매핑 대상 — suggest만 잡 실패로 갈라졌을 뿐
+    main.py의 AiUnavailableError 핸들러 자체가 죽은 코드가 되지 않았음을 가드한다."""
+    from app.adapters.llm_ai import AiUnavailableError
+    from app.api.ai import get_ai_client
+
+    _seed(client, load_fixture)
+
+    class _DownAi:
+        def search_tables(self, q, tables):
+            raise AiUnavailableError("llm request failed after retries",
+                                     {"url": "http://llm:11434/v1/chat/completions"})
+
+    client.app.dependency_overrides[get_ai_client] = lambda: _DownAi()
+    try:
+        res = client.get("/api/ai/search-tables", params={"q": "ZZ"})
+    finally:
+        client.app.dependency_overrides.pop(get_ai_client)
+
+    assert res.status_code == 502
+    body = res.json()["error"]
+    assert body["code"] == 502
+    assert "llm" in body["message"]
+    assert "context" in body
+
+
 # Task 3 (사이클2): 판정 근거 영속 + 기각 이력
 
 
