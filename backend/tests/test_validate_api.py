@@ -72,6 +72,34 @@ def test_containment_records_history_and_relation(vclient, migrated_engine, load
         assert distinct == body["src_distinct"]
 
 
+def test_containment_promotion_clears_stale_rejected_reason(vclient, migrated_engine, load_fixture):
+    """rejected 행의 LLM 판정 사유가 validated 승격 후 detail relations에 남지 않아야
+    한다 — 승격 근거는 T2 관측 자체이지 이전 LLM 사유가 아니다 (사이클2 리뷰 Finding 2)."""
+    from datetime import UTC, datetime
+
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
+    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
+
+    rel_t = Base.metadata.tables["relations"]
+    with migrated_engine.begin() as conn:
+        conn.execute(rel_t.insert().values(
+            src_object=rel["src_object"], src_column=rel["src_column"],
+            tgt_object=rel["tgt_object"], tgt_column=rel["tgt_column"],
+            status="rejected", origin="ai", reason="무관", created_at=datetime.now(UTC),
+        ))
+
+    vclient.post("/api/validate/containment", json={
+        "src_column_id": src_id, "tgt_column_id": tgt_id,
+    })
+
+    with migrated_engine.connect() as conn:
+        relation = conn.execute(sa.select(rel_t)).one()
+    assert relation.status == "validated"
+    assert relation.reason is None
+
+
 def test_repeat_validation_accumulates_confidence(vclient, migrated_engine, load_fixture):
     _seed(vclient, load_fixture)
     rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)

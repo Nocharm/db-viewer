@@ -136,9 +136,12 @@ def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_en
     else:
         pytest.fail("paging never exhausted")
     # 상한 너머로 페이징됐다 — 구 버그(1회용 상한) 회귀 가드
-    assert total_created + total_rejected > 40
-    # 소진 후 재실행도 0 — 멱등 종착
-    assert client.post("/api/ai/suggest-relations").json()["created"] == 0
+    # Fake는 후보 우주(view_join ∪ 동명↔PK) 전량을 수용하므로 이 엔드포인트 흐름에서
+    # total_rejected는 항상 0 — 원래 단언 그대로 성립
+    assert total_created > 40
+    # 소진 후 재실행도 0 — 멱등 종착 (양쪽 다 대칭)
+    exhausted = client.post("/api/ai/suggest-relations").json()
+    assert exhausted["created"] == 0 and exhausted["rejected"] == 0
     # 전 구간 중복 적재 없음 (방향 키 기준)
     with migrated_engine.connect() as conn:
         rel_t = Base.metadata.tables["relations"]
@@ -340,15 +343,47 @@ def test_judgements_persist_reason_and_rejections(client, migrated_engine, load_
 
 
 def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_fixture):
+    """기각 relation은 그래프 엣지로 그려지지 않는다.
+
+    FakeAiClient는 후보 우주(view_join ∪ 동명↔PK)를 전량 수용하므로 이 엔드포인트
+    흐름에서는 rejected 행이 생기지 않아 공허 통과한다 — _SplitAi로 기각을 강제
+    생성해 실제로 검증되게 한다 (사이클2 리뷰 Finding 1).
+    """
+    from app.api.ai import get_ai_client
+    from app.adapters.ai import RelationJudgement
+
     _seed(client, load_fixture)
-    client.post("/api/ai/suggest-relations")  # Fake — 수용/기각 혼재 가능
-    items = client.get("/api/objects", params={"limit": 1}).json()["items"]
-    graph = client.get(f"/api/objects/{items[0]['id']}/graph?depth=3").json()
+
+    class _SplitAi:
+        def judge_relations(self, candidates):
+            return [
+                RelationJudgement(
+                    src_object=c.src_object, src_column=c.src_column,
+                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                    accepted=(i % 2 == 0), reason=f"근거 {i}",
+                )
+                for i, c in enumerate(candidates)
+            ]
+
+    client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
+    try:
+        body = client.post("/api/ai/suggest-relations").json()
+    finally:
+        client.app.dependency_overrides.pop(get_ai_client)
+
+    assert body["created"] > 0  # index 0은 항상 수용 — 앵커 선정 근거
+    target = body["items"][0]
+    _, table = target["src_object"].split(".", 1)
+    anchor = client.get("/api/objects", params={"q": table}).json()["items"][0]
+    graph = client.get(f"/api/objects/{anchor['id']}/graph?depth=3").json()
+    assert graph["edges"]  # 앵커에 실제 엣지가 잡힌다 — 공허 통과 방지 선행 단언
+
     with migrated_engine.connect() as conn:
         rel_t = Base.metadata.tables["relations"]
         rejected = conn.execute(
             sa.select(rel_t).where(rel_t.c.status == "rejected")).all()
     rejected_ids = {f"rel-{r.id}" for r in rejected}
+    assert rejected_ids  # 기각 행이 실제로 존재 — 이중 공허 방지 선행 단언
     assert all(e["id"] not in rejected_ids for e in graph["edges"])
 
 

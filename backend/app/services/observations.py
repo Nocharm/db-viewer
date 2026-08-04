@@ -57,6 +57,8 @@ def record_observation(
         db.add(relation)
     elif relation.status != "confirmed":
         relation.status = "validated"  # 확정은 강등되지 않는다 / confirm never demoted
+        # 검증 승격의 근거는 T2 관측 자체 — 이전 candidate/rejected의 LLM 판정 사유는 무효
+        relation.reason = None
     relation.confidence = conf.confidence
     relation.cardinality = result.cardinality
     relation.last_verified_at = observed_at
