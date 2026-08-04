@@ -236,6 +236,12 @@ h1, h2, h3 {
   opacity: 0.35;
   cursor: default;
 }
+/* 로그인 카드 전용 대형 변형 — 카드 폭에 맞춘 풀사이즈 CTA */
+.btn-primary--lg {
+  width: 100%;
+  font-size: 16px;
+  padding: 12px 24px;
+}
 .btn-secondary {
   background: var(--surface-card);
   color: var(--ink);
@@ -509,6 +515,13 @@ mark.hl {
   height: 10px;
   border-radius: 2px;
   background: var(--primary);
+}
+/* 로그인·게이트 카드용 대형 마크 / large mark for auth gate cards */
+.logo-mark--lg {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
 }
 
 /* ── 일치율 게이지 — 스탯은 옐로 ── */

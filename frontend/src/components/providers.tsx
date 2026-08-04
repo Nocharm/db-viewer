@@ -59,8 +59,8 @@ function MeGate({ children }: { children: React.ReactNode }) {
   if (error) {
     // 막다른 화면 금지 — 서버 장애·토큰 만료 어느 쪽이든 나갈 길을 준다
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="rounded-xl border p-8 text-center"
+      <div className="flex h-screen items-center justify-center p-4">
+        <div className="w-full max-w-sm rounded-2xl border p-10 text-center"
              style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
              data-testid="MeGate-errorCard">
           <p className="mb-2 text-lg font-semibold" style={{ color: "var(--ink)" }}>
@@ -85,8 +85,8 @@ function MeGate({ children }: { children: React.ReactNode }) {
   if (!me.whitelisted) {
     // 화이트리스트 미등록 — 전 API가 403이므로 안내 화면으로 차단
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="rounded-xl border p-8 text-center"
+      <div className="flex h-screen items-center justify-center p-4">
+        <div className="w-full max-w-sm rounded-2xl border p-10 text-center"
              style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
              data-testid="MeGate-notWhitelisted">
           <p className="mb-2 text-lg font-semibold" style={{ color: "var(--ink)" }}>

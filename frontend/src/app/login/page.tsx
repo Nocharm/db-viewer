@@ -49,26 +49,44 @@ function KeycloakLogin() {
     void signinRedirectFromLogin({ promptNone: true }).catch(() => setShowCard(true));
   }, [auth.isLoading, auth.isAuthenticated, auth.error, router]);
 
+  // 두 상태가 같은 카드 셸 공유 — silent 실패 → 버튼 전환 시 레이아웃 점프 없음
   return (
-    <div className="flex h-screen items-center justify-center">
-      {showCard ? (
-        <div className="rounded-xl border p-8 text-center"
-             style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}>
-          <p className="mb-4 text-lg font-bold" style={{ color: "var(--ink)" }}>db-viewer</p>
-          <button
-            className="btn-primary"
-            onClick={() => {
-              clearAutoLoginTried();
-              void signinRedirectFromLogin();
-            }}
-            data-testid="LoginPage-loginButton"
-          >
-            Keycloak으로 로그인
-          </button>
-        </div>
-      ) : (
-        <p style={{ color: "var(--muted)" }}>로그인 확인 중…</p>
-      )}
+    <div className="flex h-screen items-center justify-center p-4">
+      <div
+        className="w-full max-w-sm rounded-2xl border p-10 text-center"
+        style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
+        data-testid="LoginPage-card"
+      >
+        <span className="logo-mark logo-mark--lg mx-auto mb-5" aria-hidden />
+        <p className="text-3xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+          DB-viewer
+        </p>
+        <p className="mt-1 text-sm" style={{ color: "var(--slate)" }}>
+          DB 스키마 · 관계 탐색기
+        </p>
+        {showCard ? (
+          <>
+            <button
+              className="btn-primary btn-primary--lg mt-8"
+              onClick={() => {
+                clearAutoLoginTried();
+                void signinRedirectFromLogin();
+              }}
+              data-testid="LoginPage-loginButton"
+            >
+              Keycloak으로 로그인
+            </button>
+            <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>
+              사내 Keycloak SSO 계정으로 로그인합니다
+            </p>
+          </>
+        ) : (
+          <p className="mt-8 text-sm" style={{ color: "var(--muted)" }}
+             data-testid="LoginPage-checking">
+            로그인 확인 중…
+          </p>
+        )}
+      </div>
     </div>
   );
 }
