@@ -1,18 +1,37 @@
 """AI endpoint tests — suggestions never become facts. / AI 엔드포인트 테스트 (계획 Phase 5)."""
 
+from datetime import UTC, datetime
+
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.orm import sessionmaker
 
 from app.adapters.ai import CandidatePair, ColumnMeta, FakeAiClient, TableMeta
-from app.api.ai import select_ai_candidates
+from app.api.ai import get_ai_session_factory, select_ai_candidates
 from app.domain import scoring
-from app.models import Base
+from app.models import AiJob, Base
 
 
 def _seed(client, load_fixture) -> None:
     sid = client.post("/api/ingest/catalog", json=load_fixture("catalog.json")).json()["snapshot_id"]
     client.post("/api/ingest/view-deps",
                 json={**load_fixture("view_deps.json"), "snapshot_id": sid})
+
+
+@pytest.fixture()
+def ai_job_client(client, migrated_engine):
+    """suggest 백그라운드 잡의 세션 팩토리를 테스트 SQLite로 고정 (scan 테스트의 sclient와 동일 패턴, 사이클2 §5)."""
+    client.app.dependency_overrides[get_ai_session_factory] = lambda: sessionmaker(bind=migrated_engine)
+    return client
+
+
+def _run_suggest_job(client) -> dict:
+    """202 시작 → 완료 폴링 헬퍼 / start then poll to completion."""
+    start = client.post("/api/ai/suggest-relations")
+    assert start.status_code == 202
+    job = client.get(f"/api/ai/jobs/{start.json()['job_id']}").json()
+    assert job["status"] == "done", job.get("error")
+    return job["result"]
 
 
 def _pair(src_object, src_column, tgt_object, tgt_column, signals):
@@ -106,9 +125,9 @@ def test_fake_client_search_ranks_by_term_overlap():
     assert all(h.qname != "dbo.T_HR_MST" for h in hits)
 
 
-def test_suggest_relations_creates_ai_candidates_only(client, migrated_engine, load_fixture):
-    _seed(client, load_fixture)
-    body = client.post("/api/ai/suggest-relations").json()
+def test_suggest_relations_creates_ai_candidates_only(ai_job_client, migrated_engine, load_fixture):
+    _seed(ai_job_client, load_fixture)
+    body = _run_suggest_job(ai_job_client)
     assert body["created"] > 0
 
     with migrated_engine.connect() as conn:
@@ -123,12 +142,12 @@ def test_suggest_relations_creates_ai_candidates_only(client, migrated_engine, l
     assert sum(1 for r in ai_rows if r.status == "rejected") == body["rejected"]
 
 
-def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_engine, load_fixture):
-    _seed(client, load_fixture)
+def test_suggest_relations_pages_without_dupes_then_exhausts(ai_job_client, migrated_engine, load_fixture):
+    _seed(ai_job_client, load_fixture)
     total_created = 0
     total_rejected = 0
     for _ in range(30):  # 597후보/40상한 ≈ 15회 — 여유 상한, 무한루프 가드
-        body = client.post("/api/ai/suggest-relations").json()
+        body = _run_suggest_job(ai_job_client)
         total_created += body["created"]
         total_rejected += body["rejected"]
         if body["created"] + body["rejected"] == 0:
@@ -140,7 +159,7 @@ def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_en
     # total_rejected는 항상 0 — 원래 단언 그대로 성립
     assert total_created > 40
     # 소진 후 재실행도 0 — 멱등 종착 (양쪽 다 대칭)
-    exhausted = client.post("/api/ai/suggest-relations").json()
+    exhausted = _run_suggest_job(ai_job_client)
     assert exhausted["created"] == 0 and exhausted["rejected"] == 0
     # 전 구간 중복 적재 없음 (방향 키 기준)
     with migrated_engine.connect() as conn:
@@ -152,9 +171,9 @@ def test_suggest_relations_pages_without_dupes_then_exhausts(client, migrated_en
     assert len(keys) == total_created + total_rejected
 
 
-def test_ai_candidate_cannot_be_confirmed_without_validation(client, migrated_engine, load_fixture):
-    _seed(client, load_fixture)
-    created = client.post("/api/ai/suggest-relations").json()["items"]
+def test_ai_candidate_cannot_be_confirmed_without_validation(ai_job_client, migrated_engine, load_fixture):
+    _seed(ai_job_client, load_fixture)
+    created = _run_suggest_job(ai_job_client)["items"]
     target = created[0]
 
     obj_t, col_t = Base.metadata.tables["objects"], Base.metadata.tables["columns"]
@@ -169,7 +188,7 @@ def test_ai_candidate_cannot_be_confirmed_without_validation(client, migrated_en
                        col_t.c.name == col)
             ).scalar_one()
 
-    res = client.post("/api/relations/confirm", json={
+    res = ai_job_client.post("/api/relations/confirm", json={
         "src_column_id": col_id(target["src_object"], target["src_column"]),
         "tgt_column_id": col_id(target["tgt_object"], target["tgt_column"]),
     })
@@ -177,14 +196,14 @@ def test_ai_candidate_cannot_be_confirmed_without_validation(client, migrated_en
     assert "validation" in res.json()["error"]["message"]
 
 
-def test_ai_candidates_render_as_ai_suggested_edges(client, load_fixture):
-    _seed(client, load_fixture)
-    created = client.post("/api/ai/suggest-relations").json()["items"]
+def test_ai_candidates_render_as_ai_suggested_edges(ai_job_client, migrated_engine, load_fixture):
+    _seed(ai_job_client, load_fixture)
+    created = _run_suggest_job(ai_job_client)["items"]
     target = created[0]
     _, table = target["src_object"].split(".", 1)
-    items = client.get("/api/objects", params={"q": table}).json()["items"]
+    items = ai_job_client.get("/api/objects", params={"q": table}).json()["items"]
     anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == target["src_object"])
-    graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
+    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph").json()
     assert any(e["kind"] == "ai_suggested" for e in graph["edges"])
 
 
@@ -274,41 +293,43 @@ def test_explain_validation_requires_history_then_narrates(
 
 
 # Task 7: AiUnavailableError → 502 게이트웨이 오류 매핑
+# 사이클2 Task 5: suggest가 202+백그라운드로 전환되며 예외는 요청 스레드가 아닌
+# job 실행 중 발생 — app 예외 핸들러가 응답을 이미 보낸 뒤라 502로 못 잡히므로
+# job.status="failed"/job.error 기록으로 검증 (run_ai_job의 502 비대상 주석 참조)
 
-def test_ai_endpoint_maps_unavailable_to_502(client, load_fixture):
-    """LLM 프로바이더 장애는 502 + 정규 에러 엔벨로프 — 조용한 Fake 폴백 없음."""
+def test_ai_unavailable_marks_suggest_job_failed(ai_job_client, migrated_engine, load_fixture):
+    """LLM 프로바이더 장애는 조용히 폴백하지 않고 job 실패로 기록된다."""
     from app.adapters.llm_ai import AiUnavailableError
     from app.api.ai import get_ai_client
 
-    _seed(client, load_fixture)
+    _seed(ai_job_client, load_fixture)
 
     class _DownAi:
         def judge_relations(self, candidates):
             raise AiUnavailableError("llm request failed after retries",
                                      {"url": "http://llm:11434/v1/chat/completions"})
 
-    client.app.dependency_overrides[get_ai_client] = lambda: _DownAi()
+    ai_job_client.app.dependency_overrides[get_ai_client] = lambda: _DownAi()
     try:
-        res = client.post("/api/ai/suggest-relations")
+        start = ai_job_client.post("/api/ai/suggest-relations")
+        assert start.status_code == 202
+        job = ai_job_client.get(f"/api/ai/jobs/{start.json()['job_id']}").json()
     finally:
-        client.app.dependency_overrides.pop(get_ai_client)
+        ai_job_client.app.dependency_overrides.pop(get_ai_client)
 
-    assert res.status_code == 502
-    body = res.json()["error"]
-    assert body["code"] == 502
-    assert "llm" in body["message"]
-    assert body["context"]["url"].startswith("http://llm")
+    assert job["status"] == "failed"
+    assert "llm" in job["error"]
 
 
 # Task 3 (사이클2): 판정 근거 영속 + 기각 이력
 
 
-def test_judgements_persist_reason_and_rejections(client, migrated_engine, load_fixture):
+def test_judgements_persist_reason_and_rejections(ai_job_client, migrated_engine, load_fixture):
     """수용은 candidate+reason, 기각은 rejected+reason — 재실행 자동 제외 (사이클2 §1·2)."""
     from app.api.ai import get_ai_client
     from app.adapters.ai import RelationJudgement
 
-    _seed(client, load_fixture)
+    _seed(ai_job_client, load_fixture)
 
     class _SplitAi:
         def judge_relations(self, candidates):
@@ -321,12 +342,12 @@ def test_judgements_persist_reason_and_rejections(client, migrated_engine, load_
                 ))
             return out
 
-    client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
+    ai_job_client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
     try:
-        first = client.post("/api/ai/suggest-relations").json()
-        second = client.post("/api/ai/suggest-relations").json()
+        first = _run_suggest_job(ai_job_client)
+        second = _run_suggest_job(ai_job_client)
     finally:
-        client.app.dependency_overrides.pop(get_ai_client)
+        ai_job_client.app.dependency_overrides.pop(get_ai_client)
 
     assert first["created"] > 0 and first["rejected"] > 0
 
@@ -342,7 +363,7 @@ def test_judgements_persist_reason_and_rejections(client, migrated_engine, load_
     assert second["suggested"] == 0 or second["created"] + second["rejected"] > 0  # 다음 창으로 전진
 
 
-def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_fixture):
+def test_rejected_relations_never_render_as_edges(ai_job_client, migrated_engine, load_fixture):
     """기각 relation은 그래프 엣지로 그려지지 않는다.
 
     FakeAiClient는 후보 우주(view_join ∪ 동명↔PK)를 전량 수용하므로 이 엔드포인트
@@ -352,7 +373,7 @@ def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_
     from app.api.ai import get_ai_client
     from app.adapters.ai import RelationJudgement
 
-    _seed(client, load_fixture)
+    _seed(ai_job_client, load_fixture)
 
     class _SplitAi:
         def judge_relations(self, candidates):
@@ -365,17 +386,17 @@ def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_
                 for i, c in enumerate(candidates)
             ]
 
-    client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
+    ai_job_client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
     try:
-        body = client.post("/api/ai/suggest-relations").json()
+        body = _run_suggest_job(ai_job_client)
     finally:
-        client.app.dependency_overrides.pop(get_ai_client)
+        ai_job_client.app.dependency_overrides.pop(get_ai_client)
 
     assert body["created"] > 0  # index 0은 항상 수용 — 앵커 선정 근거
     target = body["items"][0]
     _, table = target["src_object"].split(".", 1)
-    anchor = client.get("/api/objects", params={"q": table}).json()["items"][0]
-    graph = client.get(f"/api/objects/{anchor['id']}/graph?depth=3").json()
+    anchor = ai_job_client.get("/api/objects", params={"q": table}).json()["items"][0]
+    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph?depth=3").json()
     assert graph["edges"]  # 앵커에 실제 엣지가 잡힌다 — 공허 통과 방지 선행 단언
 
     with migrated_engine.connect() as conn:
@@ -387,13 +408,28 @@ def test_rejected_relations_never_render_as_edges(client, migrated_engine, load_
     assert all(e["id"] not in rejected_ids for e in graph["edges"])
 
 
-def test_ai_suggested_edges_carry_reason(client, load_fixture):
-    _seed(client, load_fixture)
-    body = client.post("/api/ai/suggest-relations").json()
+def test_ai_suggested_edges_carry_reason(ai_job_client, migrated_engine, load_fixture):
+    _seed(ai_job_client, load_fixture)
+    body = _run_suggest_job(ai_job_client)
     assert body["created"] > 0
     target = body["items"][0]
     _, table = target["src_object"].split(".", 1)
-    anchor = client.get("/api/objects", params={"q": table}).json()["items"][0]
-    graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
+    anchor = ai_job_client.get("/api/objects", params={"q": table}).json()["items"][0]
+    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph").json()
     ai_edges = [e for e in graph["edges"] if e["kind"] == "ai_suggested"]
     assert ai_edges and all(e.get("reason") for e in ai_edges)
+
+
+# 사이클2 Task 5: suggest 202 전환 — 동시 실행 가드
+
+
+def test_start_suggest_job_conflicts_with_active_job(client, migrated_engine):
+    """같은 kind(suggest)의 queued/running 잡이 있으면 새 시작은 409 (사이클2 §5)."""
+    session_factory = sessionmaker(bind=migrated_engine)
+    with session_factory() as db:
+        db.add(AiJob(kind="suggest", status="queued", progress_done=0, progress_total=1,
+                      triggered_by="test", created_at=datetime.now(UTC)))
+        db.commit()
+
+    res = client.post("/api/ai/suggest-relations")
+    assert res.status_code == 409

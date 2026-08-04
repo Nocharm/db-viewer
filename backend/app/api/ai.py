@@ -4,15 +4,15 @@ AI 출력은 사실로 저장하지 않는다 — 제안은 candidate/ai로만 �
 Phase 3 검증 큐를 거쳐야 한다 (계획 §5.2).
 """
 
+import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from app.adapters.ai import (
     AiClient,
-    CandidatePair,
     ColumnMeta,
     TableMeta,
     ValidationFacts,
@@ -22,21 +22,26 @@ from app.adapters.ai import (
 from app.api.objects import resolve_snapshot
 from app.api.validate import resolve_column_ref
 from app.config import get_settings
-from app.db import get_db
+from app.db import get_db, get_session_factory
 from app.domain import scoring
 from app.domain.confidence import Observation, compute_confidence
 from app.models import (
+    AiJob,
     AiSummary,
     CatalogColumn,
     CatalogObject,
     JoinValidationHistory,
-    Relation,
     ViewJoin,
     ViewLineageFlat,
 )
-from app.services.catalog_queries import load_pair_sets, load_scoring_columns
+from app.services.ai_jobs import has_active_job, run_ai_job
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+
+def get_ai_session_factory() -> sessionmaker:
+    """백그라운드 작업용 세션 팩토리 — 테스트 오버라이드 지점 / DI point for tests."""
+    return get_session_factory()
 
 
 def get_ai_client() -> AiClient:
@@ -123,73 +128,35 @@ def select_ai_candidates(
     return ranked[:max_pairs]
 
 
-@router.post("/suggest-relations")
-def suggest_relations(
-    snapshot_id: int | None = None,
+@router.post("/suggest-relations", status_code=202)
+def start_suggest_job(
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     ai: AiClient = Depends(get_ai_client),
+    session_factory: sessionmaker = Depends(get_ai_session_factory),
 ) -> dict:
-    """AI 관계 후보 생성 → 검증 큐 직행 (candidate/ai — confirmed 금지). / suggestions to the queue."""
-    snapshot = resolve_snapshot(db, snapshot_id)
+    """AI 관계 제안 — 202 + ai_jobs 폴링 (사이클2 §5). / async suggest."""
+    if has_active_job(db, "suggest"):
+        raise HTTPException(409, {"message": "suggest job already running", "context": {}})
+    job = AiJob(kind="suggest", status="queued", progress_done=0, progress_total=1,
+                triggered_by="ui", created_at=datetime.now(UTC))
+    db.add(job)
+    db.flush()
     settings = get_settings()
-    columns = load_scoring_columns(db, snapshot.id)
-    view_pairs, fk_pairs = load_pair_sets(db, snapshot.id)
+    background.add_task(run_ai_job, session_factory, job.id, ai, settings)
+    return {"job_id": job.id, "status": job.status}
 
-    # 기존 관계와 중복 제거(양방향) — 상한 적용 전에 걸러야 재실행마다 다음 순위
-    # 후보가 올라온다(순서가 반대면 매번 같은 상위 40건만 뽑혀 걸러진다)
-    existing: set[tuple] = set()
-    for r in db.execute(select(Relation)).scalars():
-        existing.add((r.src_object, r.src_column, r.tgt_object, r.tgt_column))
-        existing.add((r.tgt_object, r.tgt_column, r.src_object, r.src_column))
 
-    ranked = select_ai_candidates(
-        columns, view_pairs, fk_pairs,
-        settings.low_cardinality_min_distinct,
-        {b.upper() for b in settings.low_cardinality_blacklist},
-        settings.ai_suggest_max_pairs,
-        existing,
-    )
-
-    row_counts = {
-        f"{o.schema}.{o.name}": o.row_count
-        for o in db.execute(
-            select(CatalogObject).where(CatalogObject.snapshot_id == snapshot.id)
-        ).scalars()
-    }
-    pairs_meta = []
-    for src, cand in ranked:
-        tgt = cand.target
-        pairs_meta.append(CandidatePair(
-            src_object=src.object_qname, src_column=src.name,
-            src_type=src.data_type, src_is_pk=src.is_pk,
-            src_row_count=row_counts.get(src.object_qname),
-            tgt_object=tgt.object_qname, tgt_column=tgt.name,
-            tgt_type=tgt.data_type, tgt_is_pk=tgt.is_pk,
-            tgt_row_count=row_counts.get(tgt.object_qname),
-            score=cand.score, signals=sorted(cand.signals),
-        ))
-
-    judgements = ai.judge_relations(pairs_meta)
-
-    now = datetime.now(UTC)
-    created = []
-    rejected_count = 0
-    for j in judgements:
-        db.add(Relation(
-            src_object=j.src_object, src_column=j.src_column,
-            tgt_object=j.tgt_object, tgt_column=j.tgt_column,
-            status="candidate" if j.accepted else "rejected",
-            origin="ai", reason=j.reason, created_at=now,
-        ))
-        if j.accepted:
-            created.append({**key_as_dict((j.src_object, j.src_column,
-                                           j.tgt_object, j.tgt_column)),
-                            "reason": j.reason})
-        else:
-            rejected_count += 1
-    return {"snapshot_id": snapshot.id, "suggested": len(pairs_meta),
-            "created": len(created), "rejected": rejected_count,
-            "items": created[:100]}
+@router.get("/jobs/{job_id}")
+def get_ai_job(job_id: int, db: Session = Depends(get_db)) -> dict:
+    """suggest/embed_index 공용 잡 폴링. / poll job status and parsed result."""
+    job = db.get(AiJob, job_id)
+    if job is None:
+        raise HTTPException(404, {"message": "job not found", "context": {"job_id": job_id}})
+    return {"job_id": job.id, "kind": job.kind, "status": job.status,
+            "progress_done": job.progress_done, "progress_total": job.progress_total,
+            "result": json.loads(job.result) if job.result else None,
+            "error": job.error}
 
 
 def key_as_dict(key: tuple) -> dict:
