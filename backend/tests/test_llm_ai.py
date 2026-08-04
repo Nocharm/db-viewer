@@ -7,7 +7,7 @@ from urllib.error import URLError
 import pytest
 
 from app.adapters import llm_ai
-from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta
+from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta, ValidationFacts, ViewFacts
 from app.adapters.llm_ai import (
     AiUnavailableError, LlmAiClient, _extract_json, _post_chat,
     filter_search_candidates,
@@ -212,3 +212,43 @@ def test_prefilter_returns_empty_for_blank_or_underscore_query():
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
     assert filter_search_candidates("   ", tables) == []
     assert filter_search_candidates("___", tables) == []
+
+
+# Task 6: LlmAiClient.summarize_table, explain_validation, explain_view
+
+
+def test_summarize_table_sends_metadata_returns_text(captured):
+    captured["content"] = '{"text": "사원 마스터 테이블"}'
+    table = TableMeta("dbo.HR_EMP", [ColumnMeta("EMP_NO", "int", is_pk=True)], row_count=200)
+    text = _client().summarize_table(table, base_tables=["dbo.HR_ORG"])
+    assert text == "사원 마스터 테이블"
+    user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
+    assert "dbo.HR_EMP" in user_msg and "EMP_NO" in user_msg and "dbo.HR_ORG" in user_msg
+
+
+def test_explain_validation_forbids_invented_numbers_in_prompt(captured):
+    captured["content"] = '{"text": "포함률 99.0%로 사실상 FK입니다"}'
+    facts = ValidationFacts(src="dbo.A.X", tgt="dbo.B.X", containment=0.99,
+                            cardinality="1:N", orphan_count=2,
+                            observation_count=3, pattern="stable_with_orphans")
+    text = _client().explain_validation(facts)
+    assert "포함률" in text
+    user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
+    assert "0.99" in user_msg and "stable_with_orphans" in user_msg
+    assert "수치를 만들지" in user_msg  # 수치 창작 금지 지시 포함
+
+
+def test_explain_view_returns_text(captured):
+    captured["content"] = '{"text": "주문과 사원을 조인한 요약 뷰"}'
+    facts = ViewFacts(qname="dbo.V_ORD", base_tables=["dbo.T_ORD", "dbo.HR_EMP"],
+                      join_pairs=["T_ORD.EMP_NO = HR_EMP.EMP_NO"],
+                      output_columns=["ORD_NO", "EMP_NM"],
+                      definition_excerpt="SELECT ... GROUP BY ...")
+    assert _client().explain_view(facts) == "주문과 사원을 조인한 요약 뷰"
+
+
+def test_empty_text_raises(captured):
+    captured["content"] = '{"text": "  "}'
+    table = TableMeta("dbo.HR_EMP", [], row_count=None)
+    with pytest.raises(AiUnavailableError):
+        _client().summarize_table(table, base_tables=[])

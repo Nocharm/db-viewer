@@ -11,7 +11,7 @@ import math
 import urllib.request
 from urllib.error import URLError
 
-from app.adapters.ai import AiRelationSuggestion, AiTableHit, CandidatePair, TableMeta
+from app.adapters.ai import AiRelationSuggestion, AiTableHit, CandidatePair, TableMeta, ValidationFacts, ViewFacts
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,59 @@ def build_judge_prompt(candidates: list[CandidatePair]) -> str:
     )
 
 
+def _require_text(data: dict) -> str:
+    """{"text": ...} 응답 검증 — 빈 응답은 실패로 취급 / empty narration is a failure."""
+    text = data.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise AiUnavailableError("llm returned empty text", {"data": str(data)[:200]})
+    return text.strip()
+
+
+def build_summary_prompt(table: TableMeta, base_tables: list[str]) -> str:
+    """테이블 메타 → 요약 프롬프트 (순수 함수) / table metadata to summary prompt."""
+    payload = {
+        "qname": table.qname, "row_count": table.row_count,
+        "columns": [{"name": c.name, "type": c.data_type, "pk": c.is_pk}
+                    for c in table.columns],
+        "base_tables": base_tables,
+    }
+    return (
+        "다음 테이블(또는 뷰)의 업무 도메인을 추정해 한 문장으로 요약하라.\n"
+        '출력 스키마: {"text": "<한국어 한 문장>"}\n\n'
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def build_validation_prompt(facts: ValidationFacts) -> str:
+    """검증 팩트 → 판정 프롬프트 (순수 함수) / validation facts to interpretation prompt."""
+    payload = {
+        "src": facts.src, "tgt": facts.tgt, "containment": facts.containment,
+        "cardinality": facts.cardinality, "orphan_count": facts.orphan_count,
+        "observation_count": facts.observation_count, "pattern": facts.pattern,
+    }
+    return (
+        "다음 조인 검증 관측 통계를 자연어로 진단하라. "
+        "payload의 수치만 인용하고 새 수치를 만들지 마라.\n"
+        '출력 스키마: {"text": "<한국어 2~3문장>"}\n\n'
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def build_view_prompt(facts: ViewFacts) -> str:
+    """뷰 팩트 → 설명 프롬프트 (순수 함수) / view facts to explanation prompt."""
+    payload = {
+        "qname": facts.qname, "base_tables": facts.base_tables,
+        "join_pairs": facts.join_pairs, "output_columns": facts.output_columns,
+        "definition_excerpt": facts.definition_excerpt,
+    }
+    return (
+        "다음 뷰가 어떤 데이터를 어떻게 만드는지 설명하라. "
+        "원천 테이블·조인 조건·출력 컬럼을 근거로 삼아라.\n"
+        '출력 스키마: {"text": "<한국어 2~3문장>"}\n\n'
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
 class LlmAiClient:
     """OpenAI 호환 서버 위 AiClient 구현 — 프롬프트는 순수 빌더로 분리."""
 
@@ -210,3 +263,15 @@ class LlmAiClient:
                                    reason=str(item.get("reason") or "")))
         hits.sort(key=lambda h: (-h.score, h.qname))
         return hits[:SEARCH_RESULT_LIMIT]
+
+    def summarize_table(self, table: TableMeta, base_tables: list[str]) -> str:
+        """테이블 메타로 한 문장 요약 / generates business-domain summary."""
+        return _require_text(self._chat(build_summary_prompt(table, base_tables)))
+
+    def explain_validation(self, facts: ValidationFacts) -> str:
+        """검증 통계로 조인 가능성 진단 / interprets validation findings."""
+        return _require_text(self._chat(build_validation_prompt(facts)))
+
+    def explain_view(self, facts: ViewFacts) -> str:
+        """뷰 메타로 기능 설명 / explains view definition and purpose."""
+        return _require_text(self._chat(build_view_prompt(facts)))

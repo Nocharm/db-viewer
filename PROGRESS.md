@@ -4,7 +4,7 @@
 
 ## 2026-08-05
 
-- **AI LLM 클라이언트 구현 — Task 5: LlmAiClient.search_tables** — 사용자 질의 → 테이블 재랭크 탐색: 상수 3종(`SEARCH_PREFILTER_LIMIT=50`, `SEARCH_RESULT_LIMIT=20`, `SEARCH_COLUMNS_PER_TABLE=12`), 유틸함수 3종(`_normalize()`, `filter_search_candidates()`, `build_search_prompt()`), `LlmAiClient.search_tables()`(프리필터·LLM 판정·환각 차단·점수 정규화). TDD로 진행: 4개 테스트(이름·컬럼 매칭·결과 상한·재랭크 + 환각 차단·빈 프리필터 스킵) → RED → 구현 → GREEN. 전체 스위트 172 PASS + ruff 클린. (구현 중 — Task 5/8)
+- **AI LLM 클라이언트 구현 — Task 6: 요약·검증 해석·뷰 해석** — `LlmAiClient` 메서드 3종 신설: `summarize_table(table, base_tables)`(테이블 요약 생성), `explain_validation(facts)`(검증 통계 진단), `explain_view(facts)`(뷰 정의 설명). 각 메서드는 프롬프트 빌더(`build_summary_prompt`, `build_validation_prompt`, `build_view_prompt`) + `_require_text()`(빈 응답 방지)로 구성. 프롬프트는 **메타데이터만**(TableMeta/ValidationFacts/ViewFacts) — 원본 값 금지, explain_validation은 "payload의 수치만 인용하고 새 수치를 만들지 마라" 지시 포함. TDD: 4개 테스트(요약 전달·검증 수치금지·뷰 반환·빈응답 실패) → RED → 구현 → GREEN. 전체 스위트 178 PASS, 1 SKIPPED + ruff 클린. (구현 중 — Task 6/8)
 - **AI LLM 클라이언트 구현 — Task 4: LlmAiClient.judge_relations** — 후보 페어를 LLM이 판정하는 핵심 메서드 구현: `_SYSTEM_PROMPT`(JSON-only·한국어 고정), `build_judge_prompt()`(메타데이터 → 프롬프트 순수함수), `LlmAiClient.judge_relations()`(환각 인덱스 필터·타입 검증·accepted만 반환). TDD로 진행: 3개 테스트(메타데이터 판정·환각방어·빈입력 스킵) → RED → 구현 → GREEN → ruff 클린. 구현 후속 작업 5~8(search/summarize 등)은 같은 클래스에 메서드 추가.
 
 ## 2026-08-04
