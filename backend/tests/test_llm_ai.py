@@ -22,6 +22,11 @@ def test_ai_settings_defaults():
     assert s.ai_api_key == ""
     assert s.ai_timeout == 60
     assert s.ai_suggest_max_pairs == 40
+    # Task 7: embedding settings
+    assert s.ai_embed_model == ""
+    assert s.ai_embed_batch == 32
+    assert s.ai_embed_job_cap == 1000
+    assert s.ai_embed_sleep_ms == 500
 
 
 class _FakeResponse(io.BytesIO):
@@ -296,6 +301,143 @@ def test_empty_text_raises(captured):
     table = TableMeta("dbo.HR_EMP", [], row_count=None)
     with pytest.raises(AiUnavailableError):
         _client().summarize_table(table, base_tables=[])
+
+
+# Task 7: cosine_similarity and embed_texts
+
+
+def test_cosine_similarity_identical_vectors():
+    """벡터가 같으면 1.0 반환 / identical vectors return 1.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) == 1.0
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    """직교 벡터는 0.0 반환 / orthogonal vectors return 0.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+
+def test_cosine_similarity_opposite_vectors():
+    """반대 방향 벡터는 -1.0 반환 / opposite vectors return -1.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == -1.0
+
+
+def test_cosine_similarity_length_mismatch_returns_zero():
+    """길이 불일치는 0.0 반환 / length mismatch returns 0.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([1.0, 2.0], [3.0, 4.0, 5.0]) == 0.0
+
+
+def test_cosine_similarity_zero_vector_returns_zero():
+    """영벡터는 0.0 반환 / zero vector returns 0.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+
+def test_cosine_similarity_empty_vectors_returns_zero():
+    """빈 벡터는 0.0 반환 / empty vectors return 0.0."""
+    from app.adapters.llm_ai import cosine_similarity
+    assert cosine_similarity([], []) == 0.0
+
+
+def _embed_response(embeddings: list[list[float]], indices: list[int] | None = None) -> bytes:
+    """임베딩 응답 생성 — index 순 섞음 가능 / generate embeddings response, indices can be shuffled."""
+    if indices is None:
+        indices = list(range(len(embeddings)))
+    data = [{"index": i, "embedding": emb} for i, emb in zip(indices, embeddings)]
+    return json.dumps({"data": data}).encode()
+
+
+@pytest.fixture()
+def embed_captured(monkeypatch):
+    """urlopen 가로채 임베딩 요청 기록 + 준비된 응답 반환 / capture embeddings request, return canned reply."""
+    calls: dict = {"requests": [], "response": _embed_response([[0.1, 0.2]])}
+
+    def fake_urlopen(request, timeout=None):
+        calls["requests"].append(request)
+        calls["timeout"] = timeout
+        return _FakeResponse(calls["response"])
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", fake_urlopen)
+    return calls
+
+
+def test_embed_texts_success(embed_captured):
+    """임베딩 요청 성공 시 벡터 리스트 반환 / successful embeddings request returns vector list."""
+    from app.adapters.llm_ai import embed_texts
+    embed_captured["response"] = _embed_response([
+        [0.1, 0.2],
+        [0.3, 0.4],
+        [0.5, 0.6],
+    ])
+    result = embed_texts("http://llm:11434/v1", "embed-model", "sk-key", 30,
+                         ["text1", "text2", "text3"])
+    assert len(result) == 3
+    assert result[0] == [0.1, 0.2]
+    assert result[2] == [0.5, 0.6]
+    # 요청 검증
+    req = embed_captured["requests"][0]
+    assert req.full_url == "http://llm:11434/v1/embeddings"
+    assert req.get_header("Authorization") == "Bearer sk-key"
+    body = json.loads(req.data.decode())
+    assert body["model"] == "embed-model"
+    assert body["input"] == ["text1", "text2", "text3"]
+
+
+def test_embed_texts_reorders_by_index():
+    """서버가 역순 반환 시 index로 정렬 / reorder by index if server returns out-of-order."""
+    from app.adapters.llm_ai import embed_texts
+    monkeypatch = pytest.MonkeyPatch()
+    calls: dict = {"requests": [], "response": _embed_response(
+        [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+        indices=[2, 0, 1]  # 역순
+    )}
+
+    def fake_urlopen(request, timeout=None):
+        calls["requests"].append(request)
+        return _FakeResponse(calls["response"])
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", fake_urlopen)
+
+    result = embed_texts("http://llm:11434/v1", "model", "key", 30, ["a", "b", "c"])
+    # index 0, 1, 2 순으로 정렬되어야 함
+    assert result[0] == [0.3, 0.4]  # index 0
+    assert result[1] == [0.5, 0.6]  # index 1
+    assert result[2] == [0.1, 0.2]  # index 2
+
+
+def test_embed_texts_mismatch_count_raises(embed_captured):
+    """응답 개수 불일치 시 raise / raise on count mismatch."""
+    from app.adapters.llm_ai import embed_texts, AiUnavailableError
+    embed_captured["response"] = _embed_response([[0.1, 0.2], [0.3, 0.4]])  # 2개만
+    with pytest.raises(AiUnavailableError):
+        embed_texts("http://llm:11434/v1", "model", "key", 30, ["a", "b", "c"])  # 3개 요청
+
+
+def test_embed_texts_retries_on_timeout(monkeypatch):
+    """타임아웃 시 재시도 후 raise / retry on timeout then raise."""
+    from app.adapters.llm_ai import embed_texts, AiUnavailableError
+    attempts = []
+
+    def failing_urlopen(request, timeout=None):
+        attempts.append(1)
+        raise TimeoutError("connection timeout")
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", failing_urlopen)
+    with pytest.raises(AiUnavailableError):
+        embed_texts("http://llm:11434/v1", "model", "key", 30, ["text"])
+    assert len(attempts) == 2  # 1회 재시도 후 포기
+
+
+def test_embed_texts_omits_auth_without_key(embed_captured):
+    """API 키 없으면 Authorization 헤더 생략 / omit auth header without key."""
+    from app.adapters.llm_ai import embed_texts
+    embed_captured["response"] = _embed_response([[0.1, 0.2]])
+    embed_texts("http://llm:11434/v1", "model", "", 30, ["text"])
+    req = embed_captured["requests"][0]
+    assert req.get_header("Authorization") is None
 
 
 # Task 7: create_ai_client 스위치

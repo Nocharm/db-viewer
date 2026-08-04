@@ -293,3 +293,47 @@ class LlmAiClient:
     def explain_view(self, facts: ViewFacts) -> str:
         """뷰 메타로 기능 설명 / explains view definition and purpose."""
         return _require_text(self._chat(build_view_prompt(facts)))
+
+
+def embed_texts(base_url: str, model: str, api_key: str, timeout: int,
+                texts: list[str]) -> list[list[float]]:
+    """OpenAI 호환 /embeddings 1회 호출 — 배치 입력 / one embeddings call, batched input."""
+    url = f"{base_url.rstrip('/')}/embeddings"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(
+        url, data=json.dumps({"model": model, "input": texts},
+                             ensure_ascii=False).encode(),
+        headers=headers, method="POST",
+    )
+    last_error: Exception | None = None
+    for attempt in range(RETRY_COUNT + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode())
+            data = payload["data"]
+            if not isinstance(data, list) or len(data) != len(texts):
+                raise KeyError("embeddings count mismatch")
+            # index 순 정렬 — 서버가 순서를 보장하지 않을 수 있다
+            data = sorted(data, key=lambda d: d["index"])
+            return [[float(x) for x in d["embedding"]] for d in data]
+        except (URLError, TimeoutError, KeyError, IndexError, TypeError,
+                ValueError, json.JSONDecodeError) as e:
+            last_error = e
+            logger.warning("embeddings attempt failed",
+                           extra={"url": url, "model": model, "attempt": attempt})
+    raise AiUnavailableError("embeddings request failed after retries",
+                             {"url": url, "model": model, "cause": str(last_error)})
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """순수 파이썬 코사인 — 의존성 0 / dependency-free cosine."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
