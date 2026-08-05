@@ -348,6 +348,14 @@ export const MESSAGES = {
   "join.numbersConfidence": { ko: "confidence", en: "confidence" },
   "join.numbersObserved": { ko: "관측 {n}회", en: "observed {n} times" },
   "join.numbersLastVerified": { ko: "last verified", en: "last verified" },
+  "join.dropRejected": { ko: "연결할 수 없습니다 — {reason}", en: "Cannot connect — {reason}" },
+  "join.findHidden": { ko: "숨은 짝 찾기", en: "Find hidden matches" },
+  "join.findHiddenHint": {
+    ko: "이름이 달라도 값이 겹치는 컬럼을 전수 조사합니다 (백그라운드)",
+    en: "Scans every column for value overlap regardless of name (background)",
+  },
+  "join.scanRunning": { ko: "찾는 중 ({done}/{total})", en: "Scanning ({done}/{total})" },
+  "join.scanNone": { ko: "짝이 될 만한 컬럼을 찾지 못했습니다", en: "No matching columns found" },
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;

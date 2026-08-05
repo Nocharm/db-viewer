@@ -160,11 +160,11 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
                   data.onSelectColumn(col.id, col.name, `${node.schema}.${node.name}`)}
                 data-testid={`ErdNode-columnRow-${col.id}`}
               >
-                {/* 매칭 컬럼 행에 선이 직접 붙는다 / edges dock at the matching row */}
+                {/* 컬럼 행이 조인 드래그의 출발·도착점 / column rows are join endpoints */}
                 <Handle type="target" position={Position.Left} id={`t-${col.name}`}
-                        style={HANDLE_STYLE} />
+                        isConnectable style={HANDLE_STYLE} />
                 <Handle type="source" position={Position.Right} id={`s-${col.name}`}
-                        style={HANDLE_STYLE} />
+                        isConnectable style={HANDLE_STYLE} />
                 <span className="truncate">
                   {col.is_pk && <span className="pk-mark">PK</span>}
                   {col.name}

@@ -11,21 +11,29 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
-import type { Edge, NodeChange } from "@xyflow/react";
+import type { Connection, Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
-import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
+import {
+  fetchCandidates, fetchGraph, fetchObjectPreview, runContainment, type TablePreview,
+} from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
 import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
+import {
+  addStep, canAddStep, EMPTY_DRAFT, removeStep, setStepJoinType, setStepResult,
+  type JoinColumnRef, type JoinDraft, type JoinType,
+} from "@/lib/join-draft";
+import { getJoinVerdict } from "@/lib/join-verdict";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
+import { JoinBuilder } from "@/components/erd/JoinBuilder";
 import { TableNode, type TableFlowNode } from "./TableNode";
 import { Legend } from "./Legend";
 
@@ -104,6 +112,11 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   }, []);
   // 임계 초과 확인 대기 — 값은 켰을 때 그려질 노드 수 / node count awaiting confirmation
   const [pendingViews, setPendingViews] = useState<number | null>(null);
+  const [draft, setDraft] = useState<JoinDraft>(EMPTY_DRAFT);
+  // 드래그 중 추천 컬럼 — T1 후보를 노드별로 묶어 하이라이트 / T1 candidates while dragging
+  const [dragHint, setDragHint] = useState<Map<number, string[]> | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
+  const dragOriginRef = useRef<JoinColumnRef | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
   // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
@@ -131,6 +144,81 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   // setCenter before ReactFlow init is lost on fresh mounts; defer until onInit
   const flowReadyRef = useRef(false);
   const pendingCenterRef = useRef<{ x: number; y: number } | null>(null);
+
+  /** 핸들 id("s-COL"/"t-COL")와 노드 id로 컬럼 참조를 만든다 / resolve a handle to a column ref. */
+  const resolveHandle = useCallback(
+    (nodeId: string | null, handleId: string | null): JoinColumnRef | null => {
+      if (!nodeId || !handleId || !graph) return null;
+      const objectId = Number(nodeId);
+      const node = graph.nodes.find((n) => n.id === objectId);
+      if (!node) return null;
+      const columnName = handleId.slice(2); // "s-" / "t-" 접두 제거
+      const column = node.columns.find((c) => c.name === columnName);
+      if (!column) return null;
+      return {
+        objectId,
+        qname: `${node.schema}.${node.name}`,
+        columnId: column.id,
+        column: column.name,
+      };
+    },
+    [graph],
+  );
+
+  const handleConnectStart = useCallback(
+    (_event: unknown, params: { nodeId: string | null; handleId: string | null }) => {
+      setDropError(null);
+      const origin = resolveHandle(params.nodeId, params.handleId);
+      dragOriginRef.current = origin;
+      if (!origin || !graph) return;
+      // 드래그 시작 즉시 T1 후보 → 노드별 컬럼명으로 접어 하이라이트
+      void fetchCandidates(origin.columnId)
+        .then((res) => {
+          const byNode = new Map<number, string[]>();
+          for (const candidate of res.candidates) {
+            const node = graph.nodes.find(
+              (n) => `${n.schema}.${n.name}` === candidate.object);
+            if (!node) continue;
+            byNode.set(node.id, [...(byNode.get(node.id) ?? []), candidate.column]);
+          }
+          setDragHint(byNode);
+        })
+        .catch(() => setDragHint(new Map()));
+    },
+    [graph, resolveHandle],
+  );
+
+  const handleConnectEnd = useCallback(() => {
+    dragOriginRef.current = null;
+    setDragHint(null);
+  }, []);
+
+  // 부작용은 updater 밖에서 실행한다 — StrictMode가 updater를 두 번 호출해,
+  // 안에 두면 runContainment(실 DB 질의)가 드롭마다 두 번 나간다.
+  // side effects stay out of the setDraft updater — StrictMode double-invokes updaters,
+  // and this one fires a live query against the source database.
+  const handleConnect = useCallback((connection: Connection) => {
+    const left = resolveHandle(connection.source, connection.sourceHandle);
+    const right = resolveHandle(connection.target, connection.targetHandle);
+    if (!left || !right) return;
+    const check = canAddStep(draft, left, right);
+    if (!check.ok) {
+      setDropError(t("join.dropRejected").replace("{reason}", check.reason));
+      return;
+    }
+    setDropError(null);
+    const index = draft.steps.length; // addStep appends, so this is the new step's index
+    setDraft((current) => addStep(current, left, right));
+    // 드롭 즉시 T2 자동 실행 — 단일 페어라 기존 검증과 같은 비용
+    void runContainment(left.columnId, right.columnId)
+      .then((result) => setDraft((latest) =>
+        setStepResult(latest, index, "ready", result, getJoinVerdict(result, null))))
+      .catch((e: Error) => {
+        const noData = e.message.includes("no value data");
+        setDraft((latest) => setStepResult(
+          latest, index, noData ? "no_data" : "failed", null, getJoinVerdict(null, null)));
+      });
+  }, [draft, resolveHandle, t]);
 
   const centerOn = useCallback((x: number, y: number) => {
     if (!flowReadyRef.current) {
@@ -403,13 +491,16 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
 
   // 강조 상태를 렌더에만 입힌다 — ELK 재배치 없이 / emphasis decorates render only, no relayout
   const displayNodes = useMemo(() => {
-    if (!emphasis) return flowNodes;
+    if (!emphasis && !dragHint) return flowNodes;
     return flowNodes.map((n) => {
-      const columns = emphasis.columnsByNode.get(Number(n.id)) ?? null;
+      // 드래그 중에는 조인 추천이 호버 강조를 덮는다 / drag hints win over hover emphasis
+      const columns = dragHint
+        ? (dragHint.get(Number(n.id)) ?? null)
+        : (emphasis?.columnsByNode.get(Number(n.id)) ?? null);
       if (columns === null && n.data.highlightColumns === null) return n;
       return { ...n, data: { ...n.data, highlightColumns: columns } };
     });
-  }, [flowNodes, emphasis]);
+  }, [flowNodes, emphasis, dragHint]);
 
   // 엣지 핸들은 스크롤에 따라 바뀐다 — ELK 재배치 없이 렌더 단계에서만 해석한다
   // handles depend on scroll position; resolved at render, never triggering a relayout
@@ -504,8 +595,18 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         onPaneClick={() => setMenu(null)}
         onEdgeMouseEnter={(_, edge) => buildEdgeEmphasis(edge.id)}
         onEdgeMouseLeave={() => { setEmphasis(null); setEdgeReason(null); }}
-        onNodeMouseEnter={(_, node) => buildNodeEmphasis(Number(node.id))}
+        onNodeMouseEnter={(_event, node) => {
+          buildNodeEmphasis(Number(node.id));
+          // 드래그 중 접힌 노드에 들어오면 자동으로 펼쳐 컬럼 행을 드롭 대상으로 만든다
+          // auto-expand a folded node under an active drag so its rows become drop targets
+          if (!dragOriginRef.current) return;
+          const id = Number(node.id);
+          if (!expandedNodes.has(id)) toggleNode(id);
+        }}
         onNodeMouseLeave={() => setEmphasis(null)}
+        onConnectStart={handleConnectStart}
+        onConnect={handleConnect}
+        onConnectEnd={handleConnectEnd}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {
@@ -521,6 +622,26 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         <Controls />
       </ReactFlow>
       <Legend />
+
+      {dropError && (
+        <div
+          className="absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-lg border px-3 py-1.5 text-xs"
+          style={{ borderColor: "var(--error)", background: "var(--surface-card)",
+                   color: "var(--error)" }}
+          data-testid="ErdCanvas-dropError"
+        >
+          {dropError}
+        </div>
+      )}
+      <JoinBuilder
+        draft={draft}
+        onRemoveStep={(index) => setDraft((current) => removeStep(current, index))}
+        onSetJoinType={(index: number, joinType: JoinType) =>
+          setDraft((current) => setStepJoinType(current, index, joinType))}
+        onClear={() => setDraft(EMPTY_DRAFT)}
+        onPreview={() => undefined}
+        previewBusy={false}
+      />
 
       {/* 그래프 계산 배지 — 확장·레이아웃 대기 표시 / graph-busy badge */}
       {graphBusy && (
