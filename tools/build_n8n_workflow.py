@@ -101,10 +101,16 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
     }
     const lq = alias[key(st.left_schema, st.left_table)];
     const rq = alias[key(st.right_schema, st.right_table)];
+    // 별칭에 스키마까지 넣는다 — 테이블명만 쓰면 다른 스키마의 동명 테이블(예:
+    // ATM.PI_x / SAP.PI_x)을 함께 조인할 때 별칭이 겹쳐 JSON 행에서 한쪽 값이
+    // 다른 쪽을 덮어쓴다(마스킹 이전에 데이터 자체가 틀려지는 문제).
+    // schema-qualify the alias — a bare table name collides when two schemas
+    // share a table name (e.g. ATM.PI_x / SAP.PI_x), and the JSON row silently
+    // loses one side's value to the other.
     select.push(lq + '.' + esc(st.left_column) + ' AS ' +
-      esc(st.left_table + '.' + st.left_column));
+      esc(st.left_schema + '.' + st.left_table + '.' + st.left_column));
     select.push(rq + '.' + esc(st.right_column) + ' AS ' +
-      esc(st.right_table + '.' + st.right_column));
+      esc(st.right_schema + '.' + st.right_table + '.' + st.right_column));
   }
   query = 'SELECT TOP ' + limit + ' ' + select.join(', ') + ' FROM ' + from.join(' ');
 } else if (b.kind === 'table_preview') {

@@ -194,6 +194,30 @@ def test_multi_join_preview_predicate_lands_on_the_owning_clause() -> None:
     assert from_clause == expected_from, from_clause
 
 
+def test_multi_join_preview_aliases_stay_distinct_across_schemas() -> None:
+    """스키마가 다른 동명 테이블(예: ATM.PI_X / SAP.PI_X)을 조인하면 별칭이 충돌해
+    JSON 행에서 한쪽 값이 다른 쪽을 덮어쓴다 — 마스킹 이전에 데이터 자체가 틀려지는
+    문제라, 별칭에 스키마까지 포함해 구분되는지를 실제 실행으로 검증한다(문자열
+    검사만으로는 별칭이 진짜 갈리는지 확인 불가)."""
+    if NODE_BIN is None:
+        pytest.fail(
+            "node runtime is required to execute the generated Build query JS — "
+            "alias collision is only observable in the actual query text"
+        )
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    steps = [{
+        "left_schema": "ATM", "left_table": "PI_X", "left_column": "ID",
+        "right_schema": "SAP", "right_table": "PI_X", "right_column": "ID",
+        "join_type": "inner",
+    }]
+    query = _run_build_query_js(js, {"kind": "multi_join_preview", "steps": steps})
+    select_clause = query.split(" FROM ", 1)[0]
+    aliases = re.findall(r"AS \[([^\]]+)\]", select_clause)
+    assert aliases == ["ATM.PI_X.ID", "SAP.PI_X.ID"]
+    assert len(set(aliases)) == len(aliases)
+
+
 def test_w2_returns_the_executed_sql_with_the_rows() -> None:
     """실행문을 응답에 실어 보낸다 — 화면이 진짜 돌아간 SQL을 보여줄 수 있게."""
     wf = _load(W2_PATH)

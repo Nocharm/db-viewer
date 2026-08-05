@@ -4,7 +4,8 @@ import pytest
 import sqlalchemy as sa
 
 from app.api.validate import get_join_validator
-from app.models import Base
+from app.domain.validation import JoinStepRef
+from app.models import AuditLog, Base
 
 # 픽스처의 실제 FK — fixtures/catalog.json: FK_HR_EMP_FAMILY_HR_EMP
 LEFT = ("dbo.HR_EMP_FAMILY", "EMP_NO")
@@ -121,6 +122,28 @@ def test_writes_an_audit_log(jclient, migrated_engine, load_fixture):
     with migrated_engine.connect() as conn:
         actions = conn.execute(sa.select(audit_t.c.action)).scalars().all()
     assert "join_preview" in actions
+
+
+def test_bounds_the_audit_detail_to_the_column_length():
+    """8스텝 최대 조인 + MSSQL 식별자 상한(128자)로도 detail이 컬럼 길이를 넘지 않아야
+    한다 — Postgres는 VARCHAR 길이를 커밋 시 강제해 넘치면 500이 된다(SQLite는
+    강제하지 않아 테스트에서 이 결함이 안 잡혔었다)."""
+    from app.api.join_preview import _build_audit_detail
+
+    long_name = "x" * 128  # MSSQL 식별자 최대 길이
+    refs = [
+        JoinStepRef(
+            left_schema=long_name, left_table=long_name, left_column=long_name,
+            right_schema=long_name, right_table=long_name, right_column=long_name,
+            join_type="inner",
+        )
+        for _ in range(8)
+    ]
+    # 하드코딩 대신 모델에서 직접 읽는다 — 컬럼을 나중에 넓혀도 이 값이 조용히 안 맞아지지 않게
+    limit = AuditLog.__table__.c.detail.type.length
+    detail = _build_audit_detail(refs, row_count=20)
+    assert len(detail) <= limit
+    assert "8 steps" in detail and "20 rows" in detail
 
 
 def test_reports_503_when_the_source_is_synthetic(client, migrated_engine, load_fixture):
