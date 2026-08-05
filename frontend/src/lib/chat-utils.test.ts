@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { buildChatHistory, CHAT_HISTORY_LIMIT, type ChatMessage } from "./chat-utils";
+import {
+  buildChatHistory, CHAT_HISTORY_LIMIT, loadChatSession, saveChatSession, type ChatMessage,
+} from "./chat-utils";
 
 function makeMessages(count: number): ChatMessage[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -36,5 +38,17 @@ describe("buildChatHistory", () => {
       { role: "assistant", content: "msg-1" },
       { role: "user", content: "msg-2" },
     ]);
+  });
+});
+
+describe("loadChatSession / saveChatSession", () => {
+  it("starts empty before any save", () => {
+    expect(loadChatSession()).toEqual({ messages: [], mock: false });
+  });
+
+  it("round-trips messages and mock through save/load", () => {
+    const messages = makeMessages(2);
+    saveChatSession(messages, true);
+    expect(loadChatSession()).toEqual({ messages, mock: true });
   });
 });

@@ -7,16 +7,18 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { chatAi, searchObjects } from "@/lib/api";
-import { buildChatHistory, type ChatMessage } from "@/lib/chat-utils";
+import { buildChatHistory, loadChatSession, saveChatSession, type ChatMessage } from "@/lib/chat-utils";
 
 export function ChatPanel() {
   const { t } = useI18n();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // 모듈 스코프 세션 캐시로 하이드레이트 — AppHeader가 페이지마다 재마운트돼도 대화 유지
+  // hydrate from the module-scope cache so a per-page AppHeader remount keeps the conversation
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatSession().messages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mock, setMock] = useState(false);
+  const [mock, setMock] = useState(() => loadChatSession().mock);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -25,14 +27,17 @@ export function ChatPanel() {
     if (question.length < 2 || busy) return;
     const next: ChatMessage[] = [...messages, { role: "user", content: question }];
     setMessages(next);
+    saveChatSession(next, mock);
     setInput("");
     setBusy(true);
     setError(null);
     chatAi(question, buildChatHistory(messages))
       .then((res) => {
         setMock(res.mock);
-        setMessages([...next,
-          { role: "assistant", content: res.answer, tables: res.tables }]);
+        const withAnswer: ChatMessage[] = [...next,
+          { role: "assistant", content: res.answer, tables: res.tables }];
+        setMessages(withAnswer);
+        saveChatSession(withAnswer, res.mock);
         // 새 답변으로 스크롤 / scroll to the newest answer
         requestAnimationFrame(() =>
           listRef.current?.scrollTo({ top: listRef.current.scrollHeight }));
@@ -113,7 +118,9 @@ export function ChatPanel() {
                    value={input}
                    placeholder={t("chat.placeholder")}
                    onChange={(e) => setInput(e.target.value)}
-                   onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+                   onKeyDown={(e) => {
+                     if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
+                   }}
                    data-testid="ChatPanel-input" />
             <button className="btn-secondary !py-1 text-xs" onClick={send}
                     disabled={busy || input.trim().length < 2}

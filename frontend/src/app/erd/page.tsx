@@ -35,6 +35,13 @@ function ErdPageInner() {
   const params = useSearchParams();
   const [anchor, setAnchor] = useState<ObjectSummary | null>(() =>
     anchorFromParams(params.get("anchor"), params.get("label")));
+  // 같은 라우트 내 딥링크 갱신(챗 칩 등) — router.push는 리마운트하지 않아 params를 직접 구독
+  // re-sync when the query string changes without a remount (e.g. a chat table chip push)
+  useEffect(() => {
+    const next = anchorFromParams(params.get("anchor"), params.get("label"));
+    if (!next) return;
+    setAnchor((cur) => (cur?.id === next.id ? cur : next));
+  }, [params]);
   // 브라우저 컬럼 칩 딥링크 → 조인 검증 패널 자동 오픈 / auto-open the validation panel
   const [selectedColumn, setSelectedColumn] = useState<SelectedColumn | null>(() => {
     const columnId = params.get("col");
