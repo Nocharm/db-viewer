@@ -2,6 +2,7 @@
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import String
 
 from app.api.validate import get_join_validator
 from app.domain.validation import JoinStepRef
@@ -128,7 +129,7 @@ def test_bounds_the_audit_detail_to_the_column_length():
     """8스텝 최대 조인 + MSSQL 식별자 상한(128자)로도 detail이 컬럼 길이를 넘지 않아야
     한다 — Postgres는 VARCHAR 길이를 커밋 시 강제해 넘치면 500이 된다(SQLite는
     강제하지 않아 테스트에서 이 결함이 안 잡혔었다)."""
-    from app.api.join_preview import _build_audit_detail
+    from app.api.join_preview import _TRUNCATION_MARKER, _build_audit_detail
 
     long_name = "x" * 128  # MSSQL 식별자 최대 길이
     refs = [
@@ -139,11 +140,17 @@ def test_bounds_the_audit_detail_to_the_column_length():
         )
         for _ in range(8)
     ]
-    # 하드코딩 대신 모델에서 직접 읽는다 — 컬럼을 나중에 넓혀도 이 값이 조용히 안 맞아지지 않게
-    limit = AuditLog.__table__.c.detail.type.length
+    # 하드코딩 대신 모델에서 직접 읽는다 — 컬럼을 나중에 넓혀도 이 값이 조용히 안 맞아지지 않게.
+    # Column.type은 TypeEngine[Any]로 타입 지정돼 .length가 안 보인다 — join_preview.py의
+    # isinstance 좁히기와 같은 패턴 적용 (narrows the generic TypeEngine to String).
+    detail_type = AuditLog.__table__.c.detail.type
+    assert isinstance(detail_type, String) and detail_type.length is not None
+    limit = detail_type.length
     detail = _build_audit_detail(refs, row_count=20)
     assert len(detail) <= limit
     assert "8 steps" in detail and "20 rows" in detail
+    # 마커가 빠지면 잘린 경로가 안 잘린 것처럼 보인다 — 절단 표시 자체를 회귀 감시
+    assert _TRUNCATION_MARKER in detail
 
 
 def test_reports_503_when_the_source_is_synthetic(client, migrated_engine, load_fixture):
