@@ -349,6 +349,13 @@ export const MESSAGES = {
   "join.numbersObserved": { ko: "관측 {n}회", en: "observed {n} times" },
   "join.numbersLastVerified": { ko: "last verified", en: "last verified" },
   "join.dropRejected": { ko: "연결할 수 없습니다 — {reason}", en: "Cannot connect — {reason}" },
+  "join.rejectSameTable": { ko: "같은 테이블끼리는 연결할 수 없습니다", en: "Cannot connect a table to itself" },
+  "join.rejectStepCap": { ko: "조인은 최대 {max}단계까지입니다", en: "Joins are limited to {max} steps" },
+  "join.rejectDuplicate": { ko: "이미 추가된 조인입니다", en: "This join was already added" },
+  "join.rejectDisconnected": {
+    ko: "기존 조인과 이어지지 않습니다 — 한쪽은 이미 들어온 테이블이어야 합니다",
+    en: "Doesn't connect to the existing join — one side must already be in the draft",
+  },
   "join.findHidden": { ko: "숨은 짝 찾기", en: "Find hidden matches" },
   "join.findHiddenHint": {
     ko: "이름이 달라도 값이 겹치는 컬럼을 전수 조사합니다 (백그라운드)",

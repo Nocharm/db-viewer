@@ -28,9 +28,10 @@ import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-m
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import {
   addStep, canAddStep, EMPTY_DRAFT, removeStep, setStepJoinType, setStepResult,
-  type JoinColumnRef, type JoinDraft, type JoinType,
+  type CanAddFailureReason, type JoinColumnRef, type JoinDraft, type JoinType,
 } from "@/lib/join-draft";
 import { getJoinVerdict } from "@/lib/join-verdict";
+import type { MessageKey } from "@/lib/i18n";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { JoinBuilder } from "@/components/erd/JoinBuilder";
@@ -47,6 +48,14 @@ interface Props {
 
 // 빈 캔버스 가이드용 예시 앵커 / quick-start suggestions for the empty state
 const QUICK_START_ANCHORS = ["HR_EMP", "ORD_SO_HDR", "MES_BATCH_HDR", "V_CHAIN_05"];
+
+// canAddStep의 코드형 거절 사유 → i18n 키 / rejection code from canAddStep to its i18n key
+const REJECT_REASON_KEY: Record<CanAddFailureReason, MessageKey> = {
+  same_table: "join.rejectSameTable",
+  step_cap: "join.rejectStepCap",
+  duplicate: "join.rejectDuplicate",
+  disconnected: "join.rejectDisconnected",
+};
 
 interface MenuState {
   type: "node" | "pane";
@@ -174,6 +183,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       // 드래그 시작 즉시 T1 후보 → 노드별 컬럼명으로 접어 하이라이트
       void fetchCandidates(origin.columnId)
         .then((res) => {
+          // 드래그가 끝났거나 다른 컬럼으로 옮겨간 뒤 도착한 응답은 버린다 — 아니면 유휴 캔버스에
+          // 지울 수 없는 낡은 하이라이트가 남는다 / drop late responses so they can't paint
+          // stale highlights onto an ended (or since-moved) drag
+          if (dragOriginRef.current?.columnId !== origin.columnId) return;
           const byNode = new Map<number, string[]>();
           for (const candidate of res.candidates) {
             const node = graph.nodes.find(
@@ -183,7 +196,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           }
           setDragHint(byNode);
         })
-        .catch(() => setDragHint(new Map()));
+        .catch(() => {
+          if (dragOriginRef.current?.columnId !== origin.columnId) return;
+          setDragHint(new Map());
+        });
     },
     [graph, resolveHandle],
   );
@@ -203,20 +219,25 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     if (!left || !right) return;
     const check = canAddStep(draft, left, right);
     if (!check.ok) {
-      setDropError(t("join.dropRejected").replace("{reason}", check.reason));
+      const reasonText = t(REJECT_REASON_KEY[check.reason]).replace("{max}", String(check.max));
+      setDropError(t("join.dropRejected").replace("{reason}", reasonText));
       return;
     }
     setDropError(null);
-    const index = draft.steps.length; // addStep appends, so this is the new step's index
+    // 위치가 아니라 컬럼 페어 키로 결과를 채운다 — 스텝이 배열 안에서 옮겨져도(제거로 인한
+    // 인덱스 이동) 비동기 결과가 엉뚱한 스텝을 덮어쓰지 않는다
+    // resolve by column-pair key, not position — a removal-induced index shift can't make this
+    // async result land on the wrong step
+    const stepKey = `${left.columnId}-${right.columnId}`;
     setDraft((current) => addStep(current, left, right));
     // 드롭 즉시 T2 자동 실행 — 단일 페어라 기존 검증과 같은 비용
     void runContainment(left.columnId, right.columnId)
       .then((result) => setDraft((latest) =>
-        setStepResult(latest, index, "ready", result, getJoinVerdict(result, null))))
+        setStepResult(latest, stepKey, "ready", result, getJoinVerdict(result, null))))
       .catch((e: Error) => {
         const noData = e.message.includes("no value data");
         setDraft((latest) => setStepResult(
-          latest, index, noData ? "no_data" : "failed", null, getJoinVerdict(null, null)));
+          latest, stepKey, noData ? "no_data" : "failed", null, getJoinVerdict(null, null)));
       });
   }, [draft, resolveHandle, t]);
 

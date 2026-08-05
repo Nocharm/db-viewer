@@ -66,6 +66,11 @@ function StepRow({
         <button
           className="icon-button ml-auto"
           title={t("join.removeStep")}
+          // 검증 중 제거를 막는다 — 결과가 stepKey로 안전하게 no-op되긴 하지만, 애초에 이
+          // 혼란스러운 상태(방금 지운 스텝이 뒤늦게 나타나는 것처럼 보이는)를 겪지 않게 한다
+          // disabled while verifying — setStepResult already no-ops safely by stepKey, but this
+          // keeps the user from seeing the confusing in-between state at all
+          disabled={step.status === "verifying"}
           onClick={() => onRemoveStep(index)}
           data-testid={`JoinBuilder-removeStep-${stepKey}`}
         >

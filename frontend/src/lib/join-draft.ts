@@ -33,7 +33,22 @@ export interface JoinDraft {
 
 export const EMPTY_DRAFT: JoinDraft = { steps: [] };
 
-export type CanAddResult = { ok: true } | { ok: false; reason: string };
+// 코드로 두고 문구는 호출자(ErdCanvas)가 i18n으로 렌더 — join-verdict의 symptom/remedy와 달리
+// 이건 사용자 액션에 대한 UI 피드백이라 도메인 라벨 예외(카테고리 등)에 해당하지 않는다.
+// a code, not text — the caller renders it via i18n; unlike join-verdict's symptom/remedy,
+// this is UI feedback for a user action, not a domain label, so it doesn't get the Korean-only carve-out.
+export type CanAddFailureReason = "same_table" | "step_cap" | "duplicate" | "disconnected";
+export type CanAddResult =
+  | { ok: true }
+  | { ok: false; reason: CanAddFailureReason; max?: number };
+
+/** 스텝의 안정 식별자 — 위치(index)가 아니라 컬럼 페어로 식별한다.
+ * canAddStep의 중복 규칙이 드래프트 내 유일성을 이미 보장한다.
+ * Stable step identity — the column pair, not position; canAddStep's duplicate
+ * rule already guarantees uniqueness within a draft. */
+export function getStepKey(step: JoinStep): string {
+  return `${step.left.columnId}-${step.right.columnId}`;
+}
 
 /** 드래프트에 들어온 테이블 — 첫 스텝의 left가 FROM이 된다 / tables in draft order. */
 export function getDraftTables(draft: JoinDraft): string[] {
@@ -62,19 +77,19 @@ export function canAddStep(
   right: JoinColumnRef,
 ): CanAddResult {
   if (left.qname === right.qname) {
-    return { ok: false, reason: "같은 테이블끼리는 연결할 수 없습니다" };
+    return { ok: false, reason: "same_table" };
   }
   if (draft.steps.length >= MAX_JOIN_STEPS) {
-    return { ok: false, reason: `조인은 최대 ${MAX_JOIN_STEPS}단계까지입니다` };
+    return { ok: false, reason: "step_cap", max: MAX_JOIN_STEPS };
   }
   if (draft.steps.some((step) => isSamePair(step, left, right))) {
-    return { ok: false, reason: "이미 추가된 조인입니다" };
+    return { ok: false, reason: "duplicate" };
   }
   if (draft.steps.length === 0) return { ok: true };
 
   const tables = getDraftTables(draft);
   if (!tables.includes(left.qname) && !tables.includes(right.qname)) {
-    return { ok: false, reason: "기존 조인과 이어지지 않습니다 — 한쪽은 이미 들어온 테이블이어야 합니다" };
+    return { ok: false, reason: "disconnected" };
   }
   return { ok: true };
 }
@@ -109,12 +124,20 @@ export function setStepJoinType(
   return replaceStep(draft, index, { joinType });
 }
 
+/**
+ * 스텝 하나의 검증 결과를 채운다 — 위치가 아니라 stepKey로 찾는다.
+ * 비동기 응답이 도착했을 때 그 사이 스텝이 지워졌으면 조용히 no-op한다(레이스 가드).
+ * Resolved by stepKey, not position — if the target step was removed while its
+ * query was in flight, this is a silent no-op instead of corrupting another step.
+ */
 export function setStepResult(
   draft: JoinDraft,
-  index: number,
+  stepKey: string,
   status: StepStatus,
   result: ContainmentResponse | null,
   verdict: JoinVerdict,
 ): JoinDraft {
+  const index = draft.steps.findIndex((step) => getStepKey(step) === stepKey);
+  if (index === -1) return draft;
   return replaceStep(draft, index, { status, result, verdict });
 }
