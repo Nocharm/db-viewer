@@ -19,7 +19,8 @@ import { useI18n } from "@/components/i18n";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import {
-  fetchCandidates, fetchGraph, fetchObjectPreview, runContainment, type TablePreview,
+  fetchCandidates, fetchGraph, fetchObjectPreview, fetchScanJob, runContainment, startScan,
+  type TablePreview,
 } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -125,6 +126,12 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   // 드래그 중 추천 컬럼 — T1 후보를 노드별로 묶어 하이라이트 / T1 candidates while dragging
   const [dragHint, setDragHint] = useState<Map<number, string[]> | null>(null);
   const [dropError, setDropError] = useState<string | null>(null);
+  // 추천이 0개일 때만 뜨는 전수 탐색 — 별도 블록이 아니라 추천의 보강 수단
+  const [scanJobId, setScanJobId] = useState<number | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  // ref가 아니라 state — 버튼 노출 여부가 렌더에 걸린다 / state, because it gates the render
+  const [scanOrigin, setScanOrigin] = useState<JoinColumnRef | null>(null);
   const dragOriginRef = useRef<JoinColumnRef | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
@@ -195,6 +202,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             byNode.set(node.id, [...(byNode.get(node.id) ?? []), candidate.column]);
           }
           setDragHint(byNode);
+          // 추천이 없을 때만 전수 탐색을 제안한다 / offer the scan only when nothing was found
+          setScanOrigin(res.candidates.length === 0 ? origin : null);
         })
         .catch(() => {
           if (dragOriginRef.current?.columnId !== origin.columnId) return;
@@ -206,8 +215,48 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
 
   const handleConnectEnd = useCallback(() => {
     dragOriginRef.current = null;
-    setDragHint(null);
+    // dragHint·scanOrigin은 유지 — 드래그를 놓은 뒤에도 추천·제안이 남는다
   }, []);
+
+  // 스캔 폴링 — 완료·실패까지 1.5초 간격 (ColumnPanel과 같은 관용)
+  // scanJobId가 done/failed에서 null로 바뀌면 이 effect가 재실행되며 클린업이 먼저 돌아
+  // 이전 인터벌을 지운다 — 완료된 잡이 폴러를 남기지 않는다 / cleared on every terminal path
+  useEffect(() => {
+    if (scanJobId === null) return;
+    const timer = setInterval(() => {
+      void fetchScanJob(scanJobId)
+        .then((job) => {
+          setScanProgress(job.progress);
+          if (job.status !== "done" && job.status !== "failed") return;
+          setScanJobId(null);
+          setScanProgress(null);
+          if (job.status === "failed") {
+            setScanNotice(job.error ?? t("ai.failed"));
+            return;
+          }
+          if (job.results.length === 0) {
+            setScanNotice(t("join.scanNone"));
+            return;
+          }
+          // 찾아낸 컬럼을 추천 하이라이트로 합류시킨다 / merge hits into the drag hints
+          const byNode = new Map<number, string[]>();
+          for (const hit of job.results) {
+            const node = (graph?.nodes ?? []).find(
+              (n) => `${n.schema}.${n.name}` === hit.tgt_object);
+            if (!node) continue;
+            byNode.set(node.id, [...(byNode.get(node.id) ?? []), hit.tgt_column]);
+          }
+          setDragHint(byNode);
+          setScanNotice(null);
+        })
+        .catch((e: Error) => {
+          setScanJobId(null);
+          setScanProgress(null);
+          setScanNotice(e.message);
+        });
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [scanJobId, graph, t]);
 
   // 부작용은 updater 밖에서 실행한다 — StrictMode가 updater를 두 번 호출해,
   // 안에 두면 runContainment(실 DB 질의)가 드롭마다 두 번 나간다.
@@ -224,6 +273,9 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       return;
     }
     setDropError(null);
+    // 스텝이 추가됐다 — 드래그 하이라이트·스캔 제안은 이번 드롭의 몫을 다했다
+    setDragHint(null);
+    setScanOrigin(null);
     // 위치가 아니라 컬럼 페어 키로 결과를 채운다 — 스텝이 배열 안에서 옮겨져도(제거로 인한
     // 인덱스 이동) 비동기 결과가 엉뚱한 스텝을 덮어쓰지 않는다
     // resolve by column-pair key, not position — a removal-induced index shift can't make this
@@ -510,18 +562,36 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   }, [graph, expandedNodes, hiddenNodes, showViews,
       expandNeighbors, toggleNode, onSelectColumn, handleVisibleColumnsChange, centerOn]);
 
+  // 빌더에 든 테이블 — 경로 강조의 기준 / tables currently in the draft
+  const draftObjectIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const step of draft.steps) {
+      ids.add(step.left.objectId);
+      ids.add(step.right.objectId);
+    }
+    return ids;
+  }, [draft]);
+
   // 강조 상태를 렌더에만 입힌다 — ELK 재배치 없이 / emphasis decorates render only, no relayout
   const displayNodes = useMemo(() => {
-    if (!emphasis && !dragHint) return flowNodes;
+    const dimming = draftObjectIds.size > 0;
+    if (!emphasis && !dragHint && !dimming) return flowNodes;
     return flowNodes.map((n) => {
+      const id = Number(n.id);
       // 드래그 중에는 조인 추천이 호버 강조를 덮는다 / drag hints win over hover emphasis
       const columns = dragHint
-        ? (dragHint.get(Number(n.id)) ?? null)
-        : (emphasis?.columnsByNode.get(Number(n.id)) ?? null);
-      if (columns === null && n.data.highlightColumns === null) return n;
-      return { ...n, data: { ...n.data, highlightColumns: columns } };
+        ? (dragHint.get(id) ?? null)
+        : (emphasis?.columnsByNode.get(id) ?? null);
+      // 조인 경로 밖은 낮춘다 — 드래그 중에는 대상 탐색을 방해하지 않도록 끈다
+      const dimmed = dimming && !dragHint && !draftObjectIds.has(id);
+      if (columns === null && n.data.highlightColumns === null && !dimmed) return n;
+      return {
+        ...n,
+        style: dimmed ? { ...n.style, opacity: 0.15 } : { ...n.style, opacity: 1 },
+        data: { ...n.data, highlightColumns: columns },
+      };
     });
-  }, [flowNodes, emphasis, dragHint]);
+  }, [flowNodes, emphasis, dragHint, draftObjectIds]);
 
   // 엣지 핸들은 스크롤에 따라 바뀐다 — ELK 재배치 없이 렌더 단계에서만 해석한다
   // handles depend on scroll position; resolved at render, never triggering a relayout
@@ -550,9 +620,13 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   }, [flowEdges, flowNodes, viewportColumns]);
 
   const displayEdges = useMemo(() => {
-    if (!emphasis) return anchoredEdges;
+    const dimming = draftObjectIds.size > 0;
+    if (!emphasis && !dimming) return anchoredEdges;
     return anchoredEdges.map((e) => {
-      const hit = emphasis.edgeIds.has(e.id);
+      const inDraft = dimming
+        && draftObjectIds.has(Number(e.source))
+        && draftObjectIds.has(Number(e.target));
+      const hit = emphasis ? emphasis.edgeIds.has(e.id) : inDraft;
       const baseWidth = Number((e.style as { strokeWidth?: number })?.strokeWidth ?? 1.4);
       return {
         ...e,
@@ -563,7 +637,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         zIndex: hit ? 10 : 0,
       } as Edge;
     });
-  }, [anchoredEdges, emphasis]);
+  }, [anchoredEdges, emphasis, draftObjectIds]);
 
   return (
     <div ref={wrapperRef} className="relative h-full w-full" data-testid="ErdCanvas-root">
@@ -652,6 +726,36 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           data-testid="ErdCanvas-dropError"
         >
           {dropError}
+        </div>
+      )}
+
+      {scanOrigin && (
+        <div
+          className="absolute left-1/2 top-16 z-30 flex -translate-x-1/2 items-center gap-2
+                     rounded-lg border px-3 py-1.5 text-xs"
+          style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
+          data-testid="ErdCanvas-findHidden"
+        >
+          <button
+            className="btn-secondary !py-0.5 text-xs"
+            disabled={scanJobId !== null}
+            onClick={() => {
+              setScanNotice(null);
+              void startScan(scanOrigin.columnId)
+                .then((res) => setScanJobId(res.job_id))
+                .catch((e: Error) => setScanNotice(e.message));
+            }}
+            data-testid="ErdCanvas-findHiddenButton"
+          >
+            {t("join.findHidden")}
+          </button>
+          <span style={{ color: "var(--muted)" }}>
+            {scanProgress
+              ? t("join.scanRunning")
+                  .replace("{done}", String(scanProgress.done))
+                  .replace("{total}", String(scanProgress.total))
+              : (scanNotice ?? t("join.findHiddenHint"))}
+          </span>
         </div>
       )}
       <JoinBuilder
