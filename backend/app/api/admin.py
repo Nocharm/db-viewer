@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_sysadmin
@@ -77,14 +77,47 @@ def remove_whitelist(
     return {"login_id": login_id, "removed": True}
 
 
+# 한 번에 내려보내는 사용자 수 — 무한 스크롤 페이지 크기 / page size for the AD user list
+USER_PAGE_SIZE = 100
+
+
 @router.get("/users")
-def list_users(db: Session = Depends(get_db)) -> dict:
-    users = db.execute(select(AppUser).order_by(AppUser.login_id).limit(500)).scalars().all()
-    return {"items": [
-        {"login_id": u.login_id, "name": u.name, "department": u.department,
-         "email": u.email, "active": u.active, "source": u.source, "role": u.role}
-        for u in users
-    ]}
+def list_users(
+    q: str = "", offset: int = 0, limit: int = USER_PAGE_SIZE,
+    db: Session = Depends(get_db),
+) -> dict:
+    """AD 동기 사용자 목록 — 검색은 전체 집합 대상, 결과는 페이지 단위로 내려준다.
+
+    수천 명 규모의 AD를 화면이 다 들고 있을 수 없어 검색을 DB로 내린다
+    (클라이언트 필터는 이미 로드된 분량만 훑게 되어 "안 나온다"가 된다).
+    Search runs in the DB so it covers everyone, not just the loaded page.
+    """
+    limit = min(max(limit, 1), 500)
+    offset = max(offset, 0)
+    conditions = []
+    term = q.strip()
+    if term:
+        pattern = f"%{term}%"
+        conditions.append(or_(
+            AppUser.login_id.ilike(pattern),
+            AppUser.name.ilike(pattern),
+            AppUser.department.ilike(pattern),
+        ))
+    total = db.execute(
+        select(func.count()).select_from(AppUser).where(*conditions)).scalar_one()
+    users = db.execute(
+        select(AppUser).where(*conditions)
+        .order_by(AppUser.login_id).offset(offset).limit(limit)
+    ).scalars().all()
+    return {
+        "items": [
+            {"login_id": u.login_id, "name": u.name, "department": u.department,
+             "email": u.email, "active": u.active, "source": u.source, "role": u.role}
+            for u in users
+        ],
+        "total": total,
+        "has_more": offset + len(users) < total,
+    }
 
 
 @router.post("/users/sync")

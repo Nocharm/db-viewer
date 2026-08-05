@@ -102,8 +102,19 @@ export interface AppUserEntry {
   role: string | null;
 }
 
-export function fetchUsers(): Promise<{ items: AppUserEntry[] }> {
-  return getJson("/api/admin/users");
+export interface AppUserPage {
+  items: AppUserEntry[];
+  total: number;
+  has_more: boolean;
+}
+
+/** 검색은 서버(전체 집합)에서, 결과는 페이지 단위 — 화면이 전량을 들고 있지 않는다. */
+export function fetchUsers(
+  { q = "", offset = 0, limit = 100 }: { q?: string; offset?: number; limit?: number } = {},
+): Promise<AppUserPage> {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (q) params.set("q", q);
+  return getJson(`/api/admin/users?${params}`);
 }
 
 export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {
