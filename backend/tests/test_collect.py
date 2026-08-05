@@ -273,3 +273,56 @@ def test_cancel_unblocks_a_stuck_job(cclient):
     # 이미 끝난 잡은 409 / cancelling a finished job is a conflict
     assert cclient.post(f"/api/collect/jobs/{job_id}/cancel").status_code == 409
     assert cclient.post("/api/collect/jobs/999/cancel").status_code == 404
+
+
+def test_group_constraints_keeps_same_named_constraints_apart():
+    """제약 이름은 스키마 단위로만 유일 — 동명 제약이 한 덩어리로 합쳐지면 안 된다.
+
+    실서버 FK 적재 실패(FK_agent_subscript / 'unknown column')의 근본 원인 회귀 가드.
+    """
+    from app.adapters.collect_runner import _group_foreign_keys, _group_key_constraints
+
+    # 서로 다른 스키마의 동명 FK — 참조 대상 테이블이 다르다
+    fks = _group_foreign_keys([
+        {"name": "FK_agent_sub", "src_object_id": 10, "tgt_object_id": 20,
+         "src_column": "subscriptionid", "tgt_column": "id"},
+        {"name": "FK_agent_sub", "src_object_id": 30, "tgt_object_id": 40,
+         "src_column": "sub_no", "tgt_column": "sub_id"},
+    ])
+    assert len(fks) == 2, "동명 FK가 병합되면 남의 테이블 컬럼을 참조하게 된다"
+    assert {(f["src_object_id"], f["columns"][0]["src_column"]) for f in fks} == {
+        (10, "subscriptionid"), (30, "sub_no")}
+    assert all(len(f["columns"]) == 1 for f in fks)
+
+    # 같은 FK의 복합 컬럼은 여전히 하나로 묶인다 / composite keys still group
+    composite = _group_foreign_keys([
+        {"name": "FK_c", "src_object_id": 1, "tgt_object_id": 2,
+         "src_column": "a", "tgt_column": "x"},
+        {"name": "FK_c", "src_object_id": 1, "tgt_object_id": 2,
+         "src_column": "b", "tgt_column": "y"},
+    ])
+    assert len(composite) == 1 and len(composite[0]["columns"]) == 2
+
+    # PK/UQ도 동일 — 병합되면 엉뚱한 컬럼에 PK 플래그가 선다
+    kcs = _group_key_constraints([
+        {"name": "PK_common", "type": "pk", "object_id": 10, "column_name": "id"},
+        {"name": "PK_common", "type": "pk", "object_id": 30, "column_name": "code"},
+    ])
+    assert len(kcs) == 2
+    assert {(k["object_id"], tuple(k["columns"])) for k in kcs} == {
+        (10, ("id",)), (30, ("code",))}
+
+
+def test_ingest_skips_unresolvable_fk_instead_of_failing(client, migrated_engine, load_fixture):
+    """FK 하나가 스냅샷 밖을 가리켜도 수집 전체를 버리지 않고 건수로 드러낸다."""
+    payload = load_fixture("catalog.json")
+    payload["foreign_keys"] = payload["foreign_keys"] + [{
+        "name": "FK_dangling", "src_object_id": 999_001, "tgt_object_id": 999_002,
+        "columns": [{"src_column": "nope", "tgt_column": "missing"}],
+    }]
+    res = client.post("/api/ingest/catalog", json=payload)
+    assert res.status_code == 200, res.text
+    counts = res.json()["counts"]
+    assert counts["foreign_keys_skipped"] == 1
+    # 정상 FK는 그대로 적재 / the healthy FKs still land
+    assert counts["foreign_keys"] == len(payload["foreign_keys"]) - 1

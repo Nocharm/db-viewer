@@ -76,14 +76,17 @@ class FixtureCollectRunner:
             db.commit()
 
 
+# 제약 이름은 **스키마 단위로만 유일**하다 — 이름만으로 묶으면 다른 스키마의 동명 제약이
+# 한 덩어리가 되어 남의 테이블 컬럼을 참조하게 된다(실서버 FK 적재 실패의 원인).
+# constraint names are unique per schema, not per database — group by owning object too
 def _group_key_constraints(rows: list[dict]) -> list[dict]:
-    """행 단위 PK/UQ를 제약 단위로 묶는다 / group key-constraint rows by name."""
-    grouped: dict[str, dict] = {}
+    """행 단위 PK/UQ를 제약 단위로 묶는다 / group key-constraint rows per constraint."""
+    grouped: dict[tuple, dict] = {}
     for row in rows:
         name = row.get("name")
         if not name:
             continue
-        entry = grouped.setdefault(name, {
+        entry = grouped.setdefault((name, row["object_id"]), {
             "name": name, "type": row["type"], "object_id": row["object_id"], "columns": [],
         })
         entry["columns"].append(row["column_name"])
@@ -91,12 +94,12 @@ def _group_key_constraints(rows: list[dict]) -> list[dict]:
 
 
 def _group_foreign_keys(rows: list[dict]) -> list[dict]:
-    grouped: dict[str, dict] = {}
+    grouped: dict[tuple, dict] = {}
     for row in rows:
         name = row.get("name")
         if not name:
             continue
-        entry = grouped.setdefault(name, {
+        entry = grouped.setdefault((name, row["src_object_id"], row["tgt_object_id"]), {
             "name": name, "src_object_id": row["src_object_id"],
             "tgt_object_id": row["tgt_object_id"], "columns": [],
         })

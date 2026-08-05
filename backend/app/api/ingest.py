@@ -1,6 +1,7 @@
 """Ingest endpoints — the mock boundary where n8n (or fixtures) POST raw JSON. / n8n·픽스처가 raw JSON을 밀어넣는 mock 경계."""
 
 import json
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,8 @@ from app.models import (
 )
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
 from app.services.phase2 import run_phase2
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -109,6 +112,7 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
 
     for kc in payload.key_constraints:
         db.add(CatalogConstraint(snapshot_id=snapshot.id, type=kc.type, name=kc.name))
+    skipped_fks = 0
     if payload.foreign_keys:
         # FK는 청크 경계를 넘어 참조할 수 있어(마지막 청크에 몰아 전송) DB 기준 전체 맵으로 해석
         # FKs may cross chunk boundaries, so resolve against the snapshot-wide maps
@@ -122,17 +126,30 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
             .where(CatalogObject.snapshot_id == snapshot.id)
         )}
         for fk in payload.foreign_keys:
-            constraint = CatalogConstraint(snapshot_id=snapshot.id, type="fk", name=fk.name)
-            db.add(constraint)
-            db.flush()
+            resolved = []
             for pair in fk.columns:
                 src = full_col_map.get((full_oid_map.get(fk.src_object_id), pair.src_column))
                 tgt = full_col_map.get((full_oid_map.get(fk.tgt_object_id), pair.tgt_column))
                 if src is None or tgt is None:
-                    raise _bad_request(
-                        "foreign key references unknown column",
-                        {"fk": fk.name, "src": pair.src_column, "tgt": pair.tgt_column},
-                    )
+                    # 스냅샷에 없는 객체·컬럼을 가리키는 FK는 건너뛴다 — FK는 보조 증거라
+                    # 하나 때문에 전체 수집(수천 객체)을 버리지 않는다. 건수는 counts로 드러낸다.
+                    # skip rather than abort: FKs are auxiliary; the count surfaces the loss
+                    logger.warning("skipping unresolvable foreign key", extra={
+                        "fk": fk.name, "src_column": pair.src_column,
+                        "tgt_column": pair.tgt_column,
+                        "src_object_known": fk.src_object_id in full_oid_map,
+                        "tgt_object_known": fk.tgt_object_id in full_oid_map,
+                    })
+                    resolved = []
+                    break
+                resolved.append((src, tgt))
+            if not resolved:
+                skipped_fks += 1
+                continue
+            constraint = CatalogConstraint(snapshot_id=snapshot.id, type="fk", name=fk.name)
+            db.add(constraint)
+            db.flush()
+            for src, tgt in resolved:
                 db.add(FkColumn(constraint_id=constraint.id, src_column_id=src, tgt_column_id=tgt))
 
     for vd in payload.view_definitions:
@@ -163,6 +180,8 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
             .where(CatalogConstraint.snapshot_id == snapshot.id,
                    CatalogConstraint.type == "fk")).scalar_one(),
     }
+    if skipped_fks:
+        counts["foreign_keys_skipped"] = skipped_fks
     is_final = payload.chunk_index == payload.chunk_total
     if payload.chunk_total > 1:
         counts["catalog_chunks_done"] = payload.chunk_index
