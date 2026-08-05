@@ -51,6 +51,10 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   if (steps.length === 0) throw new Error('multi_join_preview needs at least one step');
   if (steps.length > 8) throw new Error('too many join steps');
   const alias = {};           // qname -> t0..tN
+  // alias -> 그 alias의 clause가 from[]의 몇 번째인지 — "양쪽 다 바인딩됨" 분기에서
+  // AND를 어느 clause에 붙일지 찾는 데 쓴다(마지막 clause가 아니라 그 alias가 실제로
+  // 등장한 clause).
+  const fromIndex = {};
   const select = [];
   const from = [];
   const qn = (s, t) => esc(s) + '.' + esc(t);
@@ -63,6 +67,7 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   const first = steps[0];
   const a0 = bind(first.left_schema, first.left_table);
   from.push(qn(first.left_schema, first.left_table) + ' ' + a0);
+  fromIndex[a0] = from.length - 1;
   for (const st of steps) {
     const la = alias[key(st.left_schema, st.left_table)];
     const ra = alias[key(st.right_schema, st.right_table)];
@@ -73,14 +78,25 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
       const na = bind(st.right_schema, st.right_table);
       from.push(joiner + ' ' + qn(st.right_schema, st.right_table) + ' ' + na +
         ' ON ' + la + '.' + esc(st.left_column) + ' = ' + na + '.' + esc(st.right_column));
+      fromIndex[na] = from.length - 1;
     } else if (la === undefined) {
       const na = bind(st.left_schema, st.left_table);
       from.push(joiner + ' ' + qn(st.left_schema, st.left_table) + ' ' + na +
         ' ON ' + na + '.' + esc(st.left_column) + ' = ' + ra + '.' + esc(st.right_column));
+      fromIndex[na] = from.length - 1;
     } else {
-      // 양쪽 다 이미 들어와 있다 — 새 JOIN이 아니라 마지막 JOIN에 조건을 더한다
-      // both sides already joined: add a condition instead of duplicating the alias
-      from[from.length - 1] += ' AND ' + la + '.' + esc(st.left_column) +
+      // 양쪽 다 이미 들어와 있다 — 새 JOIN이 아니라, 두 alias 중 "나중에" 바인딩된
+      // 쪽의 clause에 조건을 더한다. 그 지점이 둘이 동시에 스코프에 들어오는 유일한
+      // 위치라 유일하게 올바른 위치다. 대신 from[]의 마지막 clause에 붙이면, 그 사이
+      // 다른 JOIN(특히 LEFT JOIN)이 끼어든 경우 엉뚱한 테이블의 null-확장 조건만
+      // 바꾸고 이 둘의 관계는 전혀 제약하지 못한 채 예외 없이 조용히 틀린 결과를 낸다.
+      // both sides already joined: append to whichever alias's clause was bound
+      // LATER — the only point both are simultaneously in scope. Appending to the
+      // last clause instead is wrong whenever another JOIN (esp. LEFT) sits between;
+      // it then only changes that unrelated table's null-extension, silently, with
+      // no exception.
+      const target = Math.max(fromIndex[la], fromIndex[ra]);
+      from[target] += ' AND ' + la + '.' + esc(st.left_column) +
         ' = ' + ra + '.' + esc(st.right_column);
     }
     const lq = alias[key(st.left_schema, st.left_table)];

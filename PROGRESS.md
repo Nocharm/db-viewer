@@ -5,6 +5,7 @@
 ## 2026-08-06
 
 - **W2에 `multi_join_preview` kind + 실행 SQL 반환 (ERD 조인 빌더 Task 12)** — N-웨이 조인은 프론트가 SQL을 그리면 화면과 실제 실행문이 어긋나므로, `Build query` 노드가 스텝 배열(`left/right schema·table·column`, `join_type`)을 받아 별칭 `t0..tN`으로 FROM+JOIN을 조립하게 했다. 조인 체인 3분기(오른쪽 신규/왼쪽 신규/양쪽 기바인딩) 중 세 번째는 새 JOIN을 추가하는 대신 직전 JOIN의 `ON`에 `AND` 조건을 덧붙여 별칭 중복을 막는다. 응답 계약도 바꿨다 — 새 `Attach query` 노드가 `{query, rows}` 단일 객체로 감싸 반환(`Build query`가 만든 실행문 그대로 노출, 0행 결과에서도 `alwaysOutputData`가 만드는 빈 아이템은 필터링). W2가 3→4노드가 되면서 두 실행기 공용이던 `test_executors_are_short_and_stateless`의 "3노드" 단정이 W2에서 깨져, 워크플로별 기대 노드 수를 딕셔너리로 바꿔 고쳤다(기존 계약 테스트 문서에 없던 파생 수정). 백엔드 어댑터(`n8n_query.py`)는 후속 태스크 몫이라 그대로 뒀다 — 지금은 생성기·JSON·테스트만 합의된 상태.
+- **코드 리뷰 반영: "양쪽 다 바인딩됨" 분기가 엉뚱한 JOIN에 조건을 붙이던 결함 수정** — 세 번째 분기가 `from[from.length-1]`(가장 최근 clause)에 `AND`를 붙이던 원래 구현은, A-B/B-C(INNER)/C-D(LEFT) 다음에 A-C를 닫는 스텝처럼 두 endpoint 사이에 다른 JOIN이 끼어들면 그 조건이 C의 JOIN이 아니라 D의 LEFT JOIN ON절에 붙어버린다 — 예외 없이 D의 null-확장 여부만 바뀌고 A-C는 전혀 제약되지 않는 조용한 오류. alias→`from[]` 인덱스 맵(`fromIndex`)을 두고 두 alias 중 **나중에 바인딩된 쪽**의 clause를 타깃으로 고치고(그 지점이 둘 다 스코프에 든 유일한 시점), 왜 마지막 clause가 아닌지 WHY 주석을 남겨 재단순화를 막았다. node로 실제 jsCode를 실행해 산출 SQL을 검증하는 회귀 테스트를 추가(문자열 검사로는 분기별 산출이 갈리는 이 버그를 못 잡는다) — 수정 전 실행해 정확히 예측된 형태(AND가 D의 LEFT JOIN에 붙음)로 실패하는 것을 먼저 확인한 뒤 고쳤다. 부수로, 실제로는 `st.join_type`을 쓰는데 `b.join_type` 부재만 확인해 항상 통과하던 무의미한 화이트리스트 단정도 "join_type 참조는 이 삼항연산자 한 곳뿐"이라는 실질 조건으로 교체.
 
 ## 2026-08-05
 

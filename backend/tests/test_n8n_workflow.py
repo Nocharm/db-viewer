@@ -6,8 +6,13 @@
 
 import json
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
@@ -19,9 +24,33 @@ W1_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_query.json"
 W2_PATH = REPO_ROOT / "n8n" / "workflows" / "w2_query_executor.json"
 EXECUTORS = (W1_PATH, W2_PATH)
 
+NODE_BIN = shutil.which("node")
+# Build query 분기 로직은 값에 따라 갈리므로 문자열 검사로는 검증 불가 — 실제 실행이 유일한 수단.
+# the join-chain branch taken depends on step data; only running the JS proves which branch fired.
+_RETURN_MARKER = "return [{ json: { query } }];"
+
 
 def _load(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+def _run_build_query_js(js: str, body: dict) -> str:
+    """W2의 Build query jsCode를 node로 그대로 실행해 실제 산출 SQL을 얻는다."""
+    assert _RETURN_MARKER in js, "Build query jsCode의 반환문 형태가 바뀌었다 — 테스트 갱신 필요"
+    script = (
+        "const $json = " + json.dumps({"body": body}, ensure_ascii=False) + ";\n"
+        + js.replace(_RETURN_MARKER, "console.log(JSON.stringify({ query }));")
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(script)
+        path = f.name
+    try:
+        result = subprocess.run(
+            [NODE_BIN, path], capture_output=True, text=True, timeout=10, check=True,
+        )
+    finally:
+        Path(path).unlink(missing_ok=True)
+    return json.loads(result.stdout)["query"]
 
 
 def test_committed_workflows_match_regeneration():
@@ -109,9 +138,46 @@ def test_w2_builds_a_multi_join_preview_from_steps() -> None:
     wf = _load(W2_PATH)
     js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
     assert "multi_join_preview" in js
-    # join_type은 화이트리스트 매핑 — 임의 문자열이 SQL에 들어가면 안 된다
+    # join_type은 화이트리스트 매핑 — 임의 문자열이 SQL에 들어가면 안 된다.
+    # "b.join_type" 부재를 확인하는 이전 버전은 실제 코드가 st.join_type을 쓰므로
+    # 항상(수정 여부와 무관하게) 통과하는 무의미한 조건이었다 — join_type을 참조하는
+    # 곳이 이 삼항 연산자 한 곳뿐이고, 산출되는 키워드가 두 고정 리터럴뿐임을 직접 검사한다.
     assert "INNER JOIN" in js and "LEFT JOIN" in js
-    assert "b.join_type" not in js.replace("b.join_type === 'left'", "")
+    whitelist_expr = "(st.join_type === 'left') ? 'LEFT JOIN' : 'INNER JOIN'"
+    assert whitelist_expr in js
+    assert js.count("join_type") == 1  # 화이트리스트 비교 외 경로로 새면 카운트가 늘어난다
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node runtime not available for JS execution")
+def test_multi_join_preview_predicate_lands_on_the_owning_clause() -> None:
+    """4테이블 체인(A-B, B-C, C-D LEFT, 닫는 스텝 A-C)에서 '양쪽 다 바인딩됨' 분기가
+    가장 최근 clause(D의 LEFT JOIN)가 아니라 실제로 그 alias가 등장한 clause(C의
+    INNER JOIN)에 AND를 붙이는지 검증한다. 최근 clause에 잘못 붙이면 D의 null-확장
+    조건이 바뀔 뿐 A-C는 전혀 제약되지 않는데도 예외 없이 조용히 틀린 결과를 낸다 —
+    실제 jsCode를 node로 실행해 산출 SQL을 확인해야만 잡히는 버그라 문자열 검사로는
+    검증 불가능하다."""
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    steps = [
+        {"left_schema": "s", "left_table": "A", "left_column": "a1",
+         "right_schema": "s", "right_table": "B", "right_column": "b1", "join_type": "inner"},
+        {"left_schema": "s", "left_table": "B", "left_column": "b2",
+         "right_schema": "s", "right_table": "C", "right_column": "c1", "join_type": "inner"},
+        {"left_schema": "s", "left_table": "C", "left_column": "c2",
+         "right_schema": "s", "right_table": "D", "right_column": "d1", "join_type": "left"},
+        # 닫는 스텝 — A(t0)와 C(t2) 모두 이미 바인딩됨. AND는 C가 등장한
+        # clause(INNER JOIN C)에 붙어야 하며, 이후에 추가된 D의 LEFT JOIN에 붙으면 안 된다.
+        {"left_schema": "s", "left_table": "A", "left_column": "a2",
+         "right_schema": "s", "right_table": "C", "right_column": "c3", "join_type": "inner"},
+    ]
+    query = _run_build_query_js(js, {"kind": "multi_join_preview", "steps": steps})
+    from_clause = query.split(" FROM ", 1)[1]
+    expected_from = (
+        "[s].[A] t0 INNER JOIN [s].[B] t1 ON t0.[a1] = t1.[b1] "
+        "INNER JOIN [s].[C] t2 ON t1.[b2] = t2.[c1] AND t0.[a2] = t2.[c3] "
+        "LEFT JOIN [s].[D] t3 ON t2.[c2] = t3.[d1]"
+    )
+    assert from_clause == expected_from, from_clause
 
 
 def test_w2_returns_the_executed_sql_with_the_rows() -> None:
