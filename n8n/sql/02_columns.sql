@@ -10,4 +10,5 @@ SELECT c.object_id,
 FROM sys.columns c
 JOIN sys.types t ON c.user_type_id = t.user_type_id
 JOIN sys.objects o ON c.object_id = o.object_id
-WHERE o.type IN ('U', 'V');
+-- 대상 객체는 서비스가 앞 단계(01)에서 받은 id로 지정한다 / ids come from step 01
+WHERE c.object_id IN ({{ID_LIST}});

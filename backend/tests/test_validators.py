@@ -1,6 +1,7 @@
 """JoinValidator abstraction and FakeJoinValidator tests. / 검증기 추상화·Fake 테스트."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -96,3 +97,24 @@ def test_live_mode_requires_webhook_base_then_uses_n8n():
     live = Settings(source_mode="live", n8n_webhook_base="http://n8n/webhook")
     assert isinstance(create_join_validator(live), N8nJoinValidator)
     assert isinstance(create_table_preview(live), N8nTablePreview)
+
+
+def test_fake_validator_without_value_sets_reports_data_missing(tmp_path):
+    """픽스처 없는 배포에서도 검증은 '값 데이터 없음'으로 떨어진다 (크래시 아님)."""
+    validator = FakeJoinValidator(tmp_path / "absent.json")
+    with pytest.raises(ValidationDataMissing):
+        validator.containment(ColumnRef("dbo", "O", "P_ID"), ColumnRef("dbo", "P", "ID"))
+
+
+def test_relative_fixture_dir_anchors_to_repo_root_not_cwd(tmp_path, monkeypatch):
+    """상대 FIXTURE_DIR은 실행 위치와 무관해야 한다 — 픽스처는 저장소 루트에 생성된다."""
+    from app.config import Settings
+
+    monkeypatch.chdir(tmp_path)
+    relative = Settings(fixture_dir="fixtures").resolved_fixture_dir
+    assert relative.is_absolute()
+    assert relative == Path(__file__).resolve().parents[2] / "fixtures"
+
+    # 절대 경로는 그대로 통과 — 컨테이너 마운트 지점 지정용
+    absolute = Settings(fixture_dir=str(tmp_path / "mounted")).resolved_fixture_dir
+    assert absolute == tmp_path / "mounted"

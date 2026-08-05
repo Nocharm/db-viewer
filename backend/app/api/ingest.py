@@ -1,6 +1,7 @@
 """Ingest endpoints — the mock boundary where n8n (or fixtures) POST raw JSON. / n8n·픽스처가 raw JSON을 밀어넣는 mock 경계."""
 
 import json
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,8 @@ from app.models import (
 )
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
 from app.services.phase2 import run_phase2
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -109,6 +112,7 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
 
     for kc in payload.key_constraints:
         db.add(CatalogConstraint(snapshot_id=snapshot.id, type=kc.type, name=kc.name))
+    skipped_fks = 0
     if payload.foreign_keys:
         # FK는 청크 경계를 넘어 참조할 수 있어(마지막 청크에 몰아 전송) DB 기준 전체 맵으로 해석
         # FKs may cross chunk boundaries, so resolve against the snapshot-wide maps
@@ -122,17 +126,30 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
             .where(CatalogObject.snapshot_id == snapshot.id)
         )}
         for fk in payload.foreign_keys:
-            constraint = CatalogConstraint(snapshot_id=snapshot.id, type="fk", name=fk.name)
-            db.add(constraint)
-            db.flush()
+            resolved = []
             for pair in fk.columns:
                 src = full_col_map.get((full_oid_map.get(fk.src_object_id), pair.src_column))
                 tgt = full_col_map.get((full_oid_map.get(fk.tgt_object_id), pair.tgt_column))
                 if src is None or tgt is None:
-                    raise _bad_request(
-                        "foreign key references unknown column",
-                        {"fk": fk.name, "src": pair.src_column, "tgt": pair.tgt_column},
-                    )
+                    # 스냅샷에 없는 객체·컬럼을 가리키는 FK는 건너뛴다 — FK는 보조 증거라
+                    # 하나 때문에 전체 수집(수천 객체)을 버리지 않는다. 건수는 counts로 드러낸다.
+                    # skip rather than abort: FKs are auxiliary; the count surfaces the loss
+                    logger.warning("skipping unresolvable foreign key", extra={
+                        "fk": fk.name, "src_column": pair.src_column,
+                        "tgt_column": pair.tgt_column,
+                        "src_object_known": fk.src_object_id in full_oid_map,
+                        "tgt_object_known": fk.tgt_object_id in full_oid_map,
+                    })
+                    resolved = []
+                    break
+                resolved.append((src, tgt))
+            if not resolved:
+                skipped_fks += 1
+                continue
+            constraint = CatalogConstraint(snapshot_id=snapshot.id, type="fk", name=fk.name)
+            db.add(constraint)
+            db.flush()
+            for src, tgt in resolved:
                 db.add(FkColumn(constraint_id=constraint.id, src_column_id=src, tgt_column_id=tgt))
 
     for vd in payload.view_definitions:
@@ -163,6 +180,8 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
             .where(CatalogConstraint.snapshot_id == snapshot.id,
                    CatalogConstraint.type == "fk")).scalar_one(),
     }
+    if skipped_fks:
+        counts["foreign_keys_skipped"] = skipped_fks
     is_final = payload.chunk_index == payload.chunk_total
     if payload.chunk_total > 1:
         counts["catalog_chunks_done"] = payload.chunk_index
@@ -201,23 +220,31 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             view_svc_ids.add(svc)
 
     rows = []
+    # 카탈로그(테이블·뷰) 밖을 가리키는 참조 수 — 함수·시노님·시퀀스 등 / refs outside the catalog
+    outside_refs = 0
+    skipped_deps = 0
     for dep in payload.deps:
         view_svc = oid_map.get(dep.view_object_id)
         if view_svc is None:
-            raise _bad_request("dep references unknown view", {"view_object_id": dep.view_object_id})
+            # 스냅샷에 없는 뷰의 의존성은 버린다(수집 중 DROP 등) — 단계를 죽이지 않는다
+            logger.warning("skipping dep for unknown view",
+                           extra={"view_object_id": dep.view_object_id})
+            skipped_deps += 1
+            continue
         ref_svc = None
         if dep.referenced_object_id is not None:
             ref_svc = oid_map.get(dep.referenced_object_id)
             if ref_svc is None:
-                raise _bad_request(
-                    "resolved dep references object missing from snapshot",
-                    {"referenced_object_id": dep.referenced_object_id},
-                )
+                # 뷰는 테이블·뷰 외에 함수·시노님·시퀀스도 참조한다. 카탈로그가 담지 않는
+                # 개체이므로 오류가 아니라 **미해석 참조**로 보존한다 — 이름은 남겨 Phase 2가 본다.
+                # views also reference functions/synonyms; keep them flagged, never fail the step
+                outside_refs += 1
         rows.append({
             "snapshot_id": snapshot.id, "view_object_id": view_svc,
             "referenced_object_id": ref_svc, "referenced_database": dep.referenced_database,
             "referenced_name": dep.referenced_name, "referenced_column": dep.referenced_column,
-            "is_resolved": dep.is_resolved,
+            # 대상을 못 찾았으면 해석된 것으로 볼 수 없다 / unresolved when the target is unknown
+            "is_resolved": dep.is_resolved and ref_svc is not None,
         })
     if rows:
         db.execute(insert(ViewDep), rows)
@@ -225,7 +252,10 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
     for unresolved in payload.unresolved_objects:
         svc = oid_map.get(unresolved.object_id)
         if svc is None:
-            raise _bad_request("unresolved entry for unknown object", {"object_id": unresolved.object_id})
+            logger.warning("skipping DMV-failure entry for unknown object",
+                           extra={"object_id": unresolved.object_id})
+            skipped_deps += 1
+            continue
         db.execute(
             update(CatalogObject).where(CatalogObject.id == svc).values(dmv_unresolved=True)
         )
@@ -243,7 +273,8 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             "deps_chunks_total": payload.chunk_total,
         })
         return {"snapshot_id": snapshot.id,
-                "chunk_index": payload.chunk_index, "chunk_total": payload.chunk_total}
+                "chunk_index": payload.chunk_index, "chunk_total": payload.chunk_total,
+                "refs_outside_catalog": outside_refs, "skipped": skipped_deps}
 
     # 재귀 해석 → view_lineage_flat 적재 (UI가 읽는 유일한 lineage 테이블)
     # 분할 수집이면 이 청크의 rows가 전부가 아니므로 DB에서 전체 deps를 다시 읽는다
@@ -253,7 +284,9 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
         select(ViewDep.view_object_id, ViewDep.referenced_object_id, ViewDep.referenced_column)
         .where(ViewDep.snapshot_id == snapshot.id, ViewDep.is_resolved)
     ):
-        deps_by_view[view_svc].append((ref_svc, ref_svc in view_svc_ids, ref_column))
+        # 뷰가 아닌 참조원이 섞여도 KeyError로 단계가 죽지 않게 한다 / never KeyError here
+        deps_by_view.setdefault(view_svc, []).append(
+            (ref_svc, ref_svc in view_svc_ids, ref_column))
     lineage_rows = lineage.resolve_lineage(
         deps_by_view, depth_limit=get_settings().lineage_depth_limit
     )
@@ -271,10 +304,17 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
         select(func.count()).select_from(CatalogObject)
         .where(CatalogObject.snapshot_id == snapshot.id,
                CatalogObject.dmv_unresolved)).scalar_one()
+    # 미해석 참조 총계 — 카탈로그 밖 개체(함수·시노님)·크로스 DB·DMV 실패분을 포함
+    deps_unresolved = db.execute(
+        select(func.count()).select_from(ViewDep)
+        .where(ViewDep.snapshot_id == snapshot.id, ViewDep.is_resolved.is_(False))).scalar_one()
     counts = {
-        "deps": total_deps, "unresolved_objects": unresolved_total,
+        "deps": total_deps, "deps_unresolved": deps_unresolved,
+        "unresolved_objects": unresolved_total,
         "lineage_rows": len(lineage_rows), **phase2_counts,
     }
+    if skipped_deps:  # 스냅샷에 없는 뷰의 항목을 버린 건수 — 조용히 사라지지 않게
+        counts["deps_skipped"] = skipped_deps
     if payload.chunk_total > 1:
         counts["deps_chunks_done"] = payload.chunk_total
         counts["deps_chunks_total"] = payload.chunk_total

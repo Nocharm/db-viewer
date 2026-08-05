@@ -224,6 +224,63 @@ def test_sync_all_upserts_excludes_and_prunes(client, migrated_engine, monkeypat
     assert ids == {"hong.gil", "local.admin"}
 
 
+def _seed_users(engine, rows: list[tuple[str, str, str]]) -> None:
+    now = datetime.now(UTC)
+    with engine.begin() as conn:
+        conn.execute(sa.insert(Base.metadata.tables["app_users"]).values([
+            dict(login_id=lid, name=name, title=None, department=dept, org_path=None,
+                 email=f"{lid}@corp", active=True, source="ad", role="user",
+                 created_at=now, updated_at=now)
+            for lid, name, dept in rows
+        ]))
+
+
+def test_admin_users_lists_synced_ad_users(client, migrated_engine):
+    """관리 콘솔 AD 사용자 목록의 데이터 원천 — 화이트리스트와 별개 테이블."""
+    _seed_users(migrated_engine, [("hong.gil", "Hong Gil", "Team A")])
+
+    res = client.get("/api/admin/users")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [u["login_id"] for u in body["items"]] == ["hong.gil"]
+    assert body["items"][0]["department"] == "Team A"
+    assert (body["total"], body["has_more"]) == (1, False)
+
+    # 화이트리스트는 별개 — 동기화만으로는 비어 있다 / a sync does not whitelist anyone
+    assert client.get("/api/admin/whitelist").json()["items"] == []
+
+
+def test_admin_users_search_covers_everyone_not_just_a_page(client, migrated_engine):
+    """검색은 DB에서 — 로드된 페이지가 아니라 전체 인원을 대상으로 한다."""
+    _seed_users(migrated_engine, [(f"user.{i:03d}", f"Name {i}", "생산관리팀")
+                                  for i in range(120)])
+    _seed_users(migrated_engine, [("zz.kim", "Kim QC", "품질보증팀")])
+
+    # 첫 페이지에 없는 사람도 검색되면 전체 대상 / the match sits past page 1
+    first = client.get("/api/admin/users?limit=100").json()
+    assert len(first["items"]) == 100 and first["has_more"] is True
+    assert "zz.kim" not in {u["login_id"] for u in first["items"]}
+
+    found = client.get("/api/admin/users?q=품질").json()
+    assert [u["login_id"] for u in found["items"]] == ["zz.kim"]
+    assert found["total"] == 1
+
+    # 이름·ID로도 매칭 / matches login_id and name too
+    assert client.get("/api/admin/users?q=Kim QC").json()["total"] == 1
+    assert client.get("/api/admin/users?q=zz.ki").json()["total"] == 1
+
+
+def test_admin_users_paging_walks_the_whole_set(client, migrated_engine):
+    _seed_users(migrated_engine, [(f"u{i:03d}", f"N{i}", "T") for i in range(30)])
+
+    page1 = client.get("/api/admin/users?limit=20").json()
+    page2 = client.get("/api/admin/users?limit=20&offset=20").json()
+    assert (len(page1["items"]), page1["has_more"]) == (20, True)
+    assert (len(page2["items"]), page2["has_more"]) == (10, False)
+    ids = [u["login_id"] for u in page1["items"] + page2["items"]]
+    assert len(set(ids)) == 30  # 경계에서 중복·누락 없음 / no overlap or gap
+
+
 def test_health_is_exempt_from_auth(client, auth_on):
     # 헬스체크는 인증 면제 — compose healthcheck·배포 검증용 (bpm 패턴)
     res = client.get("/api/health")

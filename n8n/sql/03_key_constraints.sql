@@ -10,4 +10,5 @@ JOIN sys.index_columns ic
   ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id
 JOIN sys.columns col
   ON ic.object_id = col.object_id AND ic.column_id = col.column_id
+WHERE kc.parent_object_id IN ({{ID_LIST}})
 ORDER BY kc.name, ic.key_ordinal;

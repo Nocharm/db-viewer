@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 
 import { AppHeader } from "@/components/AppHeader";
+import { AdUserList } from "@/components/admin/AdUserList";
 import { CollectPanel } from "@/components/admin/CollectPanel";
 import { useI18n } from "@/components/i18n";
 import { useMe } from "@/components/providers";
@@ -24,6 +25,8 @@ export default function AdminPage() {
   const { t } = useI18n();
   const me = useMe();
   const [items, setItems] = useState<WhitelistEntry[]>([]);
+  // 값이 오르면 AD 목록이 첫 페이지부터 다시 읽는다 (동기화·허용 추가 후)
+  const [adRefreshKey, setAdRefreshKey] = useState(0);
   const [loginId, setLoginId] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -32,6 +35,7 @@ export default function AdminPage() {
   const [syncing, setSyncing] = useState(false);
   const syncElapsed = useElapsedSeconds(syncing);
 
+  // 화이트리스트와 AD 사용자는 별개 테이블 — 동기화 결과가 보이려면 둘 다 갱신해야 한다
   // 임베딩 인덱싱 잡 폴링 상태 (사이클2 Task 8) — CollectPanel과 동일한 1.5초 폴링 관용
   const [embedJobId, setEmbedJobId] = useState<number | null>(null);
   const [embedJob, setEmbedJob] = useState<AiJobStatus | null>(null);
@@ -41,7 +45,12 @@ export default function AdminPage() {
     || (embedJob !== null && (embedJob.status === "queued" || embedJob.status === "running"));
 
   const reload = () =>
-    fetchWhitelist().then((r) => setItems(r.items)).catch((e) => setError(e.message));
+    fetchWhitelist()
+      .then((w) => {
+        setItems(w.items);
+        setAdRefreshKey((n) => n + 1);
+      })
+      .catch((e) => setError(e.message));
 
   useEffect(() => {
     if (me?.is_sysadmin || me?.auth_enabled === false) void reload();
@@ -83,11 +92,14 @@ export default function AdminPage() {
     );
   }
 
+  // 렌더 중 계산 — 파생 상태에 useEffect를 쓰지 않는다 / derived during render
+  const whitelisted = new Set(items.map((item) => item.login_id));
+  /** 작업 실행 → 메시지 표시 → 목록 갱신. task가 문자열을 반환하면 그 메시지를 쓴다. */
   const run = (task: () => Promise<unknown>, done: string) => {
     setError(null);
     task()
-      .then(() => {
-        setMessage(done);
+      .then((detail) => {
+        setMessage(typeof detail === "string" ? detail : done);
         return reload();
       })
       .catch((e) => setError(e.message));
@@ -171,10 +183,8 @@ export default function AdminPage() {
               run(async () => {
                 try {
                   const summary = await syncUsers();
-                  setMessage(
-                    `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / ` +
-                    `제외 ${summary.excluded} / 정리 ${summary.purged}`,
-                  );
+                  return `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / `
+                    + `제외 ${summary.excluded} / 정리 ${summary.purged}`;
                 } finally {
                   setSyncing(false);
                 }
@@ -249,6 +259,15 @@ export default function AdminPage() {
           </tbody>
         </table>
       </section>
+
+      <AdUserList
+        whitelisted={whitelisted}
+        refreshKey={adRefreshKey}
+        onAllow={(user) => run(
+          () => addWhitelist(user.login_id, user.department ?? undefined),
+          `${user.login_id} 허용 추가`,
+        )}
+      />
 
       {message && <p className="text-sm" style={{ color: "var(--rel-confirmed)" }}
                      data-testid="AdminPage-message">{message}</p>}

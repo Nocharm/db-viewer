@@ -12,7 +12,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "dbv-query",
-        "responseMode": "lastNode"
+        "responseMode": "lastNode",
+        "responseData": "allEntries"
       }
     },
     {

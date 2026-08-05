@@ -5,4 +5,5 @@
 SELECT v.object_id,
        m.definition
 FROM sys.views v
-LEFT JOIN sys.sql_modules m ON v.object_id = m.object_id;
+LEFT JOIN sys.sql_modules m ON v.object_id = m.object_id
+WHERE v.object_id IN ({{ID_LIST}});

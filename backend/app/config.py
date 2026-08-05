@@ -58,12 +58,25 @@ class Settings(BaseSettings):
     lineage_depth_limit: int = 10
 
     # Environment: FakeJoinValidator가 읽는 픽스처 디렉터리 / fixture dir for the fake validator
+    # 상대 경로는 CWD가 아니라 저장소 루트 기준 — resolved_fixture_dir 참조
     fixture_dir: str = "fixtures"
+
+    @property
+    def resolved_fixture_dir(self) -> Path:
+        """픽스처 디렉터리 절대 경로 / absolute fixture dir.
+
+        상대 경로를 CWD로 풀면 실행 위치마다 다른 곳을 본다 — 픽스처 생성기는 저장소
+        루트에 쓰는데(`python tools/fixture_gen.py --out fixtures`) 백엔드는 `backend/`
+        에서 띄우므로(docs/ui-review.md) 조용히 빈 값 집합을 읽게 된다. .env와 같은
+        앵커로 고정한다. 절대 경로는 그대로 통과 — 컨테이너 마운트 지점 지정용.
+        """
+        path = Path(self.fixture_dir)
+        return path if path.is_absolute() else _REPO_ROOT_ENV.parent / path
 
     # Environment: n8n webhook 베이스 URL — 버튼 수집(W1a/b)과 live 검증·미리보기(W2) 공용
     # (예: http://182.199.63.71:5678/webhook). 비우면 해당 기능이 비활성.
     n8n_webhook_base: str = ""
-    # Tuning: W2 쿼리 대기 상한(초) — 대형 테이블 containment는 수십 초 가능
+    # Tuning: n8n 쿼리 응답 대기 상한(초) — W1 수집 쿼리·W2 검증 쿼리 공용
     n8n_query_timeout: int = 120
 
     # Environment: 사내 LLM OpenAI 호환 베이스 URL (예: http://<llm-host>:11434/v1).
@@ -88,12 +101,10 @@ class Settings(BaseSettings):
     ai_embed_sleep_ms: int = 500
 
     # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
-    # W1a 전송 청크당 객체 수 — 커지면 POST 크기 증가 / objects per catalog POST chunk
+    # W1a 창당 객체 수 — DB 조회·n8n 아이템·POST 크기를 함께 제한 / objects per catalog window
     collect_catalog_chunk_size: int = 300
     # W1b 호출당 뷰 수 — DMV 커서 배치 크기, 커지면 소스 DB 점유 시간 증가 / views per deps call
     collect_deps_chunk_size: int = 100
-    # 청크 하나의 ingest 콜백 대기 상한(초) / per-chunk callback wait cap
-    collect_chunk_timeout: int = 600
 
     # Tuning: T3 탐색 스캔 (계획 §4) / exploratory scan tuning
     scan_max_concurrent: int = 2

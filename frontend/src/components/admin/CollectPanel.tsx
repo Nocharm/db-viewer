@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import {
+  cancelCollectJob,
   fetchCollectJobs,
   triggerCollectCatalog,
   triggerCollectFull,
@@ -154,7 +155,20 @@ export function CollectPanel() {
               <span>{t("collect.snapshot")} #{current.snapshot_id}</span>
             )}
           </div>
-          <StageProgress job={current} />
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1"><StageProgress job={current} /></div>
+            {running && (
+              <button
+                className="icon-button shrink-0"
+                title={t("collect.cancelHint")}
+                disabled={busy}
+                onClick={() => act(() => cancelCollectJob(current.job_id))}
+                data-testid="CollectPanel-cancelButton"
+              >
+                {t("collect.cancel")}
+              </button>
+            )}
+          </div>
           {chunkProgress !== null && chunkProgress.total > 0 && (
             <div data-testid="CollectPanel-chunkProgress">
               <p className="mb-1 text-xs" style={{ color: "var(--body-text)" }}>

@@ -1,0 +1,82 @@
+{
+  "name": "W1 catalog query (webhook)",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dbv-catalog",
+        "responseMode": "lastNode",
+        "responseData": "allEntries"
+      }
+    },
+    {
+      "name": "Build query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// kind → 고정 SQL. 파라미터는 정수만 받아 그대로 박는다 (문자열 SQL 미수신)\n// fixed SQL per kind; only integers are interpolated, never raw SQL\nconst TEMPLATES = {\n  \"totals\": \"-- 객체·뷰 총수 / totals — 서비스가 페이지 수를 산출한다\\nSELECT\\n  (SELECT COUNT(*) FROM sys.objects WHERE type IN ('U', 'V')) AS object_total,\\n  (SELECT COUNT(*) FROM sys.views) AS view_total;\\n\",\n  \"objects\": \"-- objects: 테이블·뷰 + 행수 / tables & views with row counts\\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\\n-- 페이지 창 — 서비스가 offset/limit을 넘긴다 / the service drives paging\\nSELECT o.object_id,\\n       s.name AS [schema],\\n       o.name,\\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\\n       ps.row_count\\nFROM sys.objects o\\nJOIN sys.schemas s ON o.schema_id = s.schema_id\\nOUTER APPLY (\\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\\n    SELECT SUM(p.row_count) AS row_count\\n    FROM sys.dm_db_partition_stats p\\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\\n) ps\\nWHERE o.type IN ('U', 'V')\\n  AND o.object_id IN (\\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\\n    ORDER BY object_id OFFSET {{OFFSET}} ROWS FETCH NEXT {{LIMIT}} ROWS ONLY\\n);\\n\",\n  \"columns\": \"-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\\nSELECT c.object_id,\\n       c.name,\\n       c.column_id AS ordinal,\\n       t.name AS data_type,\\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\\n       c.is_nullable,\\n       c.is_computed\\nFROM sys.columns c\\nJOIN sys.types t ON c.user_type_id = t.user_type_id\\nJOIN sys.objects o ON c.object_id = o.object_id\\n-- 대상 객체는 서비스가 앞 단계(01)에서 받은 id로 지정한다 / ids come from step 01\\nWHERE c.object_id IN ({{ID_LIST}});\\n\",\n  \"key_constraints\": \"-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\\nSELECT kc.name,\\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\\n       kc.parent_object_id AS object_id,\\n       col.name AS column_name,\\n       ic.key_ordinal\\nFROM sys.key_constraints kc\\nJOIN sys.index_columns ic\\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\\nJOIN sys.columns col\\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\\nWHERE kc.parent_object_id IN ({{ID_LIST}})\\nORDER BY kc.name, ic.key_ordinal;\\n\",\n  \"foreign_keys\": \"-- FK 제약 + 컬럼 페어 / foreign keys with column pairs\\n-- W1이 행을 {name, src_object_id, tgt_object_id, columns: [{src_column, tgt_column}]}로 그룹핑\\nSELECT fk.name,\\n       fk.parent_object_id AS src_object_id,\\n       fk.referenced_object_id AS tgt_object_id,\\n       sc.name AS src_column,\\n       tc.name AS tgt_column,\\n       fkc.constraint_column_id\\nFROM sys.foreign_keys fk\\nJOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id\\nJOIN sys.columns sc\\n  ON fkc.parent_object_id = sc.object_id AND fkc.parent_column_id = sc.column_id\\nJOIN sys.columns tc\\n  ON fkc.referenced_object_id = tc.object_id AND fkc.referenced_column_id = tc.column_id\\nORDER BY fk.name, fkc.constraint_column_id;\\n\",\n  \"view_definitions\": \"-- 뷰 DDL / view definitions → catalog.json view_definitions[]\\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\\nSELECT v.object_id,\\n       m.definition\\nFROM sys.views v\\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id\\nWHERE v.object_id IN ({{ID_LIST}});\\n\",\n  \"view_deps\": \"-- 객체 수준 뷰 의존성 / object-level view dependencies → view_deps.json deps[] (1차)\\n-- referenced_id IS NULL = 미해석 참조 — 버리지 말고 플래그로 보존해 Phase 2로 이관\\n-- NULL referenced_id = unresolved ref; keep it flagged, defer to Phase 2\\nSELECT d.referencing_id AS view_object_id,\\n       d.referenced_id AS referenced_object_id,\\n       d.referenced_database_name AS referenced_database,\\n       ISNULL(d.referenced_schema_name + '.', '') + d.referenced_entity_name AS referenced_name,\\n       CAST(NULL AS sysname) AS referenced_column,\\n       CASE WHEN d.referenced_id IS NULL THEN 0 ELSE 1 END AS is_resolved\\nFROM sys.sql_expression_dependencies d\\nJOIN sys.objects o ON d.referencing_id = o.object_id AND o.type = 'V'\\nWHERE d.referencing_id IN ({{ID_LIST}});\\n\",\n  \"view_refs\": \"-- 컬럼 수준 lineage / column-grain deps → view_deps.json deps[] (2차) + unresolved_objects[]\\n-- ⚠ 객체별 개별 호출 필수 — 일괄 CROSS APPLY는 해석 불가 객체 \\\"하나\\\"로 전체가 실패한다\\n-- ⚠ per-object calls only; one unresolvable object kills a batched CROSS APPLY\\n-- 이 DMV는 \\\"뷰가 참조하는 컬럼 집합\\\"만 제공 — 출력 컬럼별 1:1 매핑은 Phase 2 (sqlglot)\\nDECLARE @results TABLE (\\n    view_object_id int, referenced_object_id int NULL, referenced_database sysname NULL,\\n    referenced_name nvarchar(517) NULL, referenced_column sysname NULL, is_resolved bit\\n);\\nDECLARE @failures TABLE (object_id int, reason nvarchar(400));\\nDECLARE @oid int, @qname nvarchar(517);\\n\\nDECLARE view_cursor CURSOR LOCAL FAST_FORWARD FOR\\n    SELECT v.object_id, QUOTENAME(s.name) + N'.' + QUOTENAME(v.name)\\n    FROM sys.views v\\n    JOIN sys.schemas s ON v.schema_id = s.schema_id\\n    -- 대상 뷰는 서비스가 지정한다 — 커서 배치 크기를 서비스가 통제 / batch size driven by the service\\n    WHERE v.object_id IN ({{ID_LIST}});\\n\\nOPEN view_cursor;\\nFETCH NEXT FROM view_cursor INTO @oid, @qname;\\nWHILE @@FETCH_STATUS = 0\\nBEGIN\\n    BEGIN TRY\\n        INSERT INTO @results\\n        SELECT @oid,\\n               r.referenced_id,\\n               r.referenced_database_name,\\n               ISNULL(r.referenced_schema_name + '.', '') + r.referenced_entity_name,\\n               r.referenced_minor_name,\\n               CASE WHEN r.referenced_id IS NULL THEN 0 ELSE 1 END\\n        FROM sys.dm_sql_referenced_entities(@qname, 'OBJECT') r\\n        WHERE r.referenced_minor_name IS NOT NULL OR r.referenced_id IS NULL;\\n    END TRY\\n    BEGIN CATCH\\n        -- 실패 객체는 격리하고 계속 진행 / isolate the failing object, keep going\\n        INSERT INTO @failures VALUES (@oid, LEFT(ERROR_MESSAGE(), 400));\\n    END CATCH;\\n    FETCH NEXT FROM view_cursor INTO @oid, @qname;\\nEND\\nCLOSE view_cursor;\\nDEALLOCATE view_cursor;\\n\\n-- n8n MSSQL 노드는 단일 rowset만 반환 → kind 컬럼으로 두 결과를 합친다\\n-- n8n's MSSQL node returns a single rowset; merge both with a kind discriminator\\nSELECT 'dep' AS kind, view_object_id, referenced_object_id, referenced_database,\\n       referenced_name, referenced_column, is_resolved,\\n       CAST(NULL AS nvarchar(400)) AS reason\\nFROM @results\\nUNION ALL\\nSELECT 'failure', object_id, NULL, NULL, NULL, NULL, NULL, reason\\nFROM @failures;\\n\"\n};\nconst b = $json.body ?? {};\nconst sql = TEMPLATES[b.kind];\nif (!sql) { throw new Error('unknown kind: ' + b.kind); }\n// 정수 외에는 전부 거른다 — 목록이 비면 매칭 0건이 되도록 -1을 넣는다\nconst ids = (Array.isArray(b.object_ids) ? b.object_ids : [])\n  .map(n => parseInt(n, 10)).filter(Number.isInteger);\nconst idList = ids.length ? ids.join(',') : '-1';\nconst offset = Math.max(parseInt(b.offset, 10) || 0, 0);\nconst limit = Math.min(Math.max(parseInt(b.limit, 10) || 300, 1), 5000);\nconst query = sql\n  .split('{{ID_LIST}}').join(idList)\n  .split('{{OFFSET}}').join(String(offset))\n  .split('{{LIMIT}}').join(String(limit));\nreturn [{ json: { query } }];\n"
+      }
+    },
+    {
+      "name": "Run query",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}"
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build query": {
+      "main": [
+        [
+          {
+            "node": "Run query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "notes": "수집용 단문 쿼리 실행기 — FastAPI가 kind(totals/objects/columns/key_constraints/foreign_keys/view_definitions/view_deps/view_refs)와 정수 파라미터를 보내면 해당 쿼리만 실행한다. 캐스케이드는 백엔드가 주도하므로 이 워크플로는 상태를 갖지 않는다. credentials는 읽기 전용 계정 권장."
+  }
+}

@@ -171,6 +171,34 @@ def trigger_full_collection(
     return _job_payload(job)
 
 
+# 진행 중으로 간주하는 단계 — UI가 새 수집을 막는 기준과 같다 / stages the UI treats as busy
+RUNNING_STAGES = ("catalog_running", "deps_running")
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_collect_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_sysadmin),
+) -> dict:
+    """멈춘 잡을 실패로 닫는다 — n8n 실행이 죽어도 잡은 남아 새 수집을 막기 때문.
+
+    n8n 쪽 실행을 되돌리지는 않는다(되돌릴 방법이 없다) — 잡 상태만 해제한다.
+    Closes a stuck job so a new collection can start; does not abort the n8n run.
+    """
+    job = db.get(CollectJob, job_id)
+    if job is None:
+        raise HTTPException(404, {"message": "collect job not found",
+                                  "context": {"job_id": job_id}})
+    if job.stage not in RUNNING_STAGES:
+        raise HTTPException(409, {"message": "job is not running",
+                                  "context": {"job_id": job_id, "stage": job.stage}})
+    job.stage = "failed"
+    job.error = f"cancelled by {admin}"
+    job.updated_at = datetime.now(UTC)
+    return _job_payload(job)
+
+
 @router.get("/jobs/{job_id}")
 def get_collect_job(job_id: int, db: Session = Depends(get_db)) -> dict:
     job = db.get(CollectJob, job_id)

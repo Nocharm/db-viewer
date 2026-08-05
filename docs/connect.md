@@ -36,7 +36,7 @@ docker compose up -d --build
 | `POSTGRES_PASSWORD` | 임의 강력값 |
 | `AUTH_ENABLED` | `true` |
 | `DBV_SYSADMINS` | 본인 login_id (콤마 구분) |
-| `INGEST_API_KEY` | 임의 강력값 — n8n에 같은 값 입력 (4단계) |
+| `INGEST_API_KEY` | 임의 강력값 — `/api/ingest/*`를 외부 호출로부터 보호 (n8n은 쓰지 않는다) |
 | `N8N_WEBHOOK_BASE` | `http://182.199.63.71:5678/webhook` |
 | `SOURCE_MODE` | **`fixture` 유지** — live는 8단계에서 승인 후 |
 | `LDAP_*` 4종 | AD 계정 정보 (+사내 CA면 `LDAP_CA_BUNDLE`) |
@@ -63,19 +63,19 @@ docker compose up -d --build
 
 ## 4. n8n 워크플로 등록 (기존 n8n에 UI로만)
 
-실서버 n8n은 이미 운영 중이고 **UI로만 접근 가능**하다. `n8n/workflows/*.json` 한 세트가
-로컬·실서버를 겸용한다 — 값이 `$env.DB_VIEWER_* ?? '리터럴'` 폴백이라 env 없는 실서버에서도
-임포트만으로 동작한다. MSSQL credential은 기존 서비스가 쓰던 등록값을 그대로 쓴다.
+실서버 n8n은 이미 운영 중이고 **UI로만 접근 가능**하다. 워크플로는 전부 3노드짜리
+**단문 쿼리 실행기**라 임포트 후 편집할 값이 없다 — 환경변수도 API 키도 참조하지 않는다
+(수집의 연쇄 호출은 백엔드가 주도하고, 결과는 HTTP 응답으로 돌아온다).
 
-윈도우 PC의 `n8n/workflows/` 파일들을 브라우저(`http://182.199.63.71:5678`)에서
-Import from File — 파일별 후속 작업은 **`n8n/workflows/README.md` 표** 그대로:
+윈도우 PC의 `n8n/workflows/*.json` 3개를 브라우저(`http://182.199.63.71:5678`)에서
+Import from File — 파일별 역할은 **`n8n/workflows/README.md` 표** 참조:
 
 1. 각 워크플로의 MSSQL 노드(⚠️)에 기존 credential 연결
-2. W1a·W1b의 `POST catalog`/`POST view-deps` 노드 → `X-API-Key` 값
-   `PASTE-INGEST-API-KEY-HERE` 를 `.env`의 `INGEST_API_KEY`로 교체
-3. W1a·W1b·W2 **Activate** (webhook은 활성일 때만 응답). W0는 수동 실행용, W1(주기 수집)은 선택.
+   (Request Timeout 300000 권장 — 뷰 DMV 배치가 수십 초 걸린다)
+2. **W1 catalog query**·**W2 query executor** Activate (webhook은 활성일 때만 응답).
+   W0 recon은 사람이 UI에서 1회 실행하는 진단이라 Activate 불필요.
 
-- ✅ 통과 기준: 워크플로 목록에 W0·W1a·W1b·W2가 보이고, W1a/W1b/W2가 Active 토글 켜짐 +
+- ✅ 통과 기준: 워크플로 목록에 W0·W1·W2가 보이고, W1/W2가 Active 토글 켜짐 +
   세 워크플로의 노드에 ⚠️(credential 미연결) 표시 없음.
 
 ## 5. 정찰 — 정지점 16 (읽기 전용, 복붙 불필요)
@@ -96,6 +96,10 @@ n8n에서 **W0 recon queries** 열기 → Execute Workflow → 마지막 **Recon
 앱 → **관리** → 카탈로그 수집 → **[1단계: 카탈로그 수집]** → 스테퍼가 "카탈로그 적재 완료"가 되면
 **[2단계: 뷰 의존·파싱]** (다음부턴 [전체 실행] 하나로 가능).
 
+> `.env`의 `N8N_WEBHOOK_BASE`가 비어 있으면 실수집이 아니라 **픽스처 리플레이로 falls back**하고,
+> 배포 이미지엔 픽스처가 없어 `fixture ... not found`로 실패한다. 값을 채운 뒤
+> `docker compose up -d backend`로 재기동할 것 (SOURCE_MODE는 `fixture` 그대로 둔다).
+
 - ✅ 통과 기준 (전부 화면):
   - 수집 패널 스테퍼 4단계 전부 ✓ + 카운트(objects/columns/deps/lineage)가 실 규모(테이블 2,342·뷰 882 — 정지점 16 실측)와 부합
   - **파싱 지표** 페이지 → 성공률 표시 + 격리 목록 확인 (실 뷰 SQL 기준 — 낮으면 격리 뷰 이름 메모)
@@ -104,8 +108,11 @@ n8n에서 **W0 recon queries** 열기 → Execute Workflow → 마지막 **Recon
 
 ## 7. (보안 승인 대기 중에도 가능) 화이트리스트·AD 확인
 
-관리 콘솔에서 AD 전체 동기화 → 사용자 등록, 필요 인원 화이트리스트 추가.
-- ✅ 통과 기준: 동기화 완료 메시지의 스캔/반영 수가 상식적 규모.
+관리 콘솔에서 **[AD 전체 동기화]** → 아래 **AD 사용자** 목록에 인원이 채워지면, 접속시킬 사람의
+행에서 **[허용 추가]**를 눌러 화이트리스트에 넣는다 (동기화만으로는 로그인이 열리지 않는다 —
+두 목록은 별개 테이블).
+- ✅ 통과 기준: 동기화 완료 메시지의 스캔/반영 수가 상식적 규모 + **AD 사용자 목록에 실제 인원 표시**
+  + 허용 추가한 사람이 화이트리스트 표에 나타남.
 
 ## 8. live 전환 — 정지점 18 (보안 승인 후에만)
 

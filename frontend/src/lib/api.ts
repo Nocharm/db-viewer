@@ -91,6 +91,32 @@ export function syncUsers(): Promise<{ scanned: number; upserted: number; exclud
   return postJson("/api/admin/users/sync", {});
 }
 
+/** AD 동기화로 적재된 사용자 — 화이트리스트와 별개 테이블 / AD-synced users, not the whitelist. */
+export interface AppUserEntry {
+  login_id: string;
+  name: string | null;
+  department: string | null;
+  email: string | null;
+  active: boolean;
+  source: string;
+  role: string | null;
+}
+
+export interface AppUserPage {
+  items: AppUserEntry[];
+  total: number;
+  has_more: boolean;
+}
+
+/** 검색은 서버(전체 집합)에서, 결과는 페이지 단위 — 화면이 전량을 들고 있지 않는다. */
+export function fetchUsers(
+  { q = "", offset = 0, limit = 100 }: { q?: string; offset?: number; limit?: number } = {},
+): Promise<AppUserPage> {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (q) params.set("q", q);
+  return getJson(`/api/admin/users?${params}`);
+}
+
 export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   if (type) params.set("type", type);
@@ -257,6 +283,10 @@ export function triggerCollectViewDeps(jobId: number): Promise<CollectJob> {
 
 export function triggerCollectFull(): Promise<CollectJob> {
   return postJson("/api/collect/full", {});
+}
+
+export function cancelCollectJob(jobId: number): Promise<CollectJob> {
+  return postJson(`/api/collect/jobs/${jobId}/cancel`, {});
 }
 
 export function fetchCollectJobs(): Promise<{ items: CollectJob[] }> {

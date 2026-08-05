@@ -4,6 +4,7 @@
 
 ## 2026-08-05
 
+- **실서버 수집 안정화 + n8n 단문 실행기 전환 (브랜치 머지: container-memory-optimization)** — 실서버 수집 실전 결함 일괄 수정: 수집 경로를 SOURCE_MODE에서 분리(N8N_WEBHOOK_BASE 유무로 판단 — 컨테이너에 픽스처 없음), compose env 전달 누락 3건(N8N_WEBHOOK_BASE·N8N_QUERY_TIMEOUT·LDAP_CA_BUNDLE) 추가, 상대 FIXTURE_DIR 저장소 루트 앵커(`resolved_fixture_dir`), n8n webhook 응답 기본값(firstEntryJson)으로 행이 잘리던 문제(W1·W2에 allEntries 명시 — W2는 live 전환 전 선제), 제약 그룹핑을 (이름+소유 객체)로 교정(스키마 간 동명 FK 병합·PK 오플래그 수정), 카탈로그 밖 뷰 참조(함수·시노님 등)는 미해석 강등(deps_unresolved/skipped — 2단계 사망 방지), 스냅샷 밖 FK는 스킵+카운트. 구조 전환(사용자 지시 "n8n은 짧게, 연쇄는 서비스에서"): n8n을 3노드 단문 쿼리 실행기(W1)로 통합하고 수집 캐스케이드를 백엔드 `N8nCollectRunner`로 이관 — 워크플로 5→3개, `$env`·API키 참조 제거(임포트 후 편집 불필요), W1a도 객체 창(300) DB 분할로 5분+ 병목 해소, 멈춘 수집 잡 취소 API. AD 사용자 서버 검색+무한 스크롤(AdUserList 분리), Pretendard+JetBrains Mono 자가호스팅 폰트 확정.
 - **AI 후속 사이클(1~5) 구현 완료** — ① 판정 근거 영속: 수용/기각 전부 relations에 reason과 함께 적재(rejected는 기존 dedupe에 걸려 재실행마다 다음 후보로 전진 — 전량 기각 정체 소멸), ERD 엣지 hover 카드·상세 행 표시, 검증 승격 시 기각 사유 자동 정리. ② suggest·임베딩 인덱싱을 ai_jobs 202+폴링으로 전환(kind별 중복 409, 마이그레이션 0009). ③ 임베딩 의미 검색: /embeddings 배치 인덱싱(잡 상한 1,000·배치 32·호출 간 500ms — 부하 제약, source_hash 증분) → 코사인 top-50 → LLM 재랭크, 임베딩 문제는 전부 키워드 자동 폴백(재랭크 실패만 502·손상 벡터 스킵). ④ 스키마 Q&A 챗: 검색 top-8 메타 컨텍스트, 전역 플로팅 패널(라우트 간 세션 유지·mock 배지·테이블 칩→ERD). 테스트 190→237(백)·33→38(프론트). 스펙: `docs/superpowers/specs/2026-08-05-ai-cycle2-design.md`, 계획: `docs/superpowers/plans/2026-08-05-ai-cycle2.md`. 최종 전체 리뷰 반영: 재기동 고아 잡 정리·unjudged 카운트 노출·임베딩 상한 2,000 강제·잡 에러 컨텍스트 보존.
 
 ## 2026-08-04

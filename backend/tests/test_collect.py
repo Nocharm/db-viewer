@@ -89,76 +89,240 @@ def test_jobs_list_recent_first(cclient):
     assert [items[0]["job_id"], items[1]["job_id"]] == [second, first]
 
 
-def test_n8n_runner_pages_view_deps_and_waits_callbacks(migrated_engine):
-    """뷰 N개 단위 분할 호출 — 청크 콜백 확인 후 다음 청크 진행 / paged webhook calls."""
-    import json as jsonlib
-    from datetime import UTC, datetime
-
-    from app.adapters.collect_runner import N8nWebhookRunner
-    from app.models import CatalogObject, CollectJob, Snapshot
-
-    session_factory = sessionmaker(bind=migrated_engine)
-    now = datetime.now(UTC)
-    with session_factory() as db:
-        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
-        db.add(snapshot)
-        db.flush()
-        for i in range(5):
-            db.add(CatalogObject(snapshot_id=snapshot.id, schema="dbo",
-                                 name=f"V_{i}", type="view", object_id=i + 1))
-        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
-                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
-        db.add(job)
-        db.commit()
-        snapshot_id, job_id = snapshot.id, job.id
+def _fake_query_runner(migrated_engine, rows_by_kind, chunk_size=2, deps_size=2):
+    """W1 응답을 kind별로 대신 주는 러너 — HTTP 경계만 대체 / stubs only the HTTP boundary."""
+    from app.adapters.collect_runner import N8nCollectRunner
 
     calls: list[dict] = []
-    runner = N8nWebhookRunner("http://n8n/webhook", session_factory,
-                              deps_chunk_size=2, chunk_timeout=5)
+    runner = N8nCollectRunner("http://n8n/webhook", sessionmaker(bind=migrated_engine),
+                              catalog_chunk_size=chunk_size, deps_chunk_size=deps_size)
 
-    def fake_post(path: str, body: dict) -> None:  # ingest 콜백까지 즉시 시뮬레이션
-        calls.append(body)
-        with session_factory() as db:
-            j = db.get(CollectJob, job_id)
-            j.counts = jsonlib.dumps({
-                "deps_chunks_done": body["chunk_index"],
-                "deps_chunks_total": body["chunk_total"],
-            })
-            if body["chunk_index"] == body["chunk_total"]:
-                j.stage = "ready"
-            j.updated_at = datetime.now(UTC)
-            db.commit()
+    def fake_query(kind: str, params: dict | None = None) -> list[dict]:
+        calls.append({"kind": kind, **(params or {})})
+        value = rows_by_kind.get(kind, [])
+        return value(params or {}) if callable(value) else value
 
-    runner._post = fake_post  # HTTP 경계만 목킹 / mock only the HTTP boundary
+    runner._query = fake_query
+    return runner, calls
+
+
+def test_n8n_runner_drives_the_cascade_per_object_page(migrated_engine):
+    """n8n은 단문 쿼리만 — 객체 페이지마다 그 페이지 id로 컬럼·키·뷰정의를 따로 부른다."""
+    objects = [
+        {"object_id": 10, "schema": "dbo", "name": "HR_EMP", "type": "table", "row_count": 5},
+        {"object_id": 11, "schema": "dbo", "name": "HR_DEPT", "type": "table", "row_count": 2},
+        {"object_id": 12, "schema": "dbo", "name": "V_EMP", "type": "view", "row_count": None},
+    ]
+    columns = {
+        10: [{"object_id": 10, "name": "EMP_NO", "ordinal": 1, "data_type": "int",
+              "max_length": 4, "is_nullable": False, "is_computed": False}],
+        11: [{"object_id": 11, "name": "DEPT_CD", "ordinal": 1, "data_type": "varchar",
+              "max_length": 10, "is_nullable": False, "is_computed": False}],
+        12: [{"object_id": 12, "name": "EMP_NO", "ordinal": 1, "data_type": "int",
+              "max_length": 4, "is_nullable": True, "is_computed": False}],
+    }
+    rows = {
+        "totals": [{"object_total": 3, "view_total": 1}],
+        "objects": lambda p: objects[p["offset"]: p["offset"] + p["limit"]],
+        "columns": lambda p: [c for oid in p["object_ids"] for c in columns[oid]],
+        "key_constraints": lambda p: (
+            [{"name": "PK_HR_EMP", "type": "pk", "object_id": 10, "column_name": "EMP_NO"}]
+            if 10 in p["object_ids"] else []),
+        "foreign_keys": [],
+        "view_definitions": lambda p: [{"object_id": oid, "definition": "SELECT 1"}
+                                       for oid in p["object_ids"]],
+    }
+    runner, calls = _fake_query_runner(migrated_engine, rows, chunk_size=2)
+    with sessionmaker(bind=migrated_engine)() as db:
+        from datetime import UTC, datetime
+
+        from app.models import CollectJob
+        now = datetime.now(UTC)
+        job = CollectJob(mode="step", stage="catalog_running", triggered_by="t",
+                         created_at=now, updated_at=now)
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    runner.run_catalog(job_id)
+
+    # 페이지 1은 id 10·11로, 페이지 2는 id 12로 각각 별도 쿼리 (캐스케이드가 서비스에 있다)
+    # 페이지1(테이블만)은 뷰 정의 쿼리를 아예 부르지 않는다 / no views on page 1 → no call
+    assert [c["kind"] for c in calls] == [
+        "totals",
+        "objects", "columns", "key_constraints",
+        "objects", "columns", "key_constraints", "foreign_keys", "view_definitions",
+    ]
+    assert [c["object_ids"] for c in calls if c["kind"] == "columns"] == [[10, 11], [12]]
+    # 뷰 정의는 그 페이지의 뷰에만 / view defs only for views on that page
+    assert [c["object_ids"] for c in calls if c["kind"] == "view_definitions"] == [[12]]
+
+    import sqlalchemy as sa
+
+    from app.models import Base
+    with migrated_engine.connect() as conn:
+        counted = {name: conn.execute(
+            sa.select(sa.func.count()).select_from(Base.metadata.tables[name])).scalar()
+            for name in ("objects", "columns")}
+    assert counted == {"objects": 3, "columns": 3}
+    with sessionmaker(bind=migrated_engine)() as db:
+        from app.models import CollectJob
+        assert db.get(CollectJob, job_id).stage == "catalog_done"
+
+
+def test_n8n_runner_batches_view_deps_by_view_ids(migrated_engine):
+    """뷰 의존도 배치 id 목록으로 — DMV 커서 크기를 서비스가 통제한다."""
+    from datetime import UTC, datetime
+
+    from app.models import CatalogObject, CollectJob, Snapshot
+
+    factory = sessionmaker(bind=migrated_engine)
+    now = datetime.now(UTC)
+    with factory() as db:
+        snap = Snapshot(collected_at=now, source_db="T", status="collecting")
+        db.add(snap)
+        db.flush()
+        for oid in (21, 22, 23):
+            db.add(CatalogObject(snapshot_id=snap.id, schema="dbo", name=f"V{oid}",
+                                 type="view", object_id=oid))
+        job = CollectJob(mode="step", stage="deps_running", triggered_by="t",
+                         created_at=now, updated_at=now, snapshot_id=snap.id)
+        db.add(job)
+        db.commit()
+        snapshot_id, job_id = snap.id, job.id
+
+    runner, calls = _fake_query_runner(
+        migrated_engine, {"view_refs": [], "view_deps": []}, deps_size=2)
     runner.run_view_deps(job_id, snapshot_id)
 
-    assert [c["offset"] for c in calls] == [0, 2, 4]  # ceil(5/2) = 3청크
-    assert [c["chunk_index"] for c in calls] == [1, 2, 3]
-    assert all(c["chunk_total"] == 3 and c["limit"] == 2 for c in calls)
+    assert [c["object_ids"] for c in calls if c["kind"] == "view_refs"] == [[21, 22], [23]]
+    assert [c["kind"] for c in calls] == [
+        "view_refs", "view_deps", "view_refs", "view_deps"]
 
 
-def test_n8n_runner_raises_when_chunk_never_completes(migrated_engine):
-    from datetime import UTC, datetime
+def test_n8n_runner_raises_after_query_retries(migrated_engine, monkeypatch):
+    from urllib.error import URLError
 
     import pytest as _pytest
 
     from app.adapters import collect_runner as cr
-    from app.models import CollectJob, Snapshot
+
+    attempts = []
+
+    def failing_urlopen(request, timeout=None):
+        attempts.append(1)
+        raise URLError("connection refused")
+
+    # 모듈 리로드는 다른 테스트의 클래스 동일성을 깨뜨린다 — monkeypatch로 국한
+    monkeypatch.setattr(cr.urllib.request, "urlopen", failing_urlopen)
+    runner = cr.N8nCollectRunner("http://n8n/webhook", sessionmaker(bind=migrated_engine))
+    with _pytest.raises(RuntimeError, match="catalog query failed"):
+        runner._query("totals")
+    assert len(attempts) == 2  # 1회 재시도 후 마지막 오류 / one retry then raise
+
+
+def test_runner_selection_routes_on_webhook_base_not_source_mode(tmp_path):
+    """런북 6단계 재현 — SOURCE_MODE=fixture + n8n 연결이면 실수집으로 가야 한다."""
+    import pytest as _pytest
+
+    from app.adapters import create_collect_runner
+    from app.adapters.collect_runner import N8nCollectRunner
+    from app.config import Settings
+
+    connected = Settings(source_mode="fixture", n8n_webhook_base="http://n8n/webhook")
+    assert isinstance(create_collect_runner(connected, None), N8nCollectRunner)
+
+    offline = Settings(source_mode="fixture", n8n_webhook_base="", fixture_dir=str(tmp_path))
+    assert isinstance(create_collect_runner(offline, None), FixtureCollectRunner)
+
+    # n8n 없는 replay/live는 수집 경로가 없다 — 기존 게이트 유지
+    with _pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
+        create_collect_runner(Settings(source_mode="live", n8n_webhook_base=""), None)
+
+
+def test_fixture_runner_reports_missing_fixture_with_remedy(migrated_engine, tmp_path):
+    """픽스처 없는 배포에서 ENOENT 대신 조치 가능한 메시지 / actionable, not ENOENT."""
+    import pytest as _pytest
 
     session_factory = sessionmaker(bind=migrated_engine)
-    now = datetime.now(UTC)
-    with session_factory() as db:
-        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
-        db.add(snapshot)
-        db.flush()
-        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
-                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
-        db.add(job)
-        db.commit()
-        snapshot_id, job_id = snapshot.id, job.id
+    runner = FixtureCollectRunner(session_factory, str(tmp_path / "missing"))
+    with _pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
+        runner.run_catalog(1)
 
-    runner = cr.N8nWebhookRunner("http://n8n/webhook", session_factory,
-                                 deps_chunk_size=10, chunk_timeout=0)  # 즉시 만료
-    runner._post = lambda path, body: None  # 콜백이 오지 않는 상황
-    with _pytest.raises(RuntimeError, match="did not complete"):
-        runner.run_view_deps(job_id, snapshot_id)
+
+def test_cancel_unblocks_a_stuck_job(cclient):
+    """멈춘 잡이 새 수집을 막지 않도록 실패로 닫는다 / cancel frees the UI gate."""
+    from app.api.collect import get_collect_runner
+
+    class HangingRunner:  # 트리거만 하고 콜백이 오지 않는 상황 (n8n 실행 유실)
+        def run_catalog(self, job_id: int) -> None:
+            pass
+
+        def run_view_deps(self, job_id: int, snapshot_id: int) -> None:
+            pass
+
+    cclient.app.dependency_overrides[get_collect_runner] = lambda: HangingRunner()
+    job_id = cclient.post("/api/collect/catalog", json={}).json()["job_id"]
+    assert cclient.get(f"/api/collect/jobs/{job_id}").json()["stage"] == "catalog_running"
+
+    res = cclient.post(f"/api/collect/jobs/{job_id}/cancel")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["stage"] == "failed" and "cancelled" in body["error"]
+
+    # 이미 끝난 잡은 409 / cancelling a finished job is a conflict
+    assert cclient.post(f"/api/collect/jobs/{job_id}/cancel").status_code == 409
+    assert cclient.post("/api/collect/jobs/999/cancel").status_code == 404
+
+
+def test_group_constraints_keeps_same_named_constraints_apart():
+    """제약 이름은 스키마 단위로만 유일 — 동명 제약이 한 덩어리로 합쳐지면 안 된다.
+
+    실서버 FK 적재 실패(FK_agent_subscript / 'unknown column')의 근본 원인 회귀 가드.
+    """
+    from app.adapters.collect_runner import _group_foreign_keys, _group_key_constraints
+
+    # 서로 다른 스키마의 동명 FK — 참조 대상 테이블이 다르다
+    fks = _group_foreign_keys([
+        {"name": "FK_agent_sub", "src_object_id": 10, "tgt_object_id": 20,
+         "src_column": "subscriptionid", "tgt_column": "id"},
+        {"name": "FK_agent_sub", "src_object_id": 30, "tgt_object_id": 40,
+         "src_column": "sub_no", "tgt_column": "sub_id"},
+    ])
+    assert len(fks) == 2, "동명 FK가 병합되면 남의 테이블 컬럼을 참조하게 된다"
+    assert {(f["src_object_id"], f["columns"][0]["src_column"]) for f in fks} == {
+        (10, "subscriptionid"), (30, "sub_no")}
+    assert all(len(f["columns"]) == 1 for f in fks)
+
+    # 같은 FK의 복합 컬럼은 여전히 하나로 묶인다 / composite keys still group
+    composite = _group_foreign_keys([
+        {"name": "FK_c", "src_object_id": 1, "tgt_object_id": 2,
+         "src_column": "a", "tgt_column": "x"},
+        {"name": "FK_c", "src_object_id": 1, "tgt_object_id": 2,
+         "src_column": "b", "tgt_column": "y"},
+    ])
+    assert len(composite) == 1 and len(composite[0]["columns"]) == 2
+
+    # PK/UQ도 동일 — 병합되면 엉뚱한 컬럼에 PK 플래그가 선다
+    kcs = _group_key_constraints([
+        {"name": "PK_common", "type": "pk", "object_id": 10, "column_name": "id"},
+        {"name": "PK_common", "type": "pk", "object_id": 30, "column_name": "code"},
+    ])
+    assert len(kcs) == 2
+    assert {(k["object_id"], tuple(k["columns"])) for k in kcs} == {
+        (10, ("id",)), (30, ("code",))}
+
+
+def test_ingest_skips_unresolvable_fk_instead_of_failing(client, migrated_engine, load_fixture):
+    """FK 하나가 스냅샷 밖을 가리켜도 수집 전체를 버리지 않고 건수로 드러낸다."""
+    payload = load_fixture("catalog.json")
+    payload["foreign_keys"] = payload["foreign_keys"] + [{
+        "name": "FK_dangling", "src_object_id": 999_001, "tgt_object_id": 999_002,
+        "columns": [{"src_column": "nope", "tgt_column": "missing"}],
+    }]
+    res = client.post("/api/ingest/catalog", json=payload)
+    assert res.status_code == 200, res.text
+    counts = res.json()["counts"]
+    assert counts["foreign_keys_skipped"] == 1
+    # 정상 FK는 그대로 적재 / the healthy FKs still land
+    assert counts["foreign_keys"] == len(payload["foreign_keys"]) - 1

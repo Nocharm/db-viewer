@@ -12,10 +12,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = REPO_ROOT / "n8n" / "sql"
-OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
 RECON_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
-W1A_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1a_collect_catalog.json"
-W1B_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1b_collect_viewdeps.json"
+W1_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_query.json"
 W2_OUT_PATH = REPO_ROOT / "n8n" / "workflows" / "w2_query_executor.json"
 
 # W2 — 파라미터 → 고정 템플릿 쿼리. 동적 SQL 문자열은 절대 받지 않는다 (보안 경계).
@@ -68,6 +66,20 @@ RECON_SQL_NODES = [
     ("recon 06 lineage dmv smoke", "recon/06_lineage_dmv_smoke.sql"),
 ]
 
+# 수집 쿼리 kind → SQL 파일. 서비스가 kind와 파라미터를 보내면 그 쿼리 하나만 실행한다.
+# 캐스케이드(객체→그 객체의 컬럼→…)는 백엔드가 주도한다 — n8n은 단문 실행기로만 둔다.
+# one small query per call; the backend owns the cascade
+CATALOG_QUERY_KINDS = [
+    ("totals", "00_object_count.sql"),
+    ("objects", "01_objects.sql"),
+    ("columns", "02_columns.sql"),
+    ("key_constraints", "03_key_constraints.sql"),
+    ("foreign_keys", "04_foreign_keys.sql"),
+    ("view_definitions", "05_view_definitions.sql"),
+    ("view_deps", "06_view_deps.sql"),
+    ("view_refs", "07_referenced_entities.sql"),
+]
+
 RECON_REPORT_JS = """\
 // 정찰 결과 종합 — 판단은 사람이 한다 (결과 보고 → 정지점 16)
 // assemble the recon report; humans judge the results
@@ -90,174 +102,13 @@ if (smoke && smoke.error) {
 return [{ json: report }];
 """
 
-# (노드 이름, SQL 파일) — 실행 순서 / execution order
-SQL_NODES = [
-    ("01 objects", "01_objects.sql"),
-    ("02 columns", "02_columns.sql"),
-    ("03 key constraints", "03_key_constraints.sql"),
-    ("04 foreign keys", "04_foreign_keys.sql"),
-    ("05 view definitions", "05_view_definitions.sql"),
-    ("06 view deps", "06_view_deps.sql"),
-    ("07 referenced entities", "07_referenced_entities.sql"),
-]
-
-# 가공·판단 금지 — 행을 계약 형태로 "묶기"만 한다 / mechanical grouping only, no logic
-BUILD_CATALOG_JS = """\
-// raw rows → catalog contract (mechanical grouping only / 기계적 그룹핑만)
-const objects = $('01 objects').all().map(i => i.json);
-const columns = $('02 columns').all().map(i => ({
-  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,
-}));
-const kcs = {};
-for (const { json: r } of $('03 key constraints').all()) {
-  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item
-  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })
-    .columns.push(r.column_name);
-}
-const fks = {};
-for (const { json: r } of $('04 foreign keys').all()) {
-  if (!r.name) continue;
-  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,
-                     tgt_object_id: r.tgt_object_id, columns: [] })
-    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });
-}
-const viewDefs = $('05 view definitions').all()
-  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));
-return [{ json: {
-  source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',
-  collected_at: new Date().toISOString(),
-  objects, columns,
-  key_constraints: Object.values(kcs),
-  foreign_keys: Object.values(fks),
-  view_definitions: viewDefs,
-} }];
-"""
-
-BUILD_VIEW_DEPS_JS = """\
-// deps 계약 조립 — 07 컬럼 단위 우선, 06은 미해석·DMV실패 뷰 보강 (계약 규칙, 판단 아님)
-// column-grain rows from 07; 06 fills unresolved refs and DMV-failed views per contract
-const snapshotId = $('POST catalog').first().json.snapshot_id;
-const rows07 = $('07 referenced entities').all().map(i => i.json);
-const failures = rows07.filter(r => r.kind === 'failure')
-  .map(r => ({ object_id: r.view_object_id, reason: r.reason }));
-const failedIds = new Set(failures.map(f => f.object_id));
-const deps07 = rows07.filter(r => r.kind === 'dep' && r.is_resolved).map(r => ({
-  view_object_id: r.view_object_id, referenced_object_id: r.referenced_object_id,
-  referenced_database: r.referenced_database, referenced_name: r.referenced_name,
-  referenced_column: r.referenced_column, is_resolved: true,
-}));
-const deps06 = $('06 view deps').all().map(i => i.json)
-  .filter(d => d.view_object_id != null && (!d.is_resolved || failedIds.has(d.view_object_id)))
-  .map(d => ({ ...d, is_resolved: !!d.is_resolved }));
-return [{ json: {
-  snapshot_id: snapshotId,
-  deps: [...deps07, ...deps06],
-  unresolved_objects: failures,
-} }];
-"""
-
-
-# 단계 워크플로용 SQL 분할 — 1단계 카탈로그(01-05) / 2단계 뷰 의존(06-07)
-CATALOG_SQL_NODES = SQL_NODES[:5]
-VIEW_DEPS_SQL_NODES = SQL_NODES[5:]
-
-# W1a — 객체 슬라이스 청크로 분할 전송: Code가 N개 아이템을 반환하면
-# HTTP 노드가 아이템당 1회씩 순차 POST한다 (전송 크기 관리, DB 스캔은 단일 유지)
-# chunked transport: N items from Code → N sequential POSTs by the HTTP node
-BUILD_CATALOG_JS_W1A = """\
-// raw rows → catalog contract, 객체 슬라이스 청크로 분할 (기계적 그룹핑·분할만)
-// chunked by object slices to bound each POST; grouping and slicing only
-const trigger = $('Webhook').first().json.body ?? {};
-const chunkSize = Math.min(Math.max(parseInt(trigger.catalog_chunk_size, 10) || 300, 50), 2000);
-const objects = $('01 objects').all().map(i => i.json);
-const columns = $('02 columns').all().map(i => ({
-  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,
-}));
-const kcs = {};
-for (const { json: r } of $('03 key constraints').all()) {
-  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item
-  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })
-    .columns.push(r.column_name);
-}
-const fks = {};
-for (const { json: r } of $('04 foreign keys').all()) {
-  if (!r.name) continue;
-  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,
-                     tgt_object_id: r.tgt_object_id, columns: [] })
-    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });
-}
-const viewDefs = $('05 view definitions').all()
-  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));
-const collectedAt = new Date().toISOString();
-const chunkTotal = Math.max(1, Math.ceil(objects.length / chunkSize));
-const items = [];
-for (let c = 0; c < chunkTotal; c++) {
-  const slice = objects.slice(c * chunkSize, (c + 1) * chunkSize);
-  const ids = new Set(slice.map(o => o.object_id));
-  items.push({ json: {
-    collect_job_id: trigger.collect_job_id ?? null,
-    source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',
-    collected_at: collectedAt,
-    chunk_index: c + 1, chunk_total: chunkTotal,
-    objects: slice,
-    columns: columns.filter(col => ids.has(col.object_id)),
-    key_constraints: Object.values(kcs).filter(k => ids.has(k.object_id)),
-    // FK는 두 객체에 걸친다 — 전 객체가 적재된 마지막 청크에만 / FKs only on the last chunk
-    foreign_keys: c === chunkTotal - 1 ? Object.values(fks) : [],
-    view_definitions: viewDefs.filter(v => ids.has(v.object_id)),
-  } });
-}
-return items;
-"""
-
-BUILD_VIEW_DEPS_JS_W1B = BUILD_VIEW_DEPS_JS.replace(
-    "const snapshotId = $('POST catalog').first().json.snapshot_id;",
-    "// 단계 실행은 스냅샷 id를 트리거 본문으로 받는다 / snapshot id arrives via the webhook\n"
-    "const trigger = $('Webhook').first().json.body ?? {};\n"
-    "const snapshotId = trigger.snapshot_id;",
-).replace(
-    "return [{ json: {",
-    "return [{ json: {\n"
-    "  collect_job_id: trigger.collect_job_id ?? null,\n"
-    "  chunk_index: trigger.chunk_index ?? 1,\n"
-    "  chunk_total: trigger.chunk_total ?? 1,",
-)
-
-
-# 한 세트 전략 — 워크플로는 $env가 있으면 그 값(로컬 리허설: compose가 주입),
-# 없으면 리터럴 폴백(실서버 n8n: UI 접근만 가능해 env 주입 불가)을 쓴다.
-# one set serves both: local compose injects $env; production falls back to literals
-PROD_API_BASE = "http://182.199.63.71:6678"
-# 비밀키는 커밋 금지 — 임포트 후 n8n UI에서 실제 키로 교체 / replace in the n8n UI after import
-KEY_PLACEHOLDER = "PASTE-INGEST-API-KEY-HERE"
-API_BASE_EXPR = "$env.DB_VIEWER_API_BASE ?? '" + PROD_API_BASE + "'"
-KEY_VALUE = "={{ $env.DB_VIEWER_INGEST_KEY ?? '" + KEY_PLACEHOLDER + "' }}"
-
 # 정상적으로 0행일 수 있는 쿼리 노드 — n8n은 출력 0건이면 체인을 멈추므로
 # alwaysOutputData로 빈 아이템을 흘려보낸다 (FK 없는 레거시 DB가 이 프로젝트의 전제)
 # these queries can legitimately return zero rows; without alwaysOutputData n8n halts the chain
 EMPTYABLE_SQL_NODES = {
-    "recon 04 cross database refs",
-    "03 key constraints", "04 foreign keys",
-    "06 view deps", "07 referenced entities",
-    "Run query",  # W2 — 빈 테이블 미리보기·LIKE 무매칭 / empty preview or no LIKE match
+    "recon 04 cross database refs",  # 크로스 DB 참조 없음이 정상 / no cross-db refs is normal
+    "Run query",                     # 빈 결과가 정상인 조회 다수 / many queries legitimately return none
 }
-
-
-
-# 뷰 윈도우 치환 — W1b는 webhook body의 offset/limit(정수 강제 클램프), W1은 전체 범위
-# view-window substitution: W1b reads ints from the webhook body; W1 covers everything
-W1B_OFFSET_EXPR = "{{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}"
-W1B_LIMIT_EXPR = "{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 100, 1), 2000) }}"
-WINDOWED_SQL_FILES = {"06_view_deps.sql", "07_referenced_entities.sql"}
-
-
-def _read_sql(filename: str, view_offset: str | None = None,
-              view_limit: str | None = None, as_expression: bool = False) -> str:
-    sql = (SQL_DIR / filename).read_text()
-    if view_offset is not None and view_limit is not None:
-        sql = sql.replace("{{VIEW_OFFSET}}", view_offset).replace("{{VIEW_LIMIT}}", view_limit)
-    return ("=" + sql) if as_expression else sql
 
 
 def _node(name: str, node_type: str, position: list[int], parameters: dict,
@@ -273,82 +124,6 @@ def _node(name: str, node_type: str, position: list[int], parameters: dict,
     return node
 
 
-def build_workflow() -> dict:
-    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
-    nodes = [
-        _node("Schedule", "n8n-nodes-base.scheduleTrigger", [0, 0], {
-            "rule": {"interval": [{"field": "cronExpression", "expression": "0 2 * * *"}]},
-        }, type_version=1.2),
-    ]
-    for i, (name, filename) in enumerate(SQL_NODES):
-        # 주기 수집은 단일 실행 — 뷰 윈도우를 전체 범위로 고정 / full window for the scheduled run
-        query = (_read_sql(filename, "0", "1000000")
-                 if filename in WINDOWED_SQL_FILES else _read_sql(filename))
-        nodes.append(_node(
-            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
-            {"operation": "executeQuery", "query": query},
-            credentials=mssql_cred, type_version=1.1,
-        ))
-    nodes += [
-        _node("Build catalog payload", "n8n-nodes-base.code", [220 * 8, 0],
-              {"jsCode": BUILD_CATALOG_JS}, type_version=2),
-        _node("POST catalog", "n8n-nodes-base.httpRequest", [220 * 9, 0], {
-            "method": "POST",
-            "url": "={{ " + API_BASE_EXPR + " }}/api/ingest/catalog",
-            "sendBody": True, "specifyBody": "json",
-            "jsonBody": "={{ JSON.stringify($json) }}",
-            # ingest 머신 게이트 — 백엔드 INGEST_API_KEY와 동일 값 / machine auth key
-            "sendHeaders": True,
-            "headerParameters": {"parameters": [
-                {"name": "X-API-Key", "value": KEY_VALUE},
-            ]},
-        }, type_version=4.2),
-        _node("Build view-deps payload", "n8n-nodes-base.code", [220 * 10, 0],
-              {"jsCode": BUILD_VIEW_DEPS_JS}, type_version=2),
-        _node("POST view-deps", "n8n-nodes-base.httpRequest", [220 * 11, 0], {
-            "method": "POST",
-            "url": "={{ " + API_BASE_EXPR + " }}/api/ingest/view-deps",
-            "sendBody": True, "specifyBody": "json",
-            "jsonBody": "={{ JSON.stringify($json) }}",
-            "sendHeaders": True,
-            "headerParameters": {"parameters": [
-                {"name": "X-API-Key", "value": KEY_VALUE},
-            ]},
-        }, type_version=4.2),
-    ]
-
-    order = [n["name"] for n in nodes]
-    connections = {
-        src: {"main": [[{"node": dst, "type": "main", "index": 0}]]}
-        for src, dst in zip(order, order[1:])
-    }
-    return {
-        "name": "W1 catalog snapshot",
-        "nodes": nodes,
-        "connections": connections,
-        "settings": {"executionOrder": "v1"},
-        "meta": {
-            "notes": "n8n은 수집·전송만 한다 — 가공·판단은 FastAPI ingest가 담당 (계획 §2). "
-                     "값은 DB_VIEWER_* 환경변수가 있으면 그 값, 없으면 리터럴 폴백. "
-                     "실서버는 임포트 후 POST catalog / POST view-deps 노드의 X-API-Key "
-                     "플레이스홀더만 .env의 INGEST_API_KEY로 교체할 것.",
-        },
-    }
-
-
-def _post_ingest_node(name: str, endpoint: str, position: list[int]) -> dict:
-    return _node(name, "n8n-nodes-base.httpRequest", position, {
-        "method": "POST",
-        "url": "={{ " + API_BASE_EXPR + " }}" + endpoint,
-        "sendBody": True, "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
-        "sendHeaders": True,
-        "headerParameters": {"parameters": [
-            {"name": "X-API-Key", "value": KEY_VALUE},
-        ]},
-    }, type_version=4.2)
-
-
 def _chain(nodes: list[dict]) -> dict:
     order = [n["name"] for n in nodes]
     return {
@@ -357,70 +132,65 @@ def _chain(nodes: list[dict]) -> dict:
     }
 
 
-def build_collect_catalog_workflow() -> dict:
-    """W1a — 버튼 트리거 1단계: 카탈로그 수집 webhook / webhook-triggered catalog step."""
-    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
-    nodes = [
-        _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
-            "httpMethod": "POST", "path": "dbv-collect-catalog",
-            # 즉시 응답 — 진행 상태는 FastAPI 잡 폴링이 담당 / respond immediately
-            "responseMode": "onReceived",
-        }, type_version=2),
-    ]
-    for i, (name, filename) in enumerate(CATALOG_SQL_NODES):
-        nodes.append(_node(
-            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
-            {"operation": "executeQuery", "query": (SQL_DIR / filename).read_text()},
-            credentials=mssql_cred, type_version=1.1,
-        ))
-    nodes += [
-        _node("Build catalog payload", "n8n-nodes-base.code", [220 * 6, 0],
-              {"jsCode": BUILD_CATALOG_JS_W1A}, type_version=2),
-        _post_ingest_node("POST catalog", "/api/ingest/catalog", [220 * 7, 0]),
-    ]
-    return {
-        "name": "W1a collect catalog (webhook)",
-        "nodes": nodes,
-        "connections": _chain(nodes),
-        "settings": {"executionOrder": "v1"},
-        "meta": {
-            "notes": "버튼 트리거 1단계 — FastAPI /api/collect/catalog가 이 webhook을 호출한다. "
-                     "collect_job_id를 페이로드로 되돌려 잡 단계가 갱신된다. "
-                     "N8N_WEBHOOK_BASE(백엔드)와 이 워크플로의 webhook 경로가 일치해야 한다.",
-        },
-    }
+# kind별 파라미터 치환 — 정수만 통과시켜 SQL 조립 경로를 닫는다 (W2와 동일 원칙)
+CATALOG_QUERY_JS_TAIL = """\
+const b = $json.body ?? {};
+const sql = TEMPLATES[b.kind];
+if (!sql) { throw new Error('unknown kind: ' + b.kind); }
+// 정수 외에는 전부 거른다 — 목록이 비면 매칭 0건이 되도록 -1을 넣는다
+const ids = (Array.isArray(b.object_ids) ? b.object_ids : [])
+  .map(n => parseInt(n, 10)).filter(Number.isInteger);
+const idList = ids.length ? ids.join(',') : '-1';
+const offset = Math.max(parseInt(b.offset, 10) || 0, 0);
+const limit = Math.min(Math.max(parseInt(b.limit, 10) || 300, 1), 5000);
+const query = sql
+  .split('{{ID_LIST}}').join(idList)
+  .split('{{OFFSET}}').join(String(offset))
+  .split('{{LIMIT}}').join(String(limit));
+return [{ json: { query } }];
+"""
 
 
-def build_collect_viewdeps_workflow() -> dict:
-    """W1b — 버튼 트리거 2단계: 뷰 의존 수집 webhook / webhook-triggered view-deps step."""
-    mssql_cred = {"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}}
-    nodes = [
-        _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
-            "httpMethod": "POST", "path": "dbv-collect-viewdeps",
-            "responseMode": "onReceived",
-        }, type_version=2),
-    ]
-    for i, (name, filename) in enumerate(VIEW_DEPS_SQL_NODES):
-        nodes.append(_node(
-            name, "n8n-nodes-base.microsoftSql", [220 * (i + 1), 0],
-            {"operation": "executeQuery",
-             "query": _read_sql(filename, W1B_OFFSET_EXPR, W1B_LIMIT_EXPR,
-                                as_expression=True)},
-            credentials=mssql_cred, type_version=1.1,
-        ))
-    nodes += [
-        _node("Build view-deps payload", "n8n-nodes-base.code", [220 * 3, 0],
-              {"jsCode": BUILD_VIEW_DEPS_JS_W1B}, type_version=2),
-        _post_ingest_node("POST view-deps", "/api/ingest/view-deps", [220 * 4, 0]),
-    ]
+def build_catalog_query_workflow() -> dict:
+    """W1 — 수집용 단문 쿼리 실행기 / one small catalog query per call.
+
+    백엔드가 kind와 파라미터(offset/limit 또는 object_ids)를 보내면 해당 쿼리 하나만
+    실행하고 행을 그대로 돌려준다. 객체→컬럼→키 같은 연쇄는 백엔드가 주도하므로
+    이 워크플로는 3노드로 고정된다 (n8n에 상태·분기 없음).
+    """
+    templates = {kind: (SQL_DIR / filename).read_text()
+                 for kind, filename in CATALOG_QUERY_KINDS}
+    build_js = (
+        "// kind → 고정 SQL. 파라미터는 정수만 받아 그대로 박는다 (문자열 SQL 미수신)\n"
+        "// fixed SQL per kind; only integers are interpolated, never raw SQL\n"
+        "const TEMPLATES = " + json.dumps(templates, ensure_ascii=False, indent=2) + ";\n"
+        + CATALOG_QUERY_JS_TAIL
+    )
     return {
-        "name": "W1b collect view-deps (webhook)",
-        "nodes": nodes,
-        "connections": _chain(nodes),
+        "name": "W1 catalog query (webhook)",
+        "nodes": [
+            _node("Webhook", "n8n-nodes-base.webhook", [0, 0], {
+                "httpMethod": "POST", "path": "dbv-catalog",
+                # 동기 응답 — 백엔드가 결과를 받아 다음 쿼리를 결정한다 / rows are the response
+                "responseMode": "lastNode",
+                # ★ 기본값은 "첫 항목만"이다 — 지정하지 않으면 쿼리 결과가 1행으로 잘린다
+                # n8n defaults to the first entry only; every row must come back
+                "responseData": "allEntries",
+            }, type_version=2),
+            _node("Build query", "n8n-nodes-base.code", [220, 0],
+                  {"jsCode": build_js}, type_version=2),
+            _node("Run query", "n8n-nodes-base.microsoftSql", [440, 0], {
+                "operation": "executeQuery", "query": "={{ $json.query }}",
+            }, credentials={"microsoftSql": {"id": "REPLACE_ME", "name": "MSSQL readonly"}},
+                type_version=1.1),
+        ],
+        "connections": _chain([{"name": "Webhook"}, {"name": "Build query"}, {"name": "Run query"}]),
         "settings": {"executionOrder": "v1"},
         "meta": {
-            "notes": "버튼 트리거 2단계 — FastAPI /api/collect/view-deps가 snapshot_id·collect_job_id를 "
-                     "webhook body로 전달한다. 1단계(catalog_done) 이후에만 호출된다.",
+            "notes": "수집용 단문 쿼리 실행기 — FastAPI가 kind(totals/objects/columns/"
+                     "key_constraints/foreign_keys/view_definitions/view_deps/view_refs)와 "
+                     "정수 파라미터를 보내면 해당 쿼리만 실행한다. 캐스케이드는 백엔드가 "
+                     "주도하므로 이 워크플로는 상태를 갖지 않는다. credentials는 읽기 전용 계정 권장.",
         },
     }
 
@@ -437,6 +207,8 @@ def build_query_executor_workflow() -> dict:
             "httpMethod": "POST", "path": "dbv-query",
             # 동기 응답 — 쿼리 결과가 HTTP 응답이 된다 / last node's output is the response
             "responseMode": "lastNode",
+            # ★ 기본값 "첫 항목만"이면 미리보기·조인 프리뷰가 1행으로 잘린다
+            "responseData": "allEntries",
         }, type_version=2),
         _node("Build query", "n8n-nodes-base.code", [220, 0],
               {"jsCode": BUILD_QUERY_JS}, type_version=2),
@@ -495,12 +267,10 @@ def build_recon_workflow() -> dict:
 
 
 def main() -> None:
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    W1_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     outputs = [
-        (OUT_PATH, build_workflow()),
         (RECON_OUT_PATH, build_recon_workflow()),
-        (W1A_OUT_PATH, build_collect_catalog_workflow()),
-        (W1B_OUT_PATH, build_collect_viewdeps_workflow()),
+        (W1_OUT_PATH, build_catalog_query_workflow()),
         (W2_OUT_PATH, build_query_executor_workflow()),
     ]
     for path, workflow in outputs:

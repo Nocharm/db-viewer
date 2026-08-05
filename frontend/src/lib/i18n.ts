@@ -181,6 +181,11 @@ export const MESSAGES = {
   "collect.stageReady": { ko: "완료", en: "Ready" },
   "collect.failed": { ko: "실패", en: "Failed" },
   "collect.chunkProgress": { ko: "분할 진행", en: "Chunk progress" },
+  "collect.cancel": { ko: "중단", en: "Cancel" },
+  "collect.cancelHint": {
+    ko: "n8n 실행은 그대로 두고 잡만 닫습니다 — 멈춘 잡이 새 수집을 막을 때 사용",
+    en: "Closes the job only (the n8n run keeps going) — use when a stuck job blocks a new collection",
+  },
   "collect.recent": { ko: "최근 수집 잡", en: "Recent jobs" },
   "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
   "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
