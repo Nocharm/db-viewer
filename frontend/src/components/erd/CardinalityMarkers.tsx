@@ -21,7 +21,13 @@ export function CardinalityMarkerDefs() {
           orient="auto-start-reverse"
           markerUnits="userSpaceOnUse"
         >
-          <path d="M 4 1 L 4 11" stroke="currentColor" strokeWidth="1.6" fill="none" />
+          {/* marker 콘텐츠는 참조한 path가 아니라 이 defs의 조상 color를 상속한다 — currentColor는
+              등급별 엣지 색을 못 따라간다. context-stroke(SVG2)가 참조 엣지의 stroke로 해석된다.
+              "고쳐서" currentColor로 되돌리지 말 것 / do NOT "fix" back to currentColor: a
+              <marker>'s content inherits color from its own ancestor chain, not from the
+              referencing element, so currentColor paints every grade the same neutral shade.
+              context-stroke resolves to the referencing element's stroke. */}
+          <path d="M 4 1 L 4 11" stroke="context-stroke" strokeWidth="1.6" fill="none" />
         </marker>
         {/* 다중 — 세 갈래 까그발 / "many": the three-pronged crow's foot */}
         <marker
@@ -34,7 +40,7 @@ export function CardinalityMarkerDefs() {
         >
           <path
             d="M 11 6 L 2 1 M 11 6 L 2 6 M 11 6 L 2 11"
-            stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round"
+            stroke="context-stroke" strokeWidth="1.6" fill="none" strokeLinecap="round"
           />
         </marker>
       </defs>
