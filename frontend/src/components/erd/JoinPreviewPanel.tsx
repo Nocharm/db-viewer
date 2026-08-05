@@ -12,32 +12,38 @@ import type { JoinPreviewResponse } from "@/lib/types";
 interface Props {
   result: JoinPreviewResponse | null;
   error: string | null;
+  /** 이전 결과가 화면에 남아 있는 동안 새 조인이 조회 중임을 알린다 — 원본 값이 나가는
+   * 화면이라 "이전 결과를 새 결과로 착각"이 그냥 UX 흠이 아니라 데이터 오귀속이다.
+   * A new fetch may be in flight while a previous result/error is still on screen; since
+   * this panel shows raw source values, mistaking stale data for fresh isn't just bad UX,
+   * it's misattributed data. */
+  busy: boolean;
   onClose: () => void;
 }
 
-/** 행 내용으로 만든 안정 키 — 원본 DB 행엔 id가 없고 목록은 새 미리보기가 올 때만
- * 통째로 교체되므로, 위치가 아니라 내용이 안정 식별자다. 완전히 같은 값의 행이 여럿이면
- * (조인 팬아웃 등) 등장 순번만 덧붙여 키 충돌만 피한다.
- * Content-derived keys: raw rows carry no id, and the list is only ever replaced wholesale
- * on a fresh preview, so content — not position — is the stable identity. Ties (duplicate
- * rows from a join fan-out) get an occurrence suffix purely to dodge a key collision. */
-function buildRowKeys(rows: Record<string, unknown>[]): string[] {
-  const seen = new Map<string, number>();
-  return rows.map((row) => {
-    const signature = JSON.stringify(row);
-    const occurrence = seen.get(signature) ?? 0;
-    seen.set(signature, occurrence + 1);
-    return occurrence === 0 ? signature : `${signature}#${occurrence}`;
-  });
+/** 이 목록에서는 컬럼 키가 첫 행에만 있다고 가정할 수 없다 — n8n 어댑터가 아직 라이브에
+ * 연결되지 않아 행 JSON이 키-동질적이라는 보장이 없다. 등장 순서를 지키며 전 행을 합친다.
+ * Column keys can't be assumed to exist on row 0 alone — the adapter isn't wired to a live
+ * n8n yet, so row JSON key-homogeneity isn't guaranteed. Union across all rows, first-seen order. */
+function buildColumns(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  const columns: string[] = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columns.push(key);
+    }
+  }
+  return columns;
 }
 
-export function JoinPreviewPanel({ result, error, onClose }: Props) {
+export function JoinPreviewPanel({ result, error, busy, onClose }: Props) {
   const { t } = useI18n();
   const [tab, setTab] = useState<"sql" | "rows">("rows");
 
-  if (!result && !error) return null;
-  const columns = result && result.rows.length > 0 ? Object.keys(result.rows[0]) : [];
-  const rowKeys = result ? buildRowKeys(result.rows) : [];
+  if (!result && !error && !busy) return null;
+  const columns = result ? buildColumns(result.rows) : [];
 
   return (
     // 바깥 닫기는 mousedown 기준 — click은 mouseup에서 나므로 SQL 텍스트를 드래그
@@ -71,14 +77,25 @@ export function JoinPreviewPanel({ result, error, onClose }: Props) {
           </button>
         </div>
 
-        {error && (
+        {/* 조회 중엔 이전 결과/에러를 완전히 대체한다 — 부분적으로 흐리기만 하면 원본 값이
+            여전히 읽혀 "이전 조인의 값을 지금 조인 것으로" 오귀속될 수 있다
+            / fully replaces the previous result/error while a fetch is in flight — dimming it
+            instead would still let raw values from the previous join be read as the current one */}
+        {busy && (
+          <p className="text-sm" style={{ color: "var(--muted)" }}
+             data-testid="JoinPreviewPanel-busy">
+            {t("common.loading")}
+          </p>
+        )}
+
+        {!busy && error && (
           <p className="text-sm" style={{ color: "var(--error)" }}
              data-testid="JoinPreviewPanel-error">
             {error}
           </p>
         )}
 
-        {result && tab === "sql" && (
+        {!busy && result && tab === "sql" && (
           <div className="scroll-area min-h-0 overflow-auto">
             <pre className="whitespace-pre-wrap font-mono text-xs"
                  data-testid="JoinPreviewPanel-sql">
@@ -94,7 +111,7 @@ export function JoinPreviewPanel({ result, error, onClose }: Props) {
           </div>
         )}
 
-        {result && tab === "rows" && (
+        {!busy && result && tab === "rows" && (
           <div className="scroll-area min-h-0 overflow-auto"
                data-testid="JoinPreviewPanel-rows">
             {result.rows.length === 0 && (
@@ -116,7 +133,14 @@ export function JoinPreviewPanel({ result, error, onClose }: Props) {
                 </thead>
                 <tbody>
                   {result.rows.map((row, i) => (
-                    <tr key={rowKeys[i]}>
+                    // 인덱스 키가 안전하다 — 이 목록은 서버가 20행으로 고정하고, 새 조회마다
+                    // 통째로 교체되며, 안에서 재정렬·삽입·삭제되지 않는다. 인덱스 키가 문제가
+                    // 되는 경우(포커스 유실, 엉뚱한 행에 붙은 상태)는 애초에 발생할 수 없다
+                    // index keys are safe here: the server caps this at 20 rows, the whole list
+                    // is replaced wholesale on every fetch, and nothing reorders/inserts/removes
+                    // in place — none of the failure modes index keys actually cause (lost
+                    // focus, state bound to the wrong row) can occur
+                    <tr key={i}>
                       {columns.map((c) => (
                         // null/undefined는 빈 문자열로 — String(undefined)가 "undefined"
                         // 글자 그대로 뜨는 걸 막는다. 값 자체가 문자열 "null"이면 실데이터라

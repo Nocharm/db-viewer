@@ -160,7 +160,7 @@ export function runPreview(
 export async function runJoinPreview(
   steps: { left_column_id: number; right_column_id: number; join_type: string }[],
 ): Promise<JoinPreviewResponse> {
-  return postJson("/api/join/preview", { steps });
+  return postJson("/api/join/preview", { steps, requested_by: "ui" });
 }
 
 export function confirmRelation(

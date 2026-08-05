@@ -814,6 +814,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       <JoinPreviewPanel
         result={joinPreview}
         error={joinPreviewError}
+        busy={joinPreviewBusy}
         onClose={() => { setJoinPreview(null); setJoinPreviewError(null); }}
       />
 
