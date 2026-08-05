@@ -34,3 +34,6 @@ dist/
 
 # Fixture output (regenerable via tools/fixture_gen.py)
 /fixtures/
+
+# SDD 작업 로그(플랜 실행 스크래치) — 커밋 대상 아님 / subagent-driven-development scratch
+.superpowers/
