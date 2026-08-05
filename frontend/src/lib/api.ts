@@ -163,7 +163,9 @@ export function fetchHistory(
   );
 }
 
-export function searchTablesAi(q: string): Promise<{ items: AiTableHit[] }> {
+/** mock=true면 LLM 미연결 휴리스틱 결과 — 실 판단으로 오독되지 않게 화면에 표시한다.
+ * mock marks heuristic output produced without a live LLM. */
+export function searchTablesAi(q: string): Promise<{ items: AiTableHit[]; mock: boolean }> {
   return getJson(`/api/ai/search-tables?q=${encodeURIComponent(q)}`);
 }
 
@@ -315,17 +317,21 @@ export function fetchScanJob(jobId: number): Promise<ScanJobStatus> {
 }
 
 /** AI 요약 생성·갱신 (캐시 무시) / regenerate the cached AI summary. */
-export function generateAiSummary(objectId: number): Promise<{ summary: string }> {
+export function generateAiSummary(
+  objectId: number,
+): Promise<{ summary: string; mock: boolean }> {
   return postJson(`/api/ai/summarize/${objectId}?force=true`, {});
 }
 
-export function explainViewAi(objectId: number): Promise<{ explanation: string }> {
+export function explainViewAi(
+  objectId: number,
+): Promise<{ explanation: string; mock: boolean }> {
   return postJson(`/api/ai/explain-view/${objectId}`, {});
 }
 
 export function explainValidationAi(
   srcColumnId: number, tgtColumnId: number,
-): Promise<{ explanation: string }> {
+): Promise<{ explanation: string; mock: boolean }> {
   return postJson(
     `/api/ai/explain-validation?src_column_id=${srcColumnId}&tgt_column_id=${tgtColumnId}`, {});
 }

@@ -21,6 +21,8 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
   const [typeFilter, setTypeFilter] = useState<"" | "table" | "view">("");
   const [items, setItems] = useState<ObjectSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // LLM 미연결 휴리스틱 검색 결과 표시 — 실 판단으로 오독되면 검증이 오염된다
+  const [aiMock, setAiMock] = useState(false);
 
   useEffect(() => {
     if (q.length < 2) {
@@ -31,8 +33,9 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
       // '?'로 시작하면 AI 자연어 탐색 (계획 §5.1-2) / '?' prefix = AI search
       const isAi = q.startsWith("?");
       const request = isAi
-        ? searchTablesAi(q.slice(1).trim()).then((res) =>
-            res.items
+        ? searchTablesAi(q.slice(1).trim()).then((res) => {
+            setAiMock(res.mock);
+            return res.items
               .filter((h) => h.object_id !== null)
               .map((h) => {
                 const [schema, name] = h.object.split(".");
@@ -41,8 +44,12 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
                   type: "table" as const, row_count: null,
                   column_count: 0, dmv_unresolved: false,
                 };
-              }))
-        : searchObjects(q, typeFilter || undefined).then((res) => res.items);
+              });
+          })
+        : searchObjects(q, typeFilter || undefined).then((res) => {
+            setAiMock(false);
+            return res.items;
+          });
       request
         .then((list) => {
           setItems(list);
@@ -112,6 +119,14 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         <p className="px-3 text-sm" style={{ color: "var(--error)" }}
            data-testid="SearchPanel-errorText">
           {error}
+        </p>
+      )}
+
+      {aiMock && items.length > 0 && (
+        <p className="px-3 pb-1">
+          <span className="badge badge--muted" data-testid="SearchPanel-aiMockBadge">
+            {t("ai.mockBadge")}
+          </span>
         </p>
       )}
 

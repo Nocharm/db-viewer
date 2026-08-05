@@ -209,11 +209,12 @@ def search_tables(
             select(CatalogObject).where(CatalogObject.snapshot_id == snapshot.id)
         ).scalars()
     }
-    return {"snapshot_id": snapshot.id, "mode": mode, "items": [
-        {"object_id": id_by_qname.get(h.qname), "object": h.qname,
-         "score": h.score, "reason": h.reason}
-        for h in hits
-    ]}
+    return {"snapshot_id": snapshot.id, "mode": mode,
+            "mock": isinstance(ai, FakeAiClient), "items": [
+                {"object_id": id_by_qname.get(h.qname), "object": h.qname,
+                 "score": h.score, "reason": h.reason}
+                for h in hits
+            ]}
 
 
 @router.post("/summarize/{object_id}")
@@ -232,8 +233,9 @@ def summarize_object(
     cached = db.execute(
         select(AiSummary).where(AiSummary.object_qname == qname)
     ).scalar_one_or_none()
+    # 목업은 캐시에 넣지 않으므로 캐시 적중은 항상 실 LLM 산출물이다 (아래 저장 분기 참조)
     if cached is not None and not force:
-        return {"object": qname, "summary": cached.summary, "cached": True}
+        return {"object": qname, "summary": cached.summary, "cached": True, "mock": False}
 
     columns = [
         ColumnMeta(c.name, c.data_type, c.is_pk)
@@ -253,12 +255,16 @@ def summarize_object(
     })
     summary = ai.summarize_table(TableMeta(qname, columns, obj.row_count), base_tables)
 
-    if cached is None:
-        db.add(AiSummary(object_qname=qname, summary=summary, created_at=datetime.now(UTC)))
-    else:
-        cached.summary = summary
-        cached.created_at = datetime.now(UTC)
-    return {"object": qname, "summary": summary, "cached": False}
+    # 목업 요약을 캐시에 남기면 실 LLM 연결 후에도 가짜가 실값처럼 재사용된다
+    is_mock = isinstance(ai, FakeAiClient)
+    if not is_mock:
+        if cached is None:
+            db.add(AiSummary(object_qname=qname, summary=summary,
+                             created_at=datetime.now(UTC)))
+        else:
+            cached.summary = summary
+            cached.created_at = datetime.now(UTC)
+    return {"object": qname, "summary": summary, "cached": False, "mock": is_mock}
 
 
 @router.post("/explain-validation")
@@ -297,7 +303,8 @@ def explain_validation(
         observation_count=len(history),
         pattern=conf.pattern,
     ))
-    return {"src": str(src_ref), "tgt": str(tgt_ref), "explanation": text}
+    return {"src": str(src_ref), "tgt": str(tgt_ref), "explanation": text,
+            "mock": isinstance(ai, FakeAiClient)}
 
 
 @router.post("/explain-view/{object_id}")
@@ -343,7 +350,8 @@ def explain_view(
         output_columns=output_columns,
         definition_excerpt=(obj.definition or "")[:400] or None,
     ))
-    return {"object": qname, "explanation": text}
+    return {"object": qname, "explanation": text,
+            "mock": isinstance(ai, FakeAiClient)}
 
 
 class ChatTurn(BaseModel):

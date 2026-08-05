@@ -128,6 +128,31 @@ def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture):
     assert len(audits) == 1 and rel["src_object"] in audits[0].detail
 
 
+def test_preview_returns_actionable_error_instead_of_synthetic_rows(
+    client, load_fixture, monkeypatch,
+):
+    """실배포(N8N_WEBHOOK_BASE 있음)에서 live가 아니면 합성 행 대신 조치 가능한 503.
+
+    합성 행이 실값처럼 보이면 화면 검증이 오염된다 — 원인·조치를 응답으로 말한다.
+    """
+    from app.config import get_settings
+
+    _seed(client, load_fixture)
+    obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+
+    monkeypatch.setenv("N8N_WEBHOOK_BASE", "http://n8n/webhook")
+    monkeypatch.setenv("SOURCE_MODE", "fixture")
+    get_settings.cache_clear()
+    try:
+        res = client.get(f"/api/objects/{obj['id']}/preview")
+        assert res.status_code == 503
+        assert "SOURCE_MODE=live" in res.json()["error"]["message"]
+    finally:
+        monkeypatch.delenv("N8N_WEBHOOK_BASE", raising=False)
+        monkeypatch.delenv("SOURCE_MODE", raising=False)
+        get_settings.cache_clear()
+
+
 def test_preview_limit_is_adjustable_with_hard_cap(client, load_fixture):
     _seed(client, load_fixture)
     obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]

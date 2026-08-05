@@ -81,6 +81,8 @@ export function TableDetail({
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  // LLM 미연결 휴리스틱 산출물 표시 — 실 판단으로 오독되면 검증이 오염된다
+  const [aiMock, setAiMock] = useState(false);
   // 장시간 검증의 살아있음 표시 / liveness indicator for long-running checks
   const checkElapsed = useElapsedSeconds(checking);
 
@@ -163,6 +165,11 @@ export function TableDetail({
           {detail.type === "view" ? "VIEW" : "TABLE"}
         </span>
         {(aiSummary ?? detail.ai_summary) && <span className="badge badge--ai">AI</span>}
+        {aiMock && (
+          <span className="badge badge--muted" data-testid="TableDetail-aiMockBadge">
+            {t("ai.mockBadge")}
+          </span>
+        )}
       </div>
       <p className="mb-2 text-sm" style={{ color: "var(--slate)" }}>
         {detail.row_count !== null && `${detail.row_count.toLocaleString()} rows · `}
@@ -187,7 +194,9 @@ export function TableDetail({
           className="icon-button"
           disabled={aiBusy}
           onClick={() => runAi(async () => {
-            setAiSummary((await generateAiSummary(detail.id)).summary);
+            const res = await generateAiSummary(detail.id);
+            setAiSummary(res.summary);
+            setAiMock(res.mock);
           })}
           data-testid="TableDetail-aiSummaryButton"
         >
@@ -198,7 +207,9 @@ export function TableDetail({
             className="icon-button"
             disabled={aiBusy}
             onClick={() => runAi(async () => {
-              setAiExplanation((await explainViewAi(detail.id)).explanation);
+              const res = await explainViewAi(detail.id);
+              setAiExplanation(res.explanation);
+              setAiMock(res.mock);
             })}
             data-testid="TableDetail-aiExplainButton"
           >

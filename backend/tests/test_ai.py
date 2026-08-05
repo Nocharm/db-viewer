@@ -394,16 +394,28 @@ def test_search_tables_smart_falls_back_when_all_vectors_corrupt(migrated_engine
 
 
 def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
+    """실 LLM 산출물만 캐시·툴팁으로 흘러간다 — 목업은 캐시 대상이 아니라 실 클라이언트로 검증."""
+    from app.api.ai import get_ai_client
+
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]
     _, table = rel["src_object"].split(".", 1)
     items = client.get("/api/objects", params={"q": table}).json()["items"]
     anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == rel["src_object"])
 
-    first = client.post(f"/api/ai/summarize/{anchor['id']}").json()
-    assert first["cached"] is False and rel["src_object"] in first["summary"]
-    second = client.post(f"/api/ai/summarize/{anchor['id']}").json()
-    assert second["cached"] is True and second["summary"] == first["summary"]
+    class _RealAi:
+        def summarize_table(self, table_meta, base_tables):
+            return f"{table_meta.qname} — 요약"
+
+    client.app.dependency_overrides[get_ai_client] = lambda: _RealAi()
+    try:
+        first = client.post(f"/api/ai/summarize/{anchor['id']}").json()
+        assert first["cached"] is False and first["mock"] is False
+        assert rel["src_object"] in first["summary"]
+        second = client.post(f"/api/ai/summarize/{anchor['id']}").json()
+        assert second["cached"] is True and second["summary"] == first["summary"]
+    finally:
+        client.app.dependency_overrides.pop(get_ai_client)
 
     graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
     me = next(n for n in graph["nodes"] if n["id"] == anchor["id"])
@@ -820,6 +832,30 @@ def test_chat_endpoint_fake_path_returns_answer_mock_and_matching_tables(client,
     # tables는 서버가 컨텍스트에서 구성 — search-tables 테스트와 동일하게 최상위 히트만 단언
     # (Fake는 정규화 부분일치라 HR_EMP_FAMILY 등도 함께 매칭되지만 동점 tie-break로 정확 일치가 1위)
     assert body["tables"] and body["tables"][0].endswith(table_name)
+
+
+def test_ai_content_endpoints_mark_mock_output(client, load_fixture):
+    """AI 미연결 시 모든 AI 산출물에 mock 표시 — 휴리스틱 결과가 LLM 판단으로 오독되면 안 된다.
+
+    chat만 표시하던 규약을 검색·요약·설명으로 확장 (FakeAiClient 전수조사 결과).
+    """
+    _seed(client, load_fixture)
+    obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+    view = client.get("/api/objects?type=view&limit=1").json()["items"][0]
+
+    assert client.get("/api/ai/search-tables", params={"q": "HR"}).json()["mock"] is True
+    assert client.post(f"/api/ai/summarize/{obj['id']}").json()["mock"] is True
+    assert client.post(f"/api/ai/explain-view/{view['id']}").json()["mock"] is True
+
+
+def test_mock_summaries_are_not_cached(client, load_fixture):
+    """목업 요약을 캐시에 남기면 실 LLM 연결 후에도 가짜가 실값처럼 재사용된다."""
+    _seed(client, load_fixture)
+    obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+
+    client.post(f"/api/ai/summarize/{obj['id']}")
+    again = client.post(f"/api/ai/summarize/{obj['id']}").json()
+    assert again["cached"] is False
 
 
 def test_chat_endpoint_no_hits_falls_back_to_empty_context(client, load_fixture):

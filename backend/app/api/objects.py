@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.adapters import create_table_preview
+from app.adapters import SyntheticDataRefused, create_table_preview
 from app.auth import get_current_user
 from app.config import get_settings
 from app.db import get_db
@@ -254,7 +254,11 @@ def get_object_preview(
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
     # live는 n8n W2 실행기, 그 외는 픽스처 합성 — 팩토리가 게이트 (docs/connect.md)
-    preview = create_table_preview(settings)
+    try:
+        preview = create_table_preview(settings)
+    except SyntheticDataRefused as e:
+        raise HTTPException(503, {"message": str(e),
+                                  "context": {"source_mode": settings.source_mode}}) from e
     rows = preview.rows(
         qname, column_specs, limit,
         filter_column=filter_column, filter_value=filter_value,

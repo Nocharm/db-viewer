@@ -225,6 +225,7 @@ export const MESSAGES = {
   "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },
   "ai.failed": { ko: "AI 작업 실패", en: "AI job failed" },
+  "ai.mockBadge": { ko: "AI 미연결 — 목업", en: "AI offline — mock" },
 
   "chat.title": { ko: "스키마 Q&A", en: "Schema Q&A" },
   "chat.placeholder": { ko: "스키마에 대해 질문…", en: "Ask about the schema…" },

@@ -9,6 +9,10 @@ if TYPE_CHECKING:
     from app.adapters.collect_runner import CollectRunner
 
 
+class SyntheticDataRefused(RuntimeError):
+    """실 원천이 연결된 배포에서 합성 데이터 제공을 거부 / refuse synthetic data on a real deployment."""
+
+
 def create_join_validator(settings: Settings) -> JoinValidator:
     """SOURCE_MODE에 따른 검증기 선택 / pick the validator for the configured mode.
 
@@ -28,13 +32,27 @@ def create_join_validator(settings: Settings) -> JoinValidator:
 
 
 def create_table_preview(settings: Settings):
-    """테이블 미리보기 실행기 — live는 n8n W2, 그 외는 픽스처 합성 / preview executor."""
+    """테이블 미리보기 실행기 — live는 n8n W2, 순수 오프라인만 픽스처 합성 / preview executor.
+
+    합성 행은 실값과 겉모습이 같아서(`EMP_CODE` → `EMPCOD001`) 실 카탈로그가 적재된
+    화면에서는 검증을 오염시킨다. 실배포 판별은 수집 경로와 같은 신호인
+    N8N_WEBHOOK_BASE로 한다 (create_collect_runner 주석 참조) — 원천이 붙어 있는데
+    live가 아니면 합성 대신 명시 실패시켜 SOURCE_MODE 전환을 요구한다.
+    """
     if settings.source_mode == "live":
         if not settings.n8n_webhook_base:
             raise RuntimeError("live mode requires N8N_WEBHOOK_BASE (W2 query executor)")
         from app.adapters.n8n_query import N8nTablePreview
 
         return N8nTablePreview(settings.n8n_webhook_base, settings.n8n_query_timeout)
+    if settings.n8n_webhook_base:
+        raise SyntheticDataRefused(
+            "preview needs a real data source — a source is configured "
+            f"(N8N_WEBHOOK_BASE) but SOURCE_MODE={settings.source_mode}; set "
+            "SOURCE_MODE=live and restart the backend (docs/connect.md step 8). "
+            "Synthetic rows are refused here because they are indistinguishable "
+            "from real values."
+        )
     from app.adapters.table_preview import FakeTablePreview
 
     return FakeTablePreview(settings.resolved_fixture_dir / "value_sets.json")

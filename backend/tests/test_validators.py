@@ -99,6 +99,29 @@ def test_live_mode_requires_webhook_base_then_uses_n8n():
     assert isinstance(create_table_preview(live), N8nTablePreview)
 
 
+def test_preview_refuses_synthetic_rows_on_a_real_deployment():
+    """실 원천이 붙었는데 live가 아니면 합성 행 대신 명시 실패 — 합성값은 실값과 구분되지 않는다.
+
+    수집 경로와 같은 신호(N8N_WEBHOOK_BASE)로 실배포를 판별한다 (create_collect_runner와 동일 규칙).
+    """
+    from app.adapters import SyntheticDataRefused, create_table_preview
+    from app.config import Settings
+
+    real_deployment = Settings(source_mode="fixture", n8n_webhook_base="http://n8n/webhook")
+    with pytest.raises(SyntheticDataRefused, match="SOURCE_MODE=live"):
+        create_table_preview(real_deployment)
+
+
+def test_preview_still_synthesizes_for_pure_offline_use():
+    """원천이 아예 없는 순수 오프라인(로컬 UI 리뷰)에선 합성 유지 — 실값과 혼동될 여지가 없다."""
+    from app.adapters import create_table_preview
+    from app.adapters.table_preview import FakeTablePreview
+    from app.config import Settings
+
+    offline = Settings(source_mode="fixture", n8n_webhook_base="")
+    assert isinstance(create_table_preview(offline), FakeTablePreview)
+
+
 def test_fake_validator_without_value_sets_reports_data_missing(tmp_path):
     """픽스처 없는 배포에서도 검증은 '값 데이터 없음'으로 떨어진다 (크래시 아님)."""
     validator = FakeJoinValidator(tmp_path / "absent.json")

@@ -58,6 +58,8 @@ export function ColumnPanel({ column, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiText, setAiText] = useState<string | null>(null);
+  // LLM 미연결 휴리스틱 설명 표시 — 실 판단으로 오독되면 검증이 오염된다
+  const [aiMock, setAiMock] = useState(false);
   // T3 전수 탐색 — 202 + 폴링 진행도 / exploratory scan job with polled progress
   const [scanJob, setScanJob] = useState<ScanJobStatus | null>(null);
   const [scanRunning, setScanRunning] = useState(false);
@@ -317,9 +319,11 @@ export function ColumnPanel({ column, onClose }: Props) {
               <button
                 className="icon-button mt-1.5"
                 disabled={busy}
-                onClick={() => selected && run(async () =>
-                  setAiText((await explainValidationAi(
-                    column.id, selected.column_id)).explanation))}
+                onClick={() => selected && run(async () => {
+                  const res = await explainValidationAi(column.id, selected.column_id);
+                  setAiText(res.explanation);
+                  setAiMock(res.mock);
+                })}
                 data-testid="ColumnPanel-aiExplainButton"
               >
                 {t("ai.explainValidation")}
@@ -328,6 +332,12 @@ export function ColumnPanel({ column, onClose }: Props) {
                 <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--slate)" }}
                    data-testid="ColumnPanel-aiExplanation">
                   <span className="badge badge--ai mr-1">AI</span>
+                  {aiMock && (
+                    <span className="badge badge--muted mr-1"
+                          data-testid="ColumnPanel-aiMockBadge">
+                      {t("ai.mockBadge")}
+                    </span>
+                  )}
                   {aiText}
                 </p>
               )}
