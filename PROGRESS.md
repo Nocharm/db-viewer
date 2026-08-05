@@ -22,6 +22,7 @@
 
 ## 2026-08-03
 
+- **폰트 확정·일괄 적용(Pretendard + JetBrains Mono)** — CSS는 Inter/JetBrains Mono를 지정했지만 **로드하는 코드가 없어** 전부 시스템 폰트로 떨어지고 있었다(윈도우 한글=맑은 고딕). 사용자 확정으로 본문 Pretendard(한글·영문 한 리듬), SQL·식별자 JetBrains Mono(0/O·1/l 판별, 한글 값은 Pretendard 대체). 사내망 CDN 차단이라 npm 패키지로 자가호스팅 — 두 CSS 모두 unicode-range 분할이라 메인 화면 실측 5조각만 내려받는다. 스택은 `@theme` 단일 소스로 두어 Tailwind `font-mono` 유틸과 이중 정의되던 것을 제거. 빌드 산출 CSS·브라우저 computed style·실화면 스크린샷으로 검증.
 - **실배포 중 발견한 결함 3건 수정** — ① **compose가 `N8N_WEBHOOK_BASE`·`N8N_QUERY_TIMEOUT`·`LDAP_CA_BUNDLE`을 컨테이너에 전달하지 않았다** — .env에 채워도 백엔드가 못 받아 수집이 픽스처 리플레이로 falls back → `fixture not found` 실패(사용자 보고). .env.example↔compose↔Settings 키를 전수 대조해 누락 3건 확정·추가(DATABASE_URL은 compose 조립이라 의도적 제외). ② **AD 동기화 결과를 볼 화면이 없었다** — `/api/admin/users`는 있는데 프론트에 fetch도 UI도 없어 화이트리스트만 재조회 → "동기화 됐다는데 목록 그대로"(사용자 보고). AD 사용자 섹션 신설(검색·허용 여부 표시·행별 [허용 추가])하고 동기화 후 두 목록 동시 갱신. 엔드포인트 무테스트였던 것도 회귀 테스트로 보강. ③ 동기화 요약(스캔/반영/제외/정리)이 직후 "완료" 문구로 덮이던 것 수정. 런북 6·7단계에 실패 원인·통과 기준 반영.
 
 - **수집 분할 + 청크 진행 UI(실측 5.7배 규모 대응)** — 벌크 지점 분할: ① W1a 카탈로그는 DB 스캔 단일 유지(반복 OFFSET이 오히려 부하 증가)하되 **전송을 객체 300개 청크**로 분할(n8n Code가 N아이템 반환 → HTTP 노드 순차 POST, ingest가 스냅샷에 이어붙임·마지막 청크에서 catalog_done), ② W1b 뷰 의존은 **DB 작업 자체를 뷰 100개 단위 분할** — 백엔드 러너가 offset/limit 페이징으로 webhook 반복 호출, 청크 콜백 확인 후 다음 진행(SQL 06/07에 뷰 윈도우 절). ③ 진행 카운터(counts.*_chunks_done/total)를 수집 패널 진행 바로 표시. 튜닝 3종(.env: COLLECT_*) 신설. 나머지 벌크 후보(T3 스캔·일괄 검증·미리보기)는 기존 상한·배치·진행 표시로 충분 확인. 테스트 156+33.
