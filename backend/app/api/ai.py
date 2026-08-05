@@ -21,6 +21,7 @@ from app.adapters.ai import (
 )
 from app.api.objects import resolve_snapshot
 from app.api.validate import resolve_column_ref
+from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
 from app.domain import scoring
@@ -144,6 +145,27 @@ def start_suggest_job(
     db.flush()
     settings = get_settings()
     background.add_task(run_ai_job, session_factory, job.id, ai, settings)
+    return {"job_id": job.id, "status": job.status}
+
+
+@router.post("/embed-index", status_code=202, dependencies=[Depends(require_sysadmin)])
+def start_embed_index_job(
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    session_factory: sessionmaker = Depends(get_ai_session_factory),
+) -> dict:
+    """임베딩 인덱싱 — 관리 작업, 상한·배치·대기로 부하 관리 (사이클2 §3)."""
+    settings = get_settings()
+    if not settings.ai_base_url or not settings.ai_embed_model:
+        raise HTTPException(400, {"message": "embedding is not configured",
+                                  "context": {"ai_embed_model": settings.ai_embed_model}})
+    if has_active_job(db, "embed_index"):
+        raise HTTPException(409, {"message": "embed index job already running", "context": {}})
+    job = AiJob(kind="embed_index", status="queued", progress_done=0, progress_total=0,
+                triggered_by="admin", created_at=datetime.now(UTC))
+    db.add(job)
+    db.flush()
+    background.add_task(run_ai_job, session_factory, job.id, create_ai_client(), settings)
     return {"job_id": job.id, "status": job.status}
 
 

@@ -11,6 +11,7 @@ from app.adapters.ai import AiClient, CandidatePair
 from app.api.objects import resolve_snapshot
 from app.config import Settings
 from app.models import AiJob, CatalogObject, Relation
+from app.services.ai_embeddings import run_embed_index
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,9 @@ def run_ai_job(session_factory: sessionmaker, job_id: int,
                 result = run_suggest(db, ai, settings, snapshot_id=None)
                 # LLM 1콜 구조라 총 페어 수 기준 세밀 진행은 어렵다 — 완료 여부만 반영
                 job.progress_done = 1
+            elif job.kind == "embed_index":
+                # ai 클라이언트 불필요 — embed_texts를 모듈 함수로 직접 호출한다
+                result = run_embed_index(db, job, settings)
             else:
                 raise ValueError(f"unknown kind: {job.kind}")
             job.result = json.dumps(result, ensure_ascii=False)

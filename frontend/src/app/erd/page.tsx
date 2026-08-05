@@ -56,7 +56,7 @@ function ErdPageInner() {
     const timer = setInterval(() => {
       fetchAiJob(aiJobId)
         .then((job) => {
-          if (job.status === "done" && job.result) {
+          if (job.status === "done" && job.result && "suggested" in job.result) {
             setAiNotice(t("erd.aiNotice")
               .replace("{s}", String(job.result.suggested))
               .replace("{n}", String(job.result.created)));
