@@ -62,7 +62,7 @@ def run_embed_index(db: Session, job: AiJob, settings: Settings) -> dict:
         qname = f"{obj.schema}.{obj.name}"
         text = build_embedding_text(qname, columns_by_obj.get(obj.id, []),
                                     summaries.get(qname))
-        source_hash = compute_source_hash(text, settings.ai_embed_model)
+        source_hash = compute_source_hash(text, settings.embed_model)
         row = existing.get(qname)
         if row is not None and row.source_hash == source_hash:
             skipped += 1
@@ -78,19 +78,20 @@ def run_embed_index(db: Session, job: AiJob, settings: Settings) -> dict:
     batch = settings.ai_embed_batch
     for start in range(0, len(batch_input), batch):
         chunk = batch_input[start:start + batch]
-        vectors = embed_texts(settings.ai_base_url, settings.ai_embed_model,
-                              settings.ai_api_key, settings.ai_timeout,
+        # 사내 임베딩 서버는 무인증 — 채팅 토큰을 다른 호스트로 보내지 않는다
+        vectors = embed_texts(settings.embed_url, settings.embed_model,
+                              "", settings.embed_timeout_seconds,
                               [text for _, text, _ in chunk])
         now = datetime.now(UTC)
         for (qname, _, source_hash), vector in zip(chunk, vectors):
             row = existing.get(qname)
             if row is None:
                 db.add(AiEmbedding(object_qname=qname,
-                                   model=settings.ai_embed_model,
+                                   model=settings.embed_model,
                                    vector=json.dumps(vector),
                                    source_hash=source_hash, updated_at=now))
             else:
-                row.model = settings.ai_embed_model
+                row.model = settings.embed_model
                 row.vector = json.dumps(vector)
                 row.source_hash = source_hash
                 row.updated_at = now

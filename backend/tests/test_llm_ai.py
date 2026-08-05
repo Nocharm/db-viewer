@@ -31,8 +31,10 @@ def test_ai_settings_defaults():
     assert s.ai_api_key == ""
     assert s.ai_timeout == 60
     assert s.ai_suggest_max_pairs == 40
-    # Task 7: embedding settings
-    assert s.ai_embed_model == ""
+    # Task 7: embedding settings — URL·모델·타임아웃은 사내 공통 변수명(BPM과 동일)
+    assert s.embed_url == ""
+    assert s.embed_model == ""
+    assert s.embed_timeout_seconds == 30
     assert s.ai_embed_batch == 32
     assert s.ai_embed_job_cap == 1000
     assert s.ai_embed_sleep_ms == 500
@@ -407,6 +409,15 @@ def test_embed_texts_reorders_by_index(monkeypatch):
     assert result[0] == [0.3, 0.4]  # index 0
     assert result[1] == [0.5, 0.6]  # index 1
     assert result[2] == [0.1, 0.2]  # index 2
+
+
+def test_embed_texts_accepts_full_embeddings_path(embed_captured):
+    """EMBED_URL이 /embeddings 전체 경로여도 그대로 사용 — 사내 타 서비스 .env 값 복사 호환.
+
+    BPM `kb/embed_client._embeddings_url()`와 같은 규약 (변수명·값 통일).
+    """
+    embed_texts("http://embed:8000/v1/embeddings", "bge-m3", "", 30, ["text"])
+    assert embed_captured["requests"][0].full_url == "http://embed:8000/v1/embeddings"
 
 
 def test_embed_texts_mismatch_count_raises(embed_captured):

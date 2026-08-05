@@ -91,8 +91,14 @@ class Settings(BaseSettings):
     # Tuning: LLM 재판정에 넘길 후보 페어 상한 — 프롬프트 크기·응답 시간 제어
     ai_suggest_max_pairs: int = 40
 
-    # Environment: 임베딩 모델명 — 비우면 임베딩 기능 비활성 / embeddings model name, empty disables
-    ai_embed_model: str = ""
+    # Environment: 임베딩 서버 — 채팅 LLM과 다른 호스트일 수 있어 별도 설정이다.
+    # 변수명은 사내 다른 임베딩 사용 서비스(BPM 등)와 동일 — 그쪽 .env 값을 그대로 복사하면 된다.
+    # URL은 `/v1` 루트·`/embeddings` 전체 경로 모두 허용. 비우면 임베딩 기능 비활성.
+    # 사내 임베딩 서버는 무인증이라 토큰 설정이 없다 (AI_API_KEY는 채팅 전용).
+    embed_url: str = ""
+    embed_model: str = ""
+    # Tuning: 임베딩 응답 대기 상한(초) — 채팅보다 짧다 (배치 호출·질의 경로 블로킹 방지)
+    embed_timeout_seconds: int = 30
     # Tuning: 배치당 텍스트 수 / texts per embedding batch
     ai_embed_batch: int = 32
     # Tuning: 인덱싱 잡 상한 — 사용자 부하 제약 (2000 초과 금지) / indexing job cap

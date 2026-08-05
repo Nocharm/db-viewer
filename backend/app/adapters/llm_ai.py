@@ -343,8 +343,13 @@ class LlmAiClient:
 
 def embed_texts(base_url: str, model: str, api_key: str, timeout: int,
                 texts: list[str]) -> list[list[float]]:
-    """OpenAI 호환 /embeddings 1회 호출 — 배치 입력 / one embeddings call, batched input."""
-    url = f"{base_url.rstrip('/')}/embeddings"
+    """OpenAI 호환 /embeddings 1회 호출 — 배치 입력 / one embeddings call, batched input.
+
+    base_url은 `/v1` 루트든 `/embeddings` 전체 경로든 받는다 — 사내 타 서비스 .env 값을
+    그대로 복사해도 `/embeddings/embeddings`가 되지 않도록 (BPM kb/embed_client와 같은 규약).
+    """
+    base = base_url.rstrip("/")
+    url = base if base.endswith("/embeddings") else f"{base}/embeddings"
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

@@ -236,14 +236,45 @@ def test_search_tables_endpoint(client, load_fixture):
 
 
 def _embed_settings(**overrides) -> Settings:
-    defaults = dict(_env_file=None, ai_base_url="http://llm:11434/v1", ai_embed_model="e")
+    defaults = dict(_env_file=None, ai_base_url="http://llm:11434/v1",
+                    embed_url="http://embed:8000/v1", embed_model="e")
     defaults.update(overrides)
     return Settings(**defaults)
 
 
+def test_search_tables_smart_runs_without_chat_llm(migrated_engine, monkeypatch):
+    """임베딩 서버만 붙은 구성 — 채팅 LLM 없이도 의미 검색이 돈다.
+
+    재랭크는 LlmAiClient 전용이므로 코사인 순위를 그대로 결과로 쓴다
+    (키워드 스코어러로 넘기면 어휘가 겹치지 않는 의미 질의가 빈 결과가 된다).
+    """
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+
+    settings = _embed_settings()
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="[1.0, 0.0]",
+                           source_hash="h", updated_at=datetime.now(UTC)))
+        db.commit()
+        # 어휘가 전혀 겹치지 않는 질의 — 키워드 경로였다면 빈 결과가 된다
+        mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, FakeAiClient(), settings)
+
+    assert mode == "embedding"
+    assert [h.qname for h in hits] == ["dbo.T_ORD"]
+
+
+def test_search_tables_smart_needs_embed_url_not_just_model(migrated_engine):
+    """EMBED_URL이 비면 임베딩 분기를 타지 않는다 — 모델명만으론 호출할 주소가 없다."""
+    settings = _embed_settings(embed_url="")
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    with sessionmaker(bind=migrated_engine)() as db:
+        mode, _ = search_tables_smart(db, "ORD", tables, FakeAiClient(), settings)
+    assert mode == "keyword"
+
+
 def test_search_tables_smart_uses_keyword_when_embed_model_unset(migrated_engine):
     """모델 미설정 — Fake든 뭐든 임베딩 분기 자체를 타지 않고 바로 키워드."""
-    settings = _embed_settings(ai_embed_model="")
+    settings = _embed_settings(embed_model="")
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
     with sessionmaker(bind=migrated_engine)() as db:
         mode, hits = search_tables_smart(db, "ORD", tables, FakeAiClient(), settings)

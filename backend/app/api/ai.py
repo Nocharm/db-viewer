@@ -161,9 +161,11 @@ def start_embed_index_job(
 ) -> dict:
     """임베딩 인덱싱 — 관리 작업, 상한·배치·대기로 부하 관리 (사이클2 §3)."""
     settings = get_settings()
-    if not settings.ai_base_url or not settings.ai_embed_model:
+    # 인덱싱은 임베딩 서버만 있으면 된다 — 채팅 LLM(AI_BASE_URL)과 무관
+    if not settings.embed_url or not settings.embed_model:
         raise HTTPException(400, {"message": "embedding is not configured",
-                                  "context": {"ai_embed_model": settings.ai_embed_model}})
+                                  "context": {"embed_url": settings.embed_url,
+                                              "embed_model": settings.embed_model}})
     if has_active_job(db, "embed_index"):
         raise HTTPException(409, {"message": "embed index job already running", "context": {}})
     job = AiJob(kind="embed_index", status="queued", progress_done=0, progress_total=0,

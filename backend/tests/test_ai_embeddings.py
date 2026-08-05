@@ -26,7 +26,7 @@ def _seed(client, load_fixture) -> None:
 def _settings(**overrides) -> Settings:
     # _env_file=None — 로컬 .env 간섭 차단, 실행 중 값은 인자로만 주입 / no local .env leakage
     defaults = dict(
-        _env_file=None, ai_base_url="http://llm/v1", ai_embed_model="e",
+        _env_file=None, ai_base_url="http://llm/v1", embed_url="http://embed/v1", embed_model="e",
         ai_embed_batch=32, ai_embed_job_cap=1000, ai_embed_sleep_ms=0,
     )
     defaults.update(overrides)
@@ -203,7 +203,7 @@ def ai_job_client(client, migrated_engine):
 
 
 def test_start_embed_index_returns_400_when_not_configured(client):
-    """ai_base_url/ai_embed_model 미설정이면 잡을 만들지 않고 400."""
+    """EMBED_URL/EMBED_MODEL 미설정이면 잡을 만들지 않고 400."""
     res = client.post("/api/ai/embed-index")
     assert res.status_code == 400
     assert res.json()["error"]["message"] == "embedding is not configured"
@@ -213,8 +213,8 @@ def test_start_embed_index_conflicts_with_active_job(ai_job_client, migrated_eng
     """같은 kind(embed_index)의 queued/running 잡이 있으면 새 시작은 409."""
     from app.config import get_settings
 
-    monkeypatch.setenv("AI_BASE_URL", "http://llm/v1")
-    monkeypatch.setenv("AI_EMBED_MODEL", "e")
+    monkeypatch.setenv("EMBED_URL", "http://embed:8000/v1")
+    monkeypatch.setenv("EMBED_MODEL", "e")
     get_settings.cache_clear()
     try:
         session_factory = sessionmaker(bind=migrated_engine)
@@ -226,8 +226,8 @@ def test_start_embed_index_conflicts_with_active_job(ai_job_client, migrated_eng
         res = ai_job_client.post("/api/ai/embed-index")
         assert res.status_code == 409
     finally:
-        monkeypatch.delenv("AI_BASE_URL", raising=False)
-        monkeypatch.delenv("AI_EMBED_MODEL", raising=False)
+        monkeypatch.delenv("EMBED_URL", raising=False)
+        monkeypatch.delenv("EMBED_MODEL", raising=False)
         get_settings.cache_clear()
 
 
@@ -235,8 +235,8 @@ def test_start_embed_index_returns_202_and_completes(ai_job_client, monkeypatch)
     """정상 설정이면 202로 잡을 시작하고 폴링으로 완료·결과를 확인할 수 있다."""
     from app.config import get_settings
 
-    monkeypatch.setenv("AI_BASE_URL", "http://llm/v1")
-    monkeypatch.setenv("AI_EMBED_MODEL", "e")
+    monkeypatch.setenv("EMBED_URL", "http://embed:8000/v1")
+    monkeypatch.setenv("EMBED_MODEL", "e")
     get_settings.cache_clear()
     monkeypatch.setattr(ai_embeddings, "embed_texts",
                         lambda *a, **k: [[0.1, 0.2] for _ in a[-1]])
@@ -249,6 +249,6 @@ def test_start_embed_index_returns_202_and_completes(ai_job_client, monkeypatch)
         assert job["status"] == "failed"
         assert "no ready snapshot" in job["error"]
     finally:
-        monkeypatch.delenv("AI_BASE_URL", raising=False)
-        monkeypatch.delenv("AI_EMBED_MODEL", raising=False)
+        monkeypatch.delenv("EMBED_URL", raising=False)
+        monkeypatch.delenv("EMBED_MODEL", raising=False)
         get_settings.cache_clear()

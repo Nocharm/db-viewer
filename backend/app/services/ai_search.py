@@ -37,13 +37,18 @@ def search_tables_smart(db: Session, query: str, tables: list[TableMeta],
     폴백은 에러가 아니다 — 후보 선정이 임베딩 문제로 502가 되지 않는 것이 계약.
     단, rerank_tables(실제 LLM 호출)는 try 밖에서 호출한다 — 재랭크 실패까지
     폴백으로 삼으면 순수 의미 질의에서 LLM 장애가 200 빈 결과로 은폐된다.
+
+    임베딩 서버는 채팅 LLM과 별개 호스트일 수 있어 게이트도 별개다 — EMBED_URL만
+    있으면 채팅 LLM 없이도 의미 검색이 돈다 (재랭크는 아래에서 생략).
     """
     candidates: list[TableMeta] | None = None
-    if settings.ai_embed_model and isinstance(ai, LlmAiClient):
+    query_vec: list[float] = []
+    vector_by_qname: dict[str, list[float]] = {}
+    if settings.embed_url and settings.embed_model:
         try:
             rows: list[tuple[str, list[float]]] = []
             for e in db.execute(
-                select(AiEmbedding).where(AiEmbedding.model == settings.ai_embed_model)
+                select(AiEmbedding).where(AiEmbedding.model == settings.embed_model)
             ).scalars():
                 try:
                     rows.append((e.object_qname, json.loads(e.vector)))
@@ -52,10 +57,12 @@ def search_tables_smart(db: Session, query: str, tables: list[TableMeta],
                     logger.warning("skipping corrupt embedding row",
                                    extra={"qname": e.object_qname})
             if rows:
+                # 사내 임베딩 서버는 무인증 — 채팅 토큰을 다른 호스트로 보내지 않는다
                 query_vec = embed_texts(
-                    settings.ai_base_url, settings.ai_embed_model,
-                    settings.ai_api_key, settings.ai_timeout, [query],
+                    settings.embed_url, settings.embed_model,
+                    "", settings.embed_timeout_seconds, [query],
                 )[0]
+                vector_by_qname = dict(rows)
                 by_qname = {t.qname: t for t in tables}
                 selected = [
                     by_qname[qname]
@@ -69,5 +76,16 @@ def search_tables_smart(db: Session, query: str, tables: list[TableMeta],
             logger.warning("embedding search unavailable, falling back",
                            extra={"cause": str(e)})
     if candidates is not None:
-        return "embedding", ai.rerank_tables(query, candidates)
+        if isinstance(ai, LlmAiClient):
+            return "embedding", ai.rerank_tables(query, candidates)
+        # 재랭크는 LLM 전용 — 임베딩만 붙은 구성에선 코사인 순위를 그대로 쓴다.
+        # 키워드 스코어러로 넘기면 어휘가 겹치지 않는 의미 질의가 빈 결과가 된다.
+        return "embedding", [
+            AiTableHit(
+                qname=t.qname,
+                score=round(cosine_similarity(query_vec, vector_by_qname[t.qname]), 4),
+                reason="semantic match (no rerank — chat LLM not configured)",
+            )
+            for t in candidates
+        ]
     return "keyword", ai.search_tables(query, tables)
