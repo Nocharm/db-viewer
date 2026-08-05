@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
-import { ColumnCheckModal, type CheckColumn } from "@/components/browser/ColumnCheckModal";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
 import {
   PreviewSection,
@@ -64,8 +63,6 @@ function HomeInner() {
   const [previewTabs, setPreviewTabs] = useState<PreviewTabState[]>([]);
   const [activePreviewId, setActivePreviewId] = useState<number | null>(null);
   const [splitPreviewId, setSplitPreviewId] = useState<number | null>(null);
-  // 컬럼 클릭 → 진행/요약 모달 (ERD 즉시 이동 대신) / column click opens the check modal
-  const [checkColumn, setCheckColumn] = useState<CheckColumn | null>(null);
   const [error, setError] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
@@ -224,17 +221,19 @@ function HomeInner() {
     router.push(`/erd?anchor=${selected.id}&label=${selected.schema}.${selected.name}`);
   }, [router, selected]);
 
-  // 컬럼 칩 → 진행·요약 모달 먼저 — ERD 이동은 요약에서 선택 / modal first, ERD by choice
-  const handleOpenColumn = useCallback((columnId: number, columnName: string) => {
-    setCheckColumn({ id: columnId, name: columnName });
-  }, []);
-
-  // 요약 모달의 "ERD에서 상세 검증" → 기존 딥링크 / deep link into the T2 panel
-  const handleContinueErd = useCallback((columnId: number, columnName: string) => {
-    if (!selected) return;
-    const label = `${selected.schema}.${selected.name}`;
-    router.push(`/erd?anchor=${selected.id}&label=${label}&col=${columnId}&colName=${columnName}`);
-  }, [router, selected]);
+  // 컬럼 클릭 → ERD 조인 빌더로 직행 (검증은 거기서 드래그로 한다)
+  // column click goes straight to the ERD join builder — validation happens there via drag
+  const handleOpenColumn = useCallback(
+    (columnId: number, columnName: string) => {
+      if (!selected) return;
+      const label = `${selected.schema}.${selected.name}`;
+      router.push(
+        `/erd?anchor=${selected.id}&label=${encodeURIComponent(label)}`
+        + `&col=${columnId}&colName=${encodeURIComponent(columnName)}`,
+      );
+    },
+    [router, selected],
+  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -282,11 +281,6 @@ function HomeInner() {
             />
           </section>
         </main>
-        <ColumnCheckModal
-          column={checkColumn}
-          onClose={() => setCheckColumn(null)}
-          onOpenErd={handleContinueErd}
-        />
         {previewTabs.length > 0 && (
           <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
