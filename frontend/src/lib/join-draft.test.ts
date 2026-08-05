@@ -42,6 +42,14 @@ describe("canAddStep", () => {
     expect(again.ok === false && again.reason).toContain("이미");
   });
 
+  it("rejects a duplicate pair regardless of drag direction", () => {
+    // Users can drag from ORDER→LOG or LOG→ORDER; both must reject as duplicate.
+    const draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    const reversed = canAddStep(draft, LOG, ORDER);
+    expect(reversed.ok).toBe(false);
+    expect(reversed.ok === false && reversed.reason).toContain("이미");
+  });
+
   it("caps the draft at MAX_JOIN_STEPS", () => {
     let draft = addStep(EMPTY_DRAFT, ORDER, LOG);
     for (let i = 0; i < MAX_JOIN_STEPS - 1; i += 1) {
