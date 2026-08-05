@@ -143,6 +143,12 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
   // overwritten by a later drag, so completion must not read it live
   const scanColumnIdRef = useRef<number | null>(null);
   const dragOriginRef = useRef<JoinColumnRef | null>(null);
+  // 딥링크(?col=)를 이미 적용한 컬럼 id — 한 번만 켜져야 한다. graph는 expandNeighbors 등
+  // 매 병합마다 새 참조를 받아 이걸 없이 [initialColumnId, graph]에만 걸면 무관한 노드를
+  // 펼칠 때마다 하이라이트가 되살아난다 / tracks which deep-link column has already been
+  // applied — graph gets a new identity on every merge (e.g. expand-neighbors), so without
+  // this guard the effect would re-fire and re-highlight on any unrelated interaction
+  const appliedInitialColumnIdRef = useRef<number | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
   // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
@@ -228,10 +234,16 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
     // dragHint·scanOrigin은 유지 — 드래그를 놓은 뒤에도 추천·제안이 남는다
   }, []);
 
-  // 딥링크(?col=) — 그 컬럼의 추천을 미리 켜 드래그 출발점을 알려준다
-  // deep link: pre-light the candidates so the user knows where to drag from
+  // 딥링크(?col=) — 그 컬럼의 추천을 미리 켜 드래그 출발점을 알려준다. 1회성 의도라 이미
+  // 적용한 컬럼이면 다시 켜지 않는다 — graph는 이웃 확장마다 새 참조를 받으므로 가드 없이
+  // [initialColumnId, graph]에만 걸면 무관한 노드를 펼칠 때마다 되살아난다
+  // deep link: pre-light the candidates so the user knows where to drag from. One-shot intent
+  // — bail once this column has already been applied, since graph changes identity on every
+  // neighbour expansion and a plain dependency on it would re-highlight forever
   useEffect(() => {
     if (!initialColumnId || !graph) return;
+    if (appliedInitialColumnIdRef.current === initialColumnId) return;
+    appliedInitialColumnIdRef.current = initialColumnId;
     void fetchCandidates(initialColumnId)
       .then((res) => {
         const byNode = new Map<number, string[]>();
