@@ -119,6 +119,8 @@ export function TableList({
                 <span className={`obj-chip mr-1.5 ${table.type === "view" ? "obj-chip--view" : ""}`}>
                   {table.type === "view" ? "V" : "T"}
                 </span>
+                {/* 스키마(DB)까지 보여야 동명 테이블이 구분된다 — ATM.PI_x vs SAP.PI_x */}
+                <span style={{ color: "var(--muted)" }}>{table.schema}.</span>
                 <Highlight text={table.name} range={match.nameRange} />
               </span>
               {match.matchedColumn && (

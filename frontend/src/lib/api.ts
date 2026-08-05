@@ -50,6 +50,14 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   }));
 }
 
+async function putJson<T>(url: string, body: unknown): Promise<T> {
+  return handle(await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  }));
+}
+
 async function deleteJson<T>(url: string): Promise<T> {
   return handle(await fetch(url, { method: "DELETE", headers: authHeaders() }));
 }
@@ -224,6 +232,27 @@ export async function fetchAllObjects(): Promise<SearchResponse> {
     items.push(...page.items);
   }
   return { ...first, items };
+}
+
+export interface SchemaCategoryItem {
+  schema: string;
+  /** 미지정이면 스키마명 자체 / falls back to the schema name */
+  category: string;
+  /** 사용자가 지정한 값인지 — 기본값과 구분 표시 / user-set vs default */
+  mapped: boolean;
+  object_count: number;
+}
+
+export function fetchSchemaCategories(): Promise<{ items: SchemaCategoryItem[] }> {
+  return getJson("/api/schema-categories");
+}
+
+/** 스키마 하나의 카테고리 지정 — 빈 문자열이면 해제. 그 DB의 테이블이 통째로 이동한다.
+ * Assigning moves every table of that schema at once; "" clears the mapping. */
+export function assignSchemaCategory(
+  schema: string, category: string,
+): Promise<SchemaCategoryItem> {
+  return putJson(`/api/schema-categories/${encodeURIComponent(schema)}`, { category });
 }
 
 export interface ObjectDetail {

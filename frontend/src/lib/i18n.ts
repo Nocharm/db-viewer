@@ -239,6 +239,15 @@ export const MESSAGES = {
   "chat.you": { ko: "나", en: "You" },
 
   "browser.categories": { ko: "카테고리", en: "Categories" },
+  "browser.dbTab": { ko: "DB", en: "DB" },
+  "db.showAll": { ko: "필터 해제", en: "Clear" },
+  "db.checkAll": { ko: "전체 선택", en: "Select all" },
+  "db.editCategory": { ko: "카테고리 변경 — 이 DB의 테이블이 함께 이동", en: "Change category — moves the whole DB" },
+  "db.categoryPlaceholder": { ko: "카테고리명 (비우면 DB명)", en: "Category (empty = DB name)" },
+  "tip.dbFilter": {
+    ko: "체크한 DB만 목록·카테고리에 표시됩니다. 선택은 이 브라우저에 저장됩니다. DB명을 눌러 카테고리를 바꾸면 그 DB의 테이블이 통째로 이동합니다 (전원 공용).",
+    en: "Only checked DBs appear. The selection is stored in this browser; category changes are shared with everyone.",
+  },
 
   "tip.joinKeys": {
     ko: "FK·뷰 JOIN·검증된 관계에서 집계한 조인 키입니다. 칩을 누르면 그 키로 조인되는 테이블만 목록에 남습니다.",

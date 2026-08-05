@@ -18,15 +18,19 @@ import {
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import {
+  assignSchemaCategory,
   fetchAllObjects,
   fetchColumnsIndex,
   fetchJoinKeys,
   fetchObjectDetail,
   fetchObjectPreview,
+  fetchSchemaCategories,
   type JoinKeyItem,
   type ObjectDetail,
+  type SchemaCategoryItem,
 } from "@/lib/api";
-import { categoryLabel, deriveCategoryCode } from "@/lib/category";
+import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
+import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 
@@ -48,6 +52,9 @@ function HomeInner() {
   const [joinKeys, setJoinKeys] = useState<JoinKeyItem[]>([]);
   const [selectedKey, setSelectedKey] = useState<JoinKeyItem | null>(null);
   const [category, setCategory] = useState<string | null>(null);
+  const [schemas, setSchemas] = useState<SchemaCategoryItem[]>([]);
+  // DB 필터는 개인 설정 — 브라우저별 유지 (카테고리 매핑은 서버 공용)
+  const [dbFilter, setDbFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "table" | "view">("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
@@ -73,7 +80,28 @@ function HomeInner() {
       .then((res) => setColumnsIndex(
         new Map(res.items.map((item) => [item.object_id, item.columns]))))
       .catch(() => undefined); // 컬럼 검색만 비활성화될 뿐 / only degrades column search
+    fetchSchemaCategories()
+      .then((res) => setSchemas(res.items))
+      .catch(() => undefined); // 매핑 실패 시 스키마명이 곧 카테고리 / falls back by design
+    setDbFilter(loadDbFilter());
   }, []);
+
+  const changeDbFilter = useCallback((next: string[]) => {
+    setDbFilter(next);
+    saveDbFilter(next);
+  }, []);
+
+  const assignCategory = useCallback((schema: string, next: string) => {
+    assignSchemaCategory(schema, next)
+      .then((updated) => setSchemas((current) => current.map(
+        (item) => (item.schema === schema ? { ...item, ...updated } : item))))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const categoryBySchema = useMemo<SchemaCategoryMap>(
+    () => new Map(schemas.filter((s) => s.mapped).map((s) => [s.schema, s.category])),
+    [schemas],
+  );
 
   // URL(?table=) → 선택 동기화 — 뒤로가기·딥링크 지원 / sync selection from the URL
   // 미리보기 탭은 선택과 독립 수명 — 테이블을 바꿔도 탭은 유지된다
@@ -106,38 +134,41 @@ function HomeInner() {
     if (table) selectTable(table);
   }, [tables, selectTable]);
 
-  // 타입 필터(전체|테이블|뷰)가 카테고리 집계에도 반영된다 / type filter feeds the counts
-  const typedObjects = useMemo(
-    () => (typeFilter === "all" ? tables : tables.filter((t) => t.type === typeFilter)),
-    [tables, typeFilter],
-  );
+  // 타입 필터 + DB 필터가 카테고리 집계에도 반영된다 / both filters feed the counts
+  const typedObjects = useMemo(() => {
+    const allowed = dbFilter.length > 0 ? new Set(dbFilter) : null;
+    return tables.filter((t) =>
+      (typeFilter === "all" || t.type === typeFilter)
+      && (allowed === null || allowed.has(t.schema)));
+  }, [tables, typeFilter, dbFilter]);
 
   const categories = useMemo<CategoryEntry[]>(() => {
     const counts = new Map<string, number>();
     for (const table of typedObjects) {
-      const code = deriveCategoryCode(table.name);
+      const code = resolveCategory(table.schema, categoryBySchema);
       counts.set(code, (counts.get(code) ?? 0) + 1);
     }
     return [...counts.entries()]
-      .map(([code, count]) => ({ code, label: categoryLabel(code), count }))
+      .map(([code, count]) => ({ code, label: code, count }))
       .sort((a, b) => a.label.localeCompare(b.label, "ko"));
-  }, [typedObjects]);
+  }, [typedObjects, categoryBySchema]);
 
   const listItems = useMemo<TableListItem[]>(() => {
     const keyIds = selectedKey ? new Set(selectedKey.table_ids) : null;
     const items: TableListItem[] = [];
     for (const table of typedObjects) {
-      if (category !== null && deriveCategoryCode(table.name) !== category) continue;
+      const code = resolveCategory(table.schema, categoryBySchema);
+      if (category !== null && code !== category) continue;
       if (keyIds !== null && !keyIds.has(table.id)) continue;
       const match = matchTable(query, {
         name: table.name,
-        categoryLabel: categoryLabel(deriveCategoryCode(table.name)),
+        categoryLabel: code,
         columns: columnsIndex.get(table.id) ?? [],
       });
       if (match.matched) items.push({ table, match });
     }
     return items;
-  }, [typedObjects, category, selectedKey, query, columnsIndex]);
+  }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
   // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
   const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
@@ -223,8 +254,12 @@ function HomeInner() {
           <CategoryList
             categories={categories}
             selected={category}
-            totalCount={tables.length}
+            totalCount={typedObjects.length}
             onSelect={setCategory}
+            schemas={schemas}
+            dbFilter={dbFilter}
+            onDbFilter={changeDbFilter}
+            onAssignCategory={assignCategory}
           />
           <TableList
             items={listItems}
