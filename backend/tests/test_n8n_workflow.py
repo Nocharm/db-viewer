@@ -36,6 +36,10 @@ def _load(path: Path) -> dict:
 
 def _run_build_query_js(js: str, body: dict) -> str:
     """W2의 Build query jsCode를 node로 그대로 실행해 실제 산출 SQL을 얻는다."""
+    # 호출부(테스트 본문)가 NODE_BIN 부재 시 이미 fail()로 멈춘다 — 여기선 pyright의
+    # str | None 경고만 없애는 타입 좁히기 목적. caller guarantees node is present;
+    # this narrows the type for pyright, it does not change runtime behavior.
+    assert NODE_BIN is not None
     assert _RETURN_MARKER in js, "Build query jsCode의 반환문 형태가 바뀌었다 — 테스트 갱신 필요"
     script = (
         "const $json = " + json.dumps({"body": body}, ensure_ascii=False) + ";\n"
@@ -148,7 +152,6 @@ def test_w2_builds_a_multi_join_preview_from_steps() -> None:
     assert js.count("join_type") == 1  # 화이트리스트 비교 외 경로로 새면 카운트가 늘어난다
 
 
-@pytest.mark.skipif(NODE_BIN is None, reason="node runtime not available for JS execution")
 def test_multi_join_preview_predicate_lands_on_the_owning_clause() -> None:
     """4테이블 체인(A-B, B-C, C-D LEFT, 닫는 스텝 A-C)에서 '양쪽 다 바인딩됨' 분기가
     가장 최근 clause(D의 LEFT JOIN)가 아니라 실제로 그 alias가 등장한 clause(C의
@@ -156,6 +159,17 @@ def test_multi_join_preview_predicate_lands_on_the_owning_clause() -> None:
     조건이 바뀔 뿐 A-C는 전혀 제약되지 않는데도 예외 없이 조용히 틀린 결과를 낸다 —
     실제 jsCode를 node로 실행해 산출 SQL을 확인해야만 잡히는 버그라 문자열 검사로는
     검증 불가능하다."""
+    if NODE_BIN is None:
+        # 이 조인-체인 분기 버그는 스텝 데이터에 따라 갈리는 제어 흐름 문제라 jsCode
+        # 문자열 검사로는 검증할 수 없다 — 실행이 유일한 수단이므로 node 부재를 조용히
+        # 건너뛰면 이 회귀 클래스의 유일한 커버리지가 CI 그린 뒤에서 사라진다.
+        # skip silently here would let this bug class regress behind a green suite;
+        # node is the only way to verify step-data-dependent join-chain placement.
+        pytest.fail(
+            "node runtime is required to execute the generated Build query JS — "
+            "join-chain clause placement is control-flow-dependent on step data "
+            "and cannot be verified by string inspection of jsCode alone"
+        )
     wf = _load(W2_PATH)
     js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
     steps = [
