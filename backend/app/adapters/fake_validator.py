@@ -7,7 +7,12 @@ Everything through preview must work on this alone.
 import json
 from pathlib import Path
 
-from app.domain.validation import ColumnRef, ContainmentResult, ValidationDataMissing
+from app.domain.validation import (
+    ColumnRef,
+    ContainmentResult,
+    JoinStepRef,
+    ValidationDataMissing,
+)
 
 
 class FakeJoinValidator:
@@ -50,3 +55,12 @@ class FakeJoinValidator:
             {f"src.{src.column}": value, f"tgt.{tgt.column}": value}
             for value in matched[:limit]
         ]
+
+    def multi_join_preview(
+        self, steps: list[JoinStepRef], limit: int
+    ) -> tuple[list[dict], str]:
+        """픽스처로 N-웨이 조인을 흉내내지 않는다 — 합성 결과가 실값처럼 나가면 안 된다."""
+        raise NotImplementedError(
+            "multi_join_preview는 live 원천에서만 지원됩니다 "
+            "(합성 조인 결과 노출 금지)"
+        )

@@ -9,9 +9,10 @@ The backend sends only identifiers; SQL templates and DB credentials live in n8n
 import json
 import logging
 import urllib.request
+from dataclasses import asdict
 from urllib.error import URLError
 
-from app.domain.validation import ColumnRef, ContainmentResult
+from app.domain.validation import ColumnRef, ContainmentResult, JoinStepRef
 
 logger = logging.getLogger(__name__)
 
@@ -19,26 +20,44 @@ logger = logging.getLogger(__name__)
 RETRY_COUNT = 1
 
 
-def _post_query(webhook_base: str, body: dict, timeout: int) -> list[dict]:
-    url = f"{webhook_base.rstrip('/')}/dbv-query"
+def _read_payload(url: str, body: dict, timeout: int) -> list | dict:
+    """단일 HTTP 왕복 — 테스트가 이 경계를 대체한다 / one round trip; tests patch here."""
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode())
+
+
+def _post_query(
+    webhook_base: str, body: dict, timeout: int
+) -> tuple[list[dict], str | None]:
+    """행과 실행 SQL을 함께 돌려준다.
+
+    신 W2는 {query, rows}, 구 W2는 행 리스트를 보낸다 — 둘 다 받아 배포 순서 결합을
+    없앤다. 구 W2에서는 query가 None이다.
+    Accepts both the wrapped and the legacy shape so backend and n8n can deploy
+    independently.
+    """
+    url = f"{webhook_base.rstrip('/')}/dbv-query"
     last_error: Exception | None = None
     for attempt in range(RETRY_COUNT + 1):
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode())
-            rows = payload if isinstance(payload, list) else [payload]
-            # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 빈 리스트로 정규화
-            return [r for r in rows if r]
+            payload = _read_payload(url, body, timeout)
         except URLError as e:
             last_error = e
             logger.warning("n8n query attempt failed",
                            extra={"url": url, "kind": body.get("kind"), "attempt": attempt})
+            continue
+        if isinstance(payload, dict) and "rows" in payload:
+            rows = payload["rows"] or []
+            return [r for r in rows if r], payload.get("query")
+        rows = payload if isinstance(payload, list) else [payload]
+        # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 빈 리스트로 정규화
+        return [r for r in rows if r], None
     raise RuntimeError(
         f"n8n query failed after retries: kind={body.get('kind')} url={url}"
     ) from last_error
@@ -52,7 +71,7 @@ class N8nJoinValidator:
         self._timeout = timeout
 
     def containment(self, src: ColumnRef, tgt: ColumnRef) -> ContainmentResult:
-        rows = _post_query(self._base, {
+        rows, _ = _post_query(self._base, {
             "kind": "containment",
             "src_schema": src.schema, "src_table": src.table, "src_column": src.column,
             "tgt_schema": tgt.schema, "tgt_table": tgt.table, "tgt_column": tgt.column,
@@ -72,11 +91,27 @@ class N8nJoinValidator:
         )
 
     def preview(self, src: ColumnRef, tgt: ColumnRef, limit: int) -> list[dict]:
-        return _post_query(self._base, {
+        rows, _ = _post_query(self._base, {
             "kind": "join_preview", "limit": limit,
             "src_schema": src.schema, "src_table": src.table, "src_column": src.column,
             "tgt_schema": tgt.schema, "tgt_table": tgt.table, "tgt_column": tgt.column,
         }, self._timeout)
+        return rows
+
+    def multi_join_preview(
+        self, steps: list[JoinStepRef], limit: int
+    ) -> tuple[list[dict], str]:
+        """N-웨이 조인 미리보기 — 실행문을 함께 받는다 / rows plus the executed SQL."""
+        rows, query = _post_query(self._base, {
+            "kind": "multi_join_preview", "limit": limit,
+            "steps": [asdict(step) for step in steps],
+        }, self._timeout)
+        if query is None:
+            raise RuntimeError(
+                "n8n W2 did not return the executed SQL — "
+                "재배포가 필요합니다 (multi_join_preview는 신 W2 전용)"
+            )
+        return rows, query
 
 
 class N8nTablePreview:
@@ -96,4 +131,5 @@ class N8nTablePreview:
         if filter_column and filter_value:
             body["filter_column"] = filter_column
             body["filter_value"] = filter_value
-        return _post_query(self._base, body, self._timeout)
+        rows, _ = _post_query(self._base, body, self._timeout)
+        return rows

@@ -98,3 +98,49 @@ def test_failure_raises_after_retry(monkeypatch):
     with pytest.raises(RuntimeError, match="n8n query failed"):
         N8nJoinValidator("http://n8n/webhook", timeout=1).containment(SRC, TGT)
     assert len(attempts) == 2  # 1회 재시도 후 마지막 오류 / one retry then raise
+
+
+def test_post_query_accepts_both_legacy_and_wrapped_shapes(monkeypatch) -> None:
+    """구 W2(행 리스트)와 신 W2({query, rows})를 모두 받는다 — 배포 순서 결합 제거."""
+    from app.adapters import n8n_query
+
+    legacy = [{"a": 1}, {"a": 2}]
+    wrapped = {"query": "SELECT 1", "rows": [{"a": 1}]}
+
+    payloads = iter([legacy, wrapped])
+    monkeypatch.setattr(n8n_query, "_read_payload", lambda *a, **k: next(payloads))
+
+    rows, query = n8n_query._post_query("http://x", {"kind": "containment"}, 5)
+    assert rows == legacy and query is None
+
+    rows, query = n8n_query._post_query("http://x", {"kind": "containment"}, 5)
+    assert rows == [{"a": 1}] and query == "SELECT 1"
+
+
+def test_multi_join_preview_sends_steps_and_returns_the_query(monkeypatch) -> None:
+    """N-웨이 미리보기는 스텝 배열을 그대로 보내고 실행문을 함께 받는다."""
+    from app.adapters import n8n_query
+    from app.domain.validation import JoinStepRef
+
+    captured: dict = {}
+
+    def fake_read(url, body, timeout):  # noqa: ARG001
+        captured.update(body)
+        return {"query": "SELECT TOP 20 ...", "rows": [{"x": 1}]}
+
+    monkeypatch.setattr(n8n_query, "_read_payload", fake_read)
+    validator = n8n_query.N8nJoinValidator("http://x", 5)
+    steps = [JoinStepRef(
+        left_schema="ATM", left_table="T_ORDER", left_column="ORDER_ID",
+        right_schema="ATM", right_table="T_LOG", right_column="ORDER_ID",
+        join_type="left",
+    )]
+
+    rows, query = validator.multi_join_preview(steps, 20)
+
+    assert captured["kind"] == "multi_join_preview"
+    assert captured["limit"] == 20
+    assert captured["steps"][0]["join_type"] == "left"
+    assert captured["steps"][0]["left_table"] == "T_ORDER"
+    assert rows == [{"x": 1}]
+    assert query == "SELECT TOP 20 ..."

@@ -46,9 +46,26 @@ class ValidationDataMissing(LookupError):
         self.ref = ref
 
 
+@dataclass(frozen=True)
+class JoinStepRef:
+    """N-웨이 조인 한 단계 — 스냅샷 독립 텍스트 식별자 / one join step, snapshot-free."""
+
+    left_schema: str
+    left_table: str
+    left_column: str
+    right_schema: str
+    right_table: str
+    right_column: str
+    join_type: str  # "inner" | "left"
+
+
 class JoinValidator(Protocol):
     """실DB는 이 인터페이스 뒤에만 존재한다 / real DB lives only behind this (계획 §4.3)."""
 
     def containment(self, src: ColumnRef, tgt: ColumnRef) -> ContainmentResult: ...
 
     def preview(self, src: ColumnRef, tgt: ColumnRef, limit: int) -> list[dict]: ...
+
+    def multi_join_preview(
+        self, steps: list[JoinStepRef], limit: int
+    ) -> tuple[list[dict], str]: ...
