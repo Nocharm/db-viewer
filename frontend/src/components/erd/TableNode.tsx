@@ -80,6 +80,8 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
     const bottom = top + container.clientHeight;
     const inView: string[] = [];
     for (const row of Array.from(container.querySelectorAll<HTMLElement>("[data-column-name]"))) {
+      // offsetTop은 container가 offsetParent일 때만 이 프레임과 일치한다
+      // (globals.css .erd-node__scroll의 position: relative에 의존 — 지우면 어긋난다)
       if (row.offsetTop + row.offsetHeight > top && row.offsetTop < bottom) {
         inView.push(row.dataset.columnName ?? "");
       }

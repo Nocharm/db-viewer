@@ -183,6 +183,9 @@ h1, h2, h3 {
   max-height: 458px; /* 520 - 헤더 36 - 메타 26 */
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* position 없으면 offsetParent가 React Flow의 absolute 노드 박스로 튀어
+     TableNode.tsx reportVisible()의 offsetTop이 헤더 높이만큼 어긋난다 — 지우지 말 것 */
+  position: relative;
 }
 .erd-node__meta {
   padding: 5px 12px 9px;
