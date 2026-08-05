@@ -26,8 +26,39 @@ export interface TableNodeData extends Record<string, unknown> {
 
 export type TableFlowNode = Node<TableNodeData, "tableNode">;
 
-// 핸들은 지름 1px 투명 — 선 정렬용 좌표만 제공 / invisible coordinate-only handles
+// 핸들은 지름 1px 투명 — 선 정렬용 좌표만 제공 (노드 헤더 좌우 핸들 전용, 컬럼 행은 아래 참고)
+// / invisible coordinate-only handles (header handles only — column rows use the style below)
 const HANDLE_STYLE = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1 } as const;
+
+// 컬럼 행 핸들은 두 역할을 겸한다 — 엣지가 도킹하는 좌표 AND 사용자가 드래그를 시작하는 그립.
+// 크기 0에 가깝거나 스크롤 컨테이너(.erd-node__scroll, overflow-y: auto)의 클리핑 경계에
+// 걸쳐 있으면(기본 Handle은 left:0/right:0 + translate ±50%로 정확히 그 경계 위에 앉는다)
+// document.elementFromPoint가 핸들 대신 부모 .erd-node div를 반환해 드래그가 시작조차 안 된다 —
+// 브라우저 실측으로만 잡힌 회귀라 정적 검사로는 못 본다. 경계 안쪽으로 들이고 실제 히트박스를
+// 줘야 한다. opacity: 0은 유지 — 컬럼 행 자체가 어포던스이며 점을 노출하지 않는다.
+// / column-row handles are BOTH the edge-docking anchor and the user's drag grip. A
+// zero-size handle, or one sitting on the scroll container's clip boundary (the default
+// left:0/right:0 + translate ±50% puts it exactly there), makes elementFromPoint resolve
+// to the parent .erd-node div instead — drag-to-join silently never starts. Fixed by
+// insetting inside the clip box with a real hit width; do not shrink this back to a dot.
+const COLUMN_HANDLE_INSET = 3; // px — 클립 경계 안쪽 여유 (엣지 도킹 위치도 이만큼만 안쪽으로 이동)
+const COLUMN_HANDLE_WIDTH = 12; // px — 실제 드래그 그립 폭 (10–14px 권장 범위)
+const COLUMN_HANDLE_LEFT_STYLE = {
+  opacity: 0,
+  top: 0,
+  bottom: 0,
+  left: COLUMN_HANDLE_INSET,
+  width: COLUMN_HANDLE_WIDTH,
+  transform: "none", // 기본 .react-flow__handle-left의 translate(-50%,-50%) 상쇄
+} as const;
+const COLUMN_HANDLE_RIGHT_STYLE = {
+  opacity: 0,
+  top: 0,
+  bottom: 0,
+  right: COLUMN_HANDLE_INSET,
+  width: COLUMN_HANDLE_WIDTH,
+  transform: "none", // 기본 .react-flow__handle-right의 translate(50%,-50%) 상쇄
+} as const;
 
 // 한 번에 그리는 컬럼 수 — 수백 컬럼 테이블을 통째로 그리면 프레임이 끊긴다
 // (TableList·AdUserList와 같은 청크 패턴) / rows rendered per chunk
@@ -162,9 +193,9 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
               >
                 {/* 컬럼 행이 조인 드래그의 출발·도착점 / column rows are join endpoints */}
                 <Handle type="target" position={Position.Left} id={`t-${col.name}`}
-                        isConnectable style={HANDLE_STYLE} />
+                        isConnectable style={COLUMN_HANDLE_LEFT_STYLE} />
                 <Handle type="source" position={Position.Right} id={`s-${col.name}`}
-                        isConnectable style={HANDLE_STYLE} />
+                        isConnectable style={COLUMN_HANDLE_RIGHT_STYLE} />
                 <span className="truncate">
                   {col.is_pk && <span className="pk-mark">PK</span>}
                   {col.name}
