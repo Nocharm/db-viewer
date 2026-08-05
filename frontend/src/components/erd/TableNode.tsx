@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
 
+import { CaretDownIcon, CaretRightIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { MAX_VISIBLE_COLUMNS } from "@/lib/layout";
 import type { GraphNode } from "@/lib/types";
@@ -68,7 +69,7 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
           onClick={() => data.onToggleNode(node.id)}
           title={collapsed ? t("erd.expandColumns") : t("erd.collapseColumns")}
         >
-          {collapsed ? "▸" : "▾"}
+          {collapsed ? <CaretRightIcon size={11} /> : <CaretDownIcon size={11} />}
         </button>
         <button
           className="icon-button"

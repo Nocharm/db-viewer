@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 
+import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import {
   buildPreviewSql,
@@ -61,7 +62,7 @@ export function PreviewSqlButton({ state, visibleColumns, sort, buttonClassName 
               </span>
               <button className="icon-button ml-auto" onClick={() => setOpen(false)}
                       data-testid="PreviewSqlButton-closeButton">
-                ✕
+                <CloseIcon />
               </button>
             </div>
             <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>

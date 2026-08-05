@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { CaretDownIcon, CloseIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
@@ -148,7 +149,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         <div ref={columnsRef} className="relative">
           <button className="icon-button h-10" onClick={() => setColumnsOpen((cur) => !cur)}
                   data-testid="PreviewSection-columnsButton">
-            {t("preview.columnsMenu")}{tab.hidden.length > 0 ? ` (-${tab.hidden.length})` : ""} ▾
+            {t("preview.columnsMenu")}{tab.hidden.length > 0 ? ` (-${tab.hidden.length})` : ""}{" "}
+            <CaretDownIcon size={11} className="inline-block align-middle" />
           </button>
           {columnsOpen && (
             <div className="erd-menu right-0 top-full mt-1 max-h-72 w-56 overflow-y-auto"
@@ -259,7 +261,7 @@ export function PreviewSection({
             <button className="pressable px-0.5" onClick={() => onClose(tab.id)}
                     title={t("erd.cancel")}
                     data-testid={`PreviewSection-tabClose-${tab.id}`}>
-              ✕
+              <CloseIcon />
             </button>
           </span>
         ))}

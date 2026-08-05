@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 
 import { PATTERN_LABELS } from "@/components/ColumnPanel";
+import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { fetchCandidates, runContainment } from "@/lib/api";
 import type { CandidateItem, ContainmentResponse } from "@/lib/types";
@@ -127,7 +128,7 @@ export function ColumnCheckModal({ column, onClose, onOpenErd }: Props) {
           </span>
           <button className="icon-button ml-auto" onClick={onClose}
                   data-testid="ColumnCheckModal-closeButton">
-            ✕
+            <CloseIcon />
           </button>
         </div>
 

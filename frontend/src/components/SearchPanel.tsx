@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { CloseIcon, SearchIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { searchObjects, searchTablesAi } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
@@ -68,12 +69,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
         title={t("erd.searchOpen")}
         data-testid="SearchPanel-openButton"
       >
-        {/* 플랫 돋보기 — 이모지 대신 currentColor SVG / flat magnifier, theme-aware */}
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
-          <circle cx="10.5" cy="10.5" r="6.5" />
-          <path d="M15.5 15.5 L20.5 20.5" />
-        </svg>
+        <SearchIcon />
       </button>
     );
   }
@@ -99,7 +95,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
           />
           <button className="icon-button shrink-0" onClick={() => setOpen(false)}
                   title={t("erd.searchClose")} data-testid="SearchPanel-foldButton">
-            ✕
+            <CloseIcon />
           </button>
         </div>
         <select

@@ -528,21 +528,6 @@ mark.hl {
 }
 
 /* ── 브랜드 마크 — 옐로 사각 앵커 ── */
-.logo-mark {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--primary);
-}
-/* 로그인·게이트 카드용 대형 마크 / large mark for auth gate cards */
-.logo-mark--lg {
-  display: block;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-}
-
 /* ── 일치율 게이지 — 스탯은 옐로 ── */
 .rate-bar {
   flex: 1;

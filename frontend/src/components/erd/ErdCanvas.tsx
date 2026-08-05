@@ -14,6 +14,7 @@ import {
 import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
@@ -608,7 +609,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             </button>
             <button className="icon-button" onClick={() => setPreview(null)}
                     data-testid="ErdCanvas-previewCloseButton">
-              ✕
+              <CloseIcon />
             </button>
           </div>
           {preview && (

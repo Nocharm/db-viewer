@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatPanel } from "@/components/ChatPanel";
+import { CaretDownIcon, LogoMark, MoonIcon, SunIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
@@ -34,7 +35,7 @@ function ThemeToggle() {
   return (
     <button className="icon-button" onClick={toggle} title={t("header.themeToggle")}
             data-testid="AppHeader-themeToggle">
-      {theme === "dark" ? "☀︎" : "☾"}
+      {theme === "dark" ? <SunIcon /> : <MoonIcon />}
     </button>
   );
 }
@@ -76,7 +77,7 @@ function UserMenu() {
         onClick={() => setOpen((cur) => !cur)}
         data-testid="AppHeader-userMenuButton"
       >
-        {me.name} <span aria-hidden style={{ fontSize: 10 }}>▾</span>
+        {me.name} <CaretDownIcon size={11} className="inline-block align-middle" />
       </button>
       {open && (
         <div
@@ -126,7 +127,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
          className="pressable flex items-center gap-2 rounded px-1 text-[15px] font-bold tracking-tight"
          style={{ color: "var(--ink)" }}
          data-testid="AppHeader-homeLink">
-        <span className="logo-mark" aria-hidden />
+        <LogoMark size={18} />
         DB-viewer
       </a>
       <nav className="flex items-center gap-1">

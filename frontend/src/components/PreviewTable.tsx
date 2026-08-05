@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
 import { countUniqueValues, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -103,8 +104,9 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
               >
                 {column}
                 {sort?.column === column && (
-                  <span style={{ color: "var(--stat-ink)" }}>
-                    {" "}{sort.dir === "asc" ? "▲" : "▼"}
+                  <span className="ml-1 inline-block align-middle"
+                        style={{ color: "var(--stat-ink)" }}>
+                    {sort.dir === "asc" ? <ArrowUpIcon size={11} /> : <ArrowDownIcon size={11} />}
                   </span>
                 )}
                 {/* 세로선 핸들 — 드래그 폭 조절, 더블클릭 내용 맞춤 / drag to size, dbl-click to fit */}
@@ -158,12 +160,12 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => onSort({ column: menu.column, dir: "asc" }))}
                   data-testid="PreviewTable-sortAscItem">
-            {t("preview.sortAsc")} ▲
+            {t("preview.sortAsc")} <ArrowUpIcon size={11} className="inline-block align-middle" />
           </button>
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => onSort({ column: menu.column, dir: "desc" }))}
                   data-testid="PreviewTable-sortDescItem">
-            {t("preview.sortDesc")} ▼
+            {t("preview.sortDesc")} <ArrowDownIcon size={11} className="inline-block align-middle" />
           </button>
           {sort !== null && (
             <button className="pressable erd-menu__item"
@@ -202,7 +204,7 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
               <span className="badge badge--muted">{uniqueItems.length}</span>
               <button className="icon-button ml-auto" onClick={() => setUniqueColumn(null)}
                       data-testid="PreviewTable-uniqueCloseButton">
-                ✕
+                <CloseIcon />
               </button>
             </div>
             <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>

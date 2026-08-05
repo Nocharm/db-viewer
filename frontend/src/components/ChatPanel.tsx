@@ -5,6 +5,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { ChatIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { chatAi, searchObjects } from "@/lib/api";
 import { buildChatHistory, loadChatSession, saveChatSession, type ChatMessage } from "@/lib/chat-utils";
@@ -64,7 +65,7 @@ export function ChatPanel() {
     <>
       <button className="icon-button" onClick={() => setOpen((cur) => !cur)}
               title={t("chat.title")} data-testid="ChatPanel-toggleButton">
-        💬
+        <ChatIcon />
       </button>
       {open && (
         <div className="fixed bottom-4 right-4 z-50 flex h-[480px] w-96 flex-col rounded-lg border shadow-lg"
@@ -79,7 +80,7 @@ export function ChatPanel() {
               </span>
             )}
             <button className="icon-button ml-auto" onClick={() => setOpen(false)}
-                    data-testid="ChatPanel-closeButton">✕</button>
+                    data-testid="ChatPanel-closeButton"><CloseIcon /></button>
           </div>
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
                data-testid="ChatPanel-messages">

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
 
+import { LogoMark } from "@/components/icons";
 import {
   clearAutoLoginTried,
   consumeReturnTo,
@@ -57,7 +58,7 @@ function KeycloakLogin() {
         style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
         data-testid="LoginPage-card"
       >
-        <span className="logo-mark logo-mark--lg mx-auto mb-5" aria-hidden />
+        <LogoMark size={40} className="mx-auto mb-5 block" />
         <p className="text-3xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
           DB-viewer
         </p>

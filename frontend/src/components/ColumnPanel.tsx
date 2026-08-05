@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import {
   confirmRelation,
@@ -126,7 +127,7 @@ export function ColumnPanel({ column, onClose }: Props) {
           {column.object}.{column.name}
         </span>
         <button className="icon-button" onClick={onClose} data-testid="ColumnPanel-closeButton">
-          ✕
+          <CloseIcon />
         </button>
       </div>
 
