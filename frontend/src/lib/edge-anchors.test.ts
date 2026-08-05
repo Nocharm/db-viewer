@@ -34,4 +34,21 @@ describe("resolveEdgeHandles", () => {
     expect(resolveEdgeHandles(makeEdge("fk", []), openWith("SO_NO"), openWith("SO_NO2")))
       .toEqual({});
   });
+
+  it("falls back to the header handle when the column scrolled out of the viewport", () => {
+    // visibleColumns는 '렌더된 컬럼'이 아니라 '스크롤 뷰포트 안의 컬럼'을 뜻한다
+    const edge = {
+      id: "e1", kind: "fk", src_object_id: 1, tgt_object_id: 2,
+      columns: [{ src_column: "ORDER_ID", tgt_column: "ORDER_ID" }],
+    } as GraphEdge;
+    const scrolledAway = { expanded: true, visibleColumns: new Set<string>(["OTHER"]) };
+    const inView = { expanded: true, visibleColumns: new Set<string>(["ORDER_ID"]) };
+
+    expect(resolveEdgeHandles(edge, scrolledAway, inView)).toEqual({
+      targetHandle: "t-ORDER_ID",
+    });
+    expect(resolveEdgeHandles(edge, inView, scrolledAway)).toEqual({
+      sourceHandle: "s-ORDER_ID",
+    });
+  });
 });

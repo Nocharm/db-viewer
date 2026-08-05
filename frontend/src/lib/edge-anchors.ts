@@ -7,7 +7,8 @@ export const PAIR_KINDS = new Set(["fk", "inferred", "confirmed", "ai_suggested"
 
 export interface NodeAnchorInfo {
   expanded: boolean;
-  /** 화면에 실제 렌더되는 컬럼(표시 상한 이내) / columns actually rendered */
+  /** 스크롤 뷰포트 안에 실제로 보이는 컬럼 — 밖으로 나간 행은 헤더로 폴백한다.
+   * columns currently inside the node's scroll viewport */
   visibleColumns: Set<string>;
 }
 

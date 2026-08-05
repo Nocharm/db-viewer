@@ -23,7 +23,7 @@ import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
 import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-merge";
-import { estimateNodeSize, layoutGraph, MAX_VISIBLE_COLUMNS } from "@/lib/layout";
+import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { TableNode, type TableFlowNode } from "./TableNode";
@@ -85,6 +85,23 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   // 뷰 882개가 그래프를 폭발시킨다 — 기본 꺼짐, 표시 계층에서만 필터
   // views explode the graph at real scale; filtered at the display layer only
   const [showViews, setShowViews] = useState(false);
+  // 노드별 '스크롤 뷰포트 안 컬럼' — 엣지 앵커 해석 입력 / per-node in-viewport columns
+  const [viewportColumns, setViewportColumns] =
+    useState<Map<number, Set<string>>>(new Map());
+  const handleVisibleColumnsChange = useCallback((nodeId: number, columns: string[]) => {
+    setViewportColumns((current) => {
+      const previous = current.get(nodeId);
+      const next = new Set(columns);
+      // 같은 집합이면 그대로 — 무한 렌더 방지 / bail out on no-op to avoid a render loop
+      if (previous && previous.size === next.size
+          && [...next].every((c) => previous.has(c))) {
+        return current;
+      }
+      const merged = new Map(current);
+      merged.set(nodeId, next);
+      return merged;
+    });
+  }, []);
   // 임계 초과 확인 대기 — 값은 켰을 때 그려질 노드 수 / node count awaiting confirmation
   const [pendingViews, setPendingViews] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -315,15 +332,6 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       (e) => renderedIds.has(e.src_object_id) && renderedIds.has(e.tgt_object_id)
         && (e.kind !== "view_lineage" || expandedNodes.has(e.src_object_id)),
     );
-    // 컬럼 행 핸들 해석용 — 펼침 여부·렌더되는 컬럼 / anchor info per node
-    const anchorInfo = new Map<number, NodeAnchorInfo>(visibleGraphNodes.map((n) => [
-      n.id,
-      {
-        expanded: expandedNodes.has(n.id),
-        visibleColumns: new Set(
-          n.columns.slice(0, MAX_VISIBLE_COLUMNS).map((c) => c.name)),
-      },
-    ]));
     layoutGraph(sized, visibleEdges).then((positions) => {
       if (cancelled) return;
       const posMap = new Map(positions.map((p) => [p.id, p]));
@@ -343,6 +351,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             onExpandNeighbors: expandNeighbors,
             onToggleNode: toggleNode,
             onSelectColumn,
+            onVisibleColumnsChange: handleVisibleColumnsChange,
           },
         })),
       );
@@ -360,14 +369,13 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             id: e.id,
             source: String(e.src_object_id),
             target: String(e.tgt_object_id),
-            // 매칭 컬럼 행에 직접 도킹 — 접힘·상한 초과는 헤더 폴백 / dock at column rows
-            ...resolveEdgeHandles(
-              e, anchorInfo.get(e.src_object_id), anchorInfo.get(e.tgt_object_id)),
             style: visual,
             markerStart: ends.source ? `url(#${MARKER_ID[ends.source]})` : undefined,
             markerEnd: ends.target ? `url(#${MARKER_ID[ends.target]})` : undefined,
             label,
             labelStyle: { fontSize: 10, fill: "var(--slate)" },
+            // 핸들 해석은 스크롤에 따라 바뀐다 — 레이아웃 밖에서 매 렌더 계산한다
+            data: { graphEdge: e },
             "data-testid": `ErdCanvas-edge-${e.id}`,
           } as Edge;
         }),
@@ -391,7 +399,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       cancelled = true;
     };
   }, [graph, expandedNodes, hiddenNodes, showViews,
-      expandNeighbors, toggleNode, onSelectColumn, centerOn]);
+      expandNeighbors, toggleNode, onSelectColumn, handleVisibleColumnsChange, centerOn]);
 
   // 강조 상태를 렌더에만 입힌다 — ELK 재배치 없이 / emphasis decorates render only, no relayout
   const displayNodes = useMemo(() => {
@@ -403,9 +411,35 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     });
   }, [flowNodes, emphasis]);
 
-  const displayEdges = useMemo(() => {
-    if (!emphasis) return flowEdges;
+  // 엣지 핸들은 스크롤에 따라 바뀐다 — ELK 재배치 없이 렌더 단계에서만 해석한다
+  // handles depend on scroll position; resolved at render, never triggering a relayout
+  const anchoredEdges = useMemo(() => {
+    const anchorInfo = new Map<number, NodeAnchorInfo>(
+      flowNodes.map((n) => [
+        Number(n.id),
+        {
+          expanded: n.data.expanded,
+          visibleColumns: viewportColumns.get(Number(n.id)) ?? new Set<string>(),
+        },
+      ]),
+    );
     return flowEdges.map((e) => {
+      const graphEdge = (e.data as { graphEdge?: GraphEdge } | undefined)?.graphEdge;
+      if (!graphEdge) return e;
+      return {
+        ...e,
+        ...resolveEdgeHandles(
+          graphEdge,
+          anchorInfo.get(graphEdge.src_object_id),
+          anchorInfo.get(graphEdge.tgt_object_id),
+        ),
+      } as Edge;
+    });
+  }, [flowEdges, flowNodes, viewportColumns]);
+
+  const displayEdges = useMemo(() => {
+    if (!emphasis) return anchoredEdges;
+    return anchoredEdges.map((e) => {
       const hit = emphasis.edgeIds.has(e.id);
       const baseWidth = Number((e.style as { strokeWidth?: number })?.strokeWidth ?? 1.4);
       return {
@@ -417,7 +451,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         zIndex: hit ? 10 : 0,
       } as Edge;
     });
-  }, [flowEdges, emphasis]);
+  }, [anchoredEdges, emphasis]);
 
   return (
     <div ref={wrapperRef} className="relative h-full w-full" data-testid="ErdCanvas-root">

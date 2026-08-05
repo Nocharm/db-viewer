@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_VISIBLE_COLUMNS, NODE_WIDTH, estimateNodeSize, layoutGraph } from "./layout";
+import { MAX_NODE_HEIGHT, NODE_WIDTH, estimateNodeSize, layoutGraph } from "./layout";
 import type { GraphColumn, GraphNode } from "./types";
 
 function makeNode(type: "table" | "view", columnCount: number): GraphNode {
@@ -25,13 +25,18 @@ describe("estimateNodeSize", () => {
     expect(expanded.height).toBeGreaterThan(collapsedView.height);
   });
 
-  it("caps visible rows and adds an overflow row when expanded", () => {
-    const small = estimateNodeSize(makeNode("table", 10), true);
-    const huge = estimateNodeSize(makeNode("table", 60), true);
-    const capped = estimateNodeSize(makeNode("table", MAX_VISIBLE_COLUMNS + 1), true);
-    expect(huge.height).toBe(capped.height); // 초과분은 한 줄 요약 / overflow collapses to one row
-    expect(huge.height).toBeGreaterThan(small.height);
+  it("caps expanded node height so ELK does not reserve unbounded space", () => {
+    // 컬럼 500개 테이블도 상한을 넘지 않는다 — 넘으면 배치가 화면 밖으로 벌어진다
+    const huge = estimateNodeSize(makeNode("table", 500), true);
+    expect(huge.height).toBe(MAX_NODE_HEIGHT);
     expect(huge.width).toBe(NODE_WIDTH);
+  });
+
+  it("still grows with column count below the cap", () => {
+    const small = estimateNodeSize(makeNode("table", 5), true);
+    const larger = estimateNodeSize(makeNode("table", 15), true);
+    expect(larger.height).toBeGreaterThan(small.height);
+    expect(larger.height).toBeLessThanOrEqual(MAX_NODE_HEIGHT);
   });
 });
 

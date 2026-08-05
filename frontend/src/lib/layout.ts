@@ -7,7 +7,9 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import type { GraphEdge, GraphNode } from "./types";
 
 export const NODE_WIDTH = 260;
-export const MAX_VISIBLE_COLUMNS = 24;
+/** 노드 카드 최대 높이(px) — 넘는 컬럼은 노드 내부 스크롤로 본다.
+ * ELK 입력과 실제 렌더가 같은 상한을 써야 배치가 어긋나지 않는다. */
+export const MAX_NODE_HEIGHT = 520;
 const HEADER_H = 36;
 const ROW_H = 22;
 const META_H = 26;
@@ -21,9 +23,8 @@ export function estimateNodeSize(
   if (!expanded) {
     return { width: NODE_WIDTH, height: HEADER_H };
   }
-  const rows = Math.min(node.columns.length, MAX_VISIBLE_COLUMNS)
-    + (node.columns.length > MAX_VISIBLE_COLUMNS ? 1 : 0);
-  return { width: NODE_WIDTH, height: HEADER_H + rows * ROW_H + META_H };
+  const natural = HEADER_H + node.columns.length * ROW_H + META_H;
+  return { width: NODE_WIDTH, height: Math.min(natural, MAX_NODE_HEIGHT) };
 }
 
 export interface PositionedNode {

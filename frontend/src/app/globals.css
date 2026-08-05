@@ -177,6 +177,13 @@ h1, h2, h3 {
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+/* 펼친 노드의 컬럼 영역 — layout.ts:MAX_NODE_HEIGHT(520) 안에서 스크롤한다.
+   ELK 입력과 같은 상한을 써야 배치가 어긋나지 않는다. */
+.erd-node__scroll {
+  max-height: 458px; /* 520 - 헤더 36 - 메타 26 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .erd-node__meta {
   padding: 5px 12px 9px;
   color: var(--muted);

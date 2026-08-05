@@ -144,7 +144,7 @@ export const MESSAGES = {
   "erd.expandAll": { ko: "모두 펼치기", en: "Expand all" },
   "erd.collapseAll": { ko: "모두 접기", en: "Collapse all" },
   "erd.dblClickHint": { ko: "더블클릭 = 펼치기/접기", en: "double-click toggles a node" },
-  "erd.moreColumns": { ko: "… 외 {n}개 컬럼", en: "… {n} more columns" },
+  "erd.moreColumns": { ko: "… {n}개 더 불러오는 중", en: "… loading {n} more" },
   "erd.unresolved": { ko: "미해석", en: "unresolved" },
   "erd.searchOpen": { ko: "테이블 검색 열기", en: "Open table search" },
   "erd.searchClose": { ko: "접기", en: "Fold" },
