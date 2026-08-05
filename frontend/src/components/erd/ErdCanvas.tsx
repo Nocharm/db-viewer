@@ -19,8 +19,8 @@ import { useI18n } from "@/components/i18n";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import {
-  fetchCandidates, fetchGraph, fetchObjectPreview, fetchScanJob, runContainment, startScan,
-  type TablePreview,
+  fetchCandidates, fetchGraph, fetchObjectPreview, fetchScanJob, runContainment, runJoinPreview,
+  startScan, type TablePreview,
 } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -33,9 +33,10 @@ import {
 } from "@/lib/join-draft";
 import { getJoinVerdict } from "@/lib/join-verdict";
 import type { MessageKey } from "@/lib/i18n";
-import type { GraphEdge, GraphResponse } from "@/lib/types";
+import type { GraphEdge, GraphResponse, JoinPreviewResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { JoinBuilder } from "@/components/erd/JoinBuilder";
+import { JoinPreviewPanel } from "@/components/erd/JoinPreviewPanel";
 import { TableNode, type TableFlowNode } from "./TableNode";
 import { Legend } from "./Legend";
 
@@ -123,6 +124,9 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   // 임계 초과 확인 대기 — 값은 켰을 때 그려질 노드 수 / node count awaiting confirmation
   const [pendingViews, setPendingViews] = useState<number | null>(null);
   const [draft, setDraft] = useState<JoinDraft>(EMPTY_DRAFT);
+  const [joinPreview, setJoinPreview] = useState<JoinPreviewResponse | null>(null);
+  const [joinPreviewError, setJoinPreviewError] = useState<string | null>(null);
+  const [joinPreviewBusy, setJoinPreviewBusy] = useState(false);
   // 드래그 중 추천 컬럼 — T1 후보를 노드별로 묶어 하이라이트 / T1 candidates while dragging
   const [dragHint, setDragHint] = useState<Map<number, string[]> | null>(null);
   const [dropError, setDropError] = useState<string | null>(null);
@@ -793,8 +797,24 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
         onSetJoinType={(index: number, joinType: JoinType) =>
           setDraft((current) => setStepJoinType(current, index, joinType))}
         onClear={() => setDraft(EMPTY_DRAFT)}
-        onPreview={() => undefined}
-        previewBusy={false}
+        onPreview={() => {
+          setJoinPreviewBusy(true);
+          setJoinPreviewError(null);
+          void runJoinPreview(draft.steps.map((s) => ({
+            left_column_id: s.left.columnId,
+            right_column_id: s.right.columnId,
+            join_type: s.joinType,
+          })))
+            .then(setJoinPreview)
+            .catch((e: Error) => setJoinPreviewError(e.message))
+            .finally(() => setJoinPreviewBusy(false));
+        }}
+        previewBusy={joinPreviewBusy}
+      />
+      <JoinPreviewPanel
+        result={joinPreview}
+        error={joinPreviewError}
+        onClose={() => { setJoinPreview(null); setJoinPreviewError(null); }}
       />
 
       {/* 그래프 계산 배지 — 확장·레이아웃 대기 표시 / graph-busy badge */}

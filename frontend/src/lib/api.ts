@@ -6,6 +6,7 @@ import type {
   ContainmentResponse,
   GraphResponse,
   HistoryItem,
+  JoinPreviewResponse,
   PreviewResponse,
   SearchResponse,
 } from "./types";
@@ -153,6 +154,13 @@ export function runPreview(
   return postJson("/api/validate/preview", {
     src_column_id: srcColumnId, tgt_column_id: tgtColumnId, requested_by: "ui",
   });
+}
+
+/** N-웨이 조인 미리보기 — 행과 실행 SQL을 함께 받는다 / rows plus the executed SQL. */
+export async function runJoinPreview(
+  steps: { left_column_id: number; right_column_id: number; join_type: string }[],
+): Promise<JoinPreviewResponse> {
+  return postJson("/api/join/preview", { steps });
 }
 
 export function confirmRelation(

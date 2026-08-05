@@ -363,6 +363,11 @@ export const MESSAGES = {
   },
   "join.scanRunning": { ko: "찾는 중 ({done}/{total})", en: "Scanning ({done}/{total})" },
   "join.scanNone": { ko: "짝이 될 만한 컬럼을 찾지 못했습니다", en: "No matching columns found" },
+  "join.tabSql": { ko: "SQL", en: "SQL" },
+  "join.tabRows": { ko: "결과 {n}행", en: "{n} rows" },
+  "join.previewMasked": { ko: "마스킹된 컬럼: {cols}", en: "Masked columns: {cols}" },
+  "join.previewEmpty": { ko: "조인 결과가 0행입니다", en: "The join returned no rows" },
+  "join.copySql": { ko: "SQL 복사", en: "Copy SQL" },
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;

@@ -98,6 +98,16 @@ export interface PreviewResponse {
   masked_columns: string[];
 }
 
+export interface JoinPreviewResponse {
+  rows: Record<string, unknown>[];
+  /** W2가 실제로 실행한 SQL — 화면 표시용으로 조립하지 않는다 */
+  query: string;
+  limit: number;
+  /** "{schema}.{table}.{column}" — 스키마까지 포함해 동명 테이블 별칭 충돌을 피한다 */
+  masked_columns: string[];
+  observed_at: string;
+}
+
 export interface HistoryItem {
   containment: number;
   orphan_count: number;
