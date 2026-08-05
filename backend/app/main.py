@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from fastapi import Depends
@@ -81,6 +82,20 @@ def create_app() -> FastAPI:
                 "context": jsonable_encoder(exc.errors()[:5]),
             }},
         )
+
+    @app.on_event("startup")
+    def fail_orphaned_ai_jobs() -> None:
+        """재기동으로 고아가 된 AI 잡 정리 — 실행 주체(BackgroundTasks)가 프로세스와 함께 죽는다."""
+        from app.db import get_session_factory
+        from app.models import AiJob
+
+        with get_session_factory()() as db:
+            for job in db.execute(
+                select(AiJob).where(AiJob.status.in_(["queued", "running"]))
+            ).scalars():
+                job.status = "failed"
+                job.error = "interrupted by restart"
+            db.commit()
 
     return app
 

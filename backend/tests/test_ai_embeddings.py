@@ -99,6 +99,14 @@ def test_run_embed_index_caps_job_and_reports_remaining(
     assert result["remaining"] > 0  # 실측 스케일(409 테이블)에서 상한 밖 잔여 존재
 
 
+def test_ai_embed_job_cap_rejects_over_2000():
+    """최종 전체 리뷰 Fix 3: 사용자 부하 상한(2,000) 초과 설정은 기동 시점에 막힌다."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, ai_embed_job_cap=2001)
+
+
 def test_run_embed_index_skips_unchanged_hash_on_rerun(
     client, migrated_engine, load_fixture, fake_embed,
 ):

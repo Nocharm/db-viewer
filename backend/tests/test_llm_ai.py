@@ -388,10 +388,9 @@ def test_embed_texts_success(embed_captured):
     assert body["input"] == ["text1", "text2", "text3"]
 
 
-def test_embed_texts_reorders_by_index():
+def test_embed_texts_reorders_by_index(monkeypatch):
     """서버가 역순 반환 시 index로 정렬 / reorder by index if server returns out-of-order."""
     from app.adapters.llm_ai import embed_texts
-    monkeypatch = pytest.MonkeyPatch()
     calls: dict = {"requests": [], "response": _embed_response(
         [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
         indices=[2, 0, 1]  # 역순

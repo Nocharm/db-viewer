@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 로컬 개발은 레포 루트 .env, 컨테이너는 compose 주입 env 사용 (파일 없으면 무시됨)
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
     # Tuning: 배치당 텍스트 수 / texts per embedding batch
     ai_embed_batch: int = 32
     # Tuning: 인덱싱 잡 상한 — 사용자 부하 제약 (2000 초과 금지) / indexing job cap
-    ai_embed_job_cap: int = 1000
+    ai_embed_job_cap: int = Field(1000, le=2000)
     # Tuning: 배치 간 대기(ms) — 사용자 요청 우선 / inter-batch sleep
     ai_embed_sleep_ms: int = 500
 

@@ -81,9 +81,11 @@ def run_suggest(db: Session, ai: AiClient, settings: Settings,
                             "reason": j.reason})
         else:
             rejected_count += 1
+    # 판정 응답이 후보 전량보다 적으면 LLM이 일부 페어를 누락한 것 — 페이징 정체 관측용
+    unjudged = len(pairs_meta) - (len(created) + rejected_count)
     return {"snapshot_id": snapshot.id, "suggested": len(pairs_meta),
             "created": len(created), "rejected": rejected_count,
-            "items": created[:100]}
+            "unjudged": unjudged, "items": created[:100]}
 
 
 def run_ai_job(session_factory: sessionmaker, job_id: int,
@@ -113,7 +115,11 @@ def run_ai_job(session_factory: sessionmaker, job_id: int,
             db.rollback()
             job = db.get(AiJob, job_id)
             job.status = "failed"
-            job.error = str(e)
+            detail = str(e)
+            context = getattr(e, "context", None)
+            if context:
+                detail = f"{detail} — {context}"
+            job.error = detail
         job.finished_at = datetime.now(UTC)
         db.commit()
 

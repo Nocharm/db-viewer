@@ -492,6 +492,8 @@ def test_ai_unavailable_marks_suggest_job_failed(ai_job_client, migrated_engine,
 
     assert job["status"] == "failed"
     assert "llm" in job["error"]
+    # 최종 전체 리뷰 Fix 4: AiUnavailableError.context(url)가 job.error에 보존된다
+    assert "http://llm:11434/v1/chat/completions" in job["error"]
 
 
 def test_ai_unavailable_maps_to_502_on_sync_endpoint(client, load_fixture):
@@ -632,6 +634,70 @@ def test_start_suggest_job_conflicts_with_active_job(client, migrated_engine):
 
     res = client.post("/api/ai/suggest-relations")
     assert res.status_code == 409
+
+
+# 최종 전체 리뷰 Fix 1: 재기동 고아 잡 정리
+
+
+def test_startup_fails_orphaned_ai_jobs(migrated_engine, monkeypatch):
+    """재기동으로 실행 주체(BackgroundTasks)를 잃은 queued/running 잡은 startup 훅이 failed로 정리한다.
+
+    startup 훅은 DI를 거치지 않고 app.db.get_session_factory를 직접 호출하므로 그 함수를
+    테스트 SQLite로 monkeypatch한다. bare TestClient(app)는 lifespan을 타지 않으므로
+    with 블록으로 명시적으로 기동한다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    with session_factory() as db:
+        db.add(AiJob(kind="suggest", status="running", progress_done=0, progress_total=1,
+                      triggered_by="test", created_at=datetime.now(UTC)))
+        db.commit()
+
+    monkeypatch.setattr("app.db.get_session_factory", lambda: session_factory)
+
+    with TestClient(create_app()):
+        pass
+
+    with session_factory() as db:
+        job = db.execute(sa.select(AiJob)).scalars().one()
+    assert job.status == "failed"
+    assert job.error == "interrupted by restart"
+
+
+# 최종 전체 리뷰 Fix 2: 미판정 페어 무신호 (페이징 정체 관측성)
+
+
+def test_suggest_result_reports_unjudged_pairs(ai_job_client, migrated_engine, load_fixture):
+    """LLM이 후보 일부의 판정을 누락하면 unjudged로 드러난다 — 무신호 페이징 정체 방지."""
+    from app.adapters.ai import RelationJudgement
+    from app.api.ai import get_ai_client
+
+    _seed(ai_job_client, load_fixture)
+
+    class _PartialAi:
+        def judge_relations(self, candidates):
+            # 짝수 index만 판정 반환 — 홀수 index는 LLM 누락을 흉내낸다
+            return [
+                RelationJudgement(
+                    src_object=c.src_object, src_column=c.src_column,
+                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
+                    accepted=True, reason="근거",
+                )
+                for i, c in enumerate(candidates) if i % 2 == 0
+            ]
+
+    ai_job_client.app.dependency_overrides[get_ai_client] = lambda: _PartialAi()
+    try:
+        body = _run_suggest_job(ai_job_client)
+    finally:
+        ai_job_client.app.dependency_overrides.pop(get_ai_client)
+
+    assert body["suggested"] > 1  # 후보가 여러 건 있어야 누락이 의미 있다
+    assert body["unjudged"] == body["suggested"] - (body["created"] + body["rejected"])
+    assert body["unjudged"] > 0
 
 
 # Task 10 (사이클2): build_chat_context — search_tables_smart 재사용 top-8 + 관계·lineage
