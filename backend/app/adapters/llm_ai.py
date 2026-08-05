@@ -253,8 +253,13 @@ class LlmAiClient:
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
         """사용자 질의 → 관련 테이블 재랭크 (프리필터 → LLM 판정 → 정렬) / query to ranked table hits."""
         candidates = filter_search_candidates(query, tables)
-        if not candidates:
-            return []
+        return [] if not candidates else self.rerank_tables(query, candidates)
+
+    def rerank_tables(self, query: str, candidates: list[TableMeta]) -> list[AiTableHit]:
+        """프리필터(또는 임베딩 코사인) 후보를 LLM으로 재랭크 (사이클2 Task 9 분리).
+
+        환각 qname 제거·점수 가드·정렬·상한은 입력 출처(키워드/임베딩)와 무관하게 동일.
+        """
         data = self._chat(build_search_prompt(query, candidates))
         items = data.get("items", [])
         if not isinstance(items, list):

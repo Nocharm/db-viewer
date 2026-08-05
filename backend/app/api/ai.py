@@ -36,6 +36,7 @@ from app.models import (
     ViewLineageFlat,
 )
 from app.services.ai_jobs import has_active_job, run_ai_job
+from app.services.ai_search import search_tables_smart
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -193,16 +194,18 @@ def search_tables(
     db: Session = Depends(get_db),
     ai: AiClient = Depends(get_ai_client),
 ) -> dict:
-    """자연어 테이블 탐색 (계획 §5.1-2). / natural-language table search."""
+    """자연어 테이블 탐색 (계획 §5.1-2, 임베딩 우선+키워드 폴백은 사이클2 §3). / natural-language table search."""
     snapshot = resolve_snapshot(db, snapshot_id)
-    hits = ai.search_tables(q, _load_table_meta(db, snapshot.id))
+    mode, hits = search_tables_smart(
+        db, q, _load_table_meta(db, snapshot.id), ai, get_settings()
+    )
     id_by_qname = {
         f"{o.schema}.{o.name}": o.id
         for o in db.execute(
             select(CatalogObject).where(CatalogObject.snapshot_id == snapshot.id)
         ).scalars()
     }
-    return {"snapshot_id": snapshot.id, "items": [
+    return {"snapshot_id": snapshot.id, "mode": mode, "items": [
         {"object_id": id_by_qname.get(h.qname), "object": h.qname,
          "score": h.score, "reason": h.reason}
         for h in hits

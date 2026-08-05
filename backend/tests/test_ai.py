@@ -1,15 +1,20 @@
 """AI endpoint tests — suggestions never become facts. / AI 엔드포인트 테스트 (계획 Phase 5)."""
 
+import json
 from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
-from app.adapters.ai import CandidatePair, ColumnMeta, FakeAiClient, TableMeta
+from app.adapters.ai import AiTableHit, CandidatePair, ColumnMeta, FakeAiClient, TableMeta
+from app.adapters.llm_ai import AiUnavailableError, LlmAiClient
 from app.api.ai import get_ai_session_factory, select_ai_candidates
+from app.config import Settings
 from app.domain import scoring
-from app.models import AiJob, Base
+from app.models import AiEmbedding, AiJob, Base
+from app.services import ai_search
+from app.services.ai_search import search_tables_smart
 
 
 def _seed(client, load_fixture) -> None:
@@ -211,6 +216,7 @@ def test_search_tables_endpoint(client, load_fixture):
     _seed(client, load_fixture)
     body = client.get("/api/ai/search-tables", params={"q": "ZZQX_NOPE"}).json()
     assert body["items"] == []  # 매칭 없음 — 빈 결과 상태
+    assert body["mode"] == "keyword"  # Fake 경로(임베딩 미설정)는 항상 키워드 — 사이클2 Task 9
 
     manifest = load_fixture("manifest.json")
     trap = manifest["cases"]["low_cardinality"][0]
@@ -218,6 +224,102 @@ def test_search_tables_endpoint(client, load_fixture):
     body = client.get("/api/ai/search-tables", params={"q": table_name}).json()
     assert body["items"] and body["items"][0]["object"].endswith(table_name)
     assert body["items"][0]["object_id"] is not None
+    assert body["mode"] == "keyword"
+
+
+# 사이클2 Task 9: search_tables_smart — 임베딩 우선 + 자동 키워드 폴백
+#
+# 핵심 계약: 검색은 임베딩 문제(미설정/호출 실패/빈 인덱스)로 502가 되지 않는다.
+# 폴백 경로는 실제 LLM 호출 없이 검증하도록 프리필터가 빈 결과가 되는 질의를 쓴다
+# (LlmAiClient.search_tables가 조기 반환해 네트워크 호출 자체가 없다).
+
+
+def _embed_settings(**overrides) -> Settings:
+    defaults = dict(_env_file=None, ai_base_url="http://llm:11434/v1", ai_embed_model="e")
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def test_search_tables_smart_uses_keyword_when_embed_model_unset(migrated_engine):
+    """모델 미설정 — Fake든 뭐든 임베딩 분기 자체를 타지 않고 바로 키워드."""
+    settings = _embed_settings(ai_embed_model="")
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    with sessionmaker(bind=migrated_engine)() as db:
+        mode, hits = search_tables_smart(db, "ORD", tables, FakeAiClient(), settings)
+    assert mode == "keyword"
+    assert hits == FakeAiClient().search_tables("ORD", tables)
+
+
+def test_search_tables_smart_falls_back_when_index_empty(migrated_engine, monkeypatch):
+    """모델은 설정됐지만 해당 모델의 AiEmbedding 행이 하나도 없음 — embed_texts 호출 없이 키워드."""
+    calls: list = []
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: calls.append(a) or [[1.0]])
+
+    settings = _embed_settings()
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert calls == []  # 빈 인덱스는 embed_texts를 호출하지 않고 바로 폴백
+
+
+def test_search_tables_smart_falls_back_when_embed_texts_unavailable(
+    migrated_engine, monkeypatch, caplog,
+):
+    """embed_texts 호출 실패(AiUnavailableError) — 502 아니라 warning 로그 후 키워드."""
+    def _boom(*args, **kwargs):
+        raise AiUnavailableError("embeddings request failed after retries", {"cause": "boom"})
+
+    monkeypatch.setattr(ai_search, "embed_texts", _boom)
+
+    settings = _embed_settings()
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="[1.0]",
+                           source_hash="h", updated_at=datetime.now(UTC)))
+        db.commit()
+        with caplog.at_level("WARNING"):
+            mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert any("falling back" in r.message for r in caplog.records)
+
+
+def test_search_tables_smart_uses_embedding_path_and_ranks_by_cosine(
+    migrated_engine, monkeypatch,
+):
+    """임베딩 인덱스 가용 — 코사인 상위가 rerank_tables 입력이 되고 mode는 embedding."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+    captured: dict = {}
+
+    def _fake_rerank(self, query, candidates):
+        captured["candidates"] = candidates
+        return [AiTableHit(qname=candidates[0].qname, score=0.9, reason="stub")]
+
+    monkeypatch.setattr(LlmAiClient, "rerank_tables", _fake_rerank)
+
+    tables = [
+        TableMeta("dbo.T_CLOSE", [ColumnMeta("A", "int")]),
+        TableMeta("dbo.T_FAR", [ColumnMeta("B", "int")]),
+    ]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.add(AiEmbedding(object_qname="dbo.T_FAR", model="e",
+                           vector=json.dumps([0.0, 1.0]), source_hash="h2", updated_at=now))
+        db.commit()
+        mode, hits = search_tables_smart(db, "query text", tables, ai, settings)
+
+    assert mode == "embedding"
+    # T_CLOSE(코사인 1.0)가 T_FAR(코사인 0.0)보다 먼저 — rerank 입력 순서로 확인
+    assert [t.qname for t in captured["candidates"]] == ["dbo.T_CLOSE", "dbo.T_FAR"]
+    assert hits[0].qname == "dbo.T_CLOSE"
 
 
 def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):

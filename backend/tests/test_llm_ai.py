@@ -13,6 +13,7 @@ from app.adapters.llm_ai import (
     filter_search_candidates, embed_texts, cosine_similarity,
 )
 from app.config import Settings
+from app.services.ai_search import rank_by_cosine
 
 
 def test_ai_settings_defaults():
@@ -461,3 +462,29 @@ def test_create_ai_client_defaults_to_fake(monkeypatch):
     finally:
         monkeypatch.delenv("AI_BASE_URL", raising=False)
         get_settings.cache_clear()
+
+
+# Task 9: rank_by_cosine — pure ranking, DB/HTTP 없음
+
+
+def test_rank_by_cosine_orders_by_similarity_descending():
+    query_vec = [1.0, 0.0]
+    rows = [
+        ("dbo.T_ORTHO", [0.0, 1.0]),   # 직교 — 유사도 0.0
+        ("dbo.T_EXACT", [1.0, 0.0]),   # 동일 — 유사도 1.0
+        ("dbo.T_CLOSE", [0.9, 0.1]),   # 유사하지만 완전 일치는 아님
+    ]
+    assert rank_by_cosine(query_vec, rows, top_k=2) == ["dbo.T_EXACT", "dbo.T_CLOSE"]
+
+
+def test_rank_by_cosine_breaks_ties_by_qname():
+    """동점이면 qname 오름차순 — 결정론적 순서 보장 / deterministic tie-break."""
+    query_vec = [1.0, 0.0]
+    rows = [("dbo.T_Z", [1.0, 0.0]), ("dbo.T_A", [1.0, 0.0])]
+    assert rank_by_cosine(query_vec, rows, top_k=2) == ["dbo.T_A", "dbo.T_Z"]
+
+
+def test_rank_by_cosine_caps_at_top_k():
+    query_vec = [1.0, 0.0]
+    rows = [(f"dbo.T_{i:02d}", [1.0, 0.0]) for i in range(10)]
+    assert len(rank_by_cosine(query_vec, rows, top_k=3)) == 3
