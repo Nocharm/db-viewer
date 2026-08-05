@@ -91,6 +91,21 @@ export function syncUsers(): Promise<{ scanned: number; upserted: number; exclud
   return postJson("/api/admin/users/sync", {});
 }
 
+/** AD 동기화로 적재된 사용자 — 화이트리스트와 별개 테이블 / AD-synced users, not the whitelist. */
+export interface AppUserEntry {
+  login_id: string;
+  name: string | null;
+  department: string | null;
+  email: string | null;
+  active: boolean;
+  source: string;
+  role: string | null;
+}
+
+export function fetchUsers(): Promise<{ items: AppUserEntry[] }> {
+  return getJson("/api/admin/users");
+}
+
 export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   if (type) params.set("type", type);

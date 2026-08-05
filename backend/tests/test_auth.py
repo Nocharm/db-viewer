@@ -224,6 +224,26 @@ def test_sync_all_upserts_excludes_and_prunes(client, migrated_engine, monkeypat
     assert ids == {"hong.gil", "local.admin"}
 
 
+def test_admin_users_lists_synced_ad_users(client, migrated_engine):
+    """관리 콘솔 AD 사용자 목록의 데이터 원천 — 화이트리스트와 별개 테이블."""
+    now = datetime.now(UTC)
+    with migrated_engine.begin() as conn:
+        conn.execute(sa.insert(Base.metadata.tables["app_users"]).values([
+            dict(login_id="hong.gil", name="Hong Gil", title="Staff", department="Team A",
+                 org_path="Div B/Team A", email="hong@corp", active=True, source="ad",
+                 role="user", created_at=now, updated_at=now),
+        ]))
+
+    res = client.get("/api/admin/users")
+    assert res.status_code == 200, res.text
+    items = res.json()["items"]
+    assert [u["login_id"] for u in items] == ["hong.gil"]
+    assert items[0]["department"] == "Team A" and items[0]["source"] == "ad"
+
+    # 화이트리스트는 별개 — 동기화만으로는 비어 있다 / a sync does not whitelist anyone
+    assert client.get("/api/admin/whitelist").json()["items"] == []
+
+
 def test_health_is_exempt_from_auth(client, auth_on):
     # 헬스체크는 인증 면제 — compose healthcheck·배포 검증용 (bpm 패턴)
     res = client.get("/api/health")

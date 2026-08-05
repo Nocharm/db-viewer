@@ -40,6 +40,9 @@ services:
       KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
       DBV_SYSADMINS: ${DBV_SYSADMINS}
       INGEST_API_KEY: ${INGEST_API_KEY}
+      # 수집(W1a/b)·live 질의(W2) 경로 — 없으면 수집이 픽스처 리플레이로 falls back
+      N8N_WEBHOOK_BASE: ${N8N_WEBHOOK_BASE}
+      N8N_QUERY_TIMEOUT: ${N8N_QUERY_TIMEOUT:-120}
       AI_BASE_URL: ${AI_BASE_URL}
       AI_MODEL: ${AI_MODEL}
       AI_API_KEY: ${AI_API_KEY}
@@ -50,6 +53,8 @@ services:
       LDAP_BIND_CREDENTIALS: ${LDAP_BIND_CREDENTIALS}
       LDAP_USER_SEARCH_BASE: ${LDAP_USER_SEARCH_BASE}
       LDAP_START_TLS: ${LDAP_START_TLS}
+      # 사내 CA 번들 — 경로를 쓰려면 그 파일도 컨테이너에 마운트해야 한다
+      LDAP_CA_BUNDLE: ${LDAP_CA_BUNDLE}
       # glibc malloc arena를 2개로 제한 — 멀티스레드 상주 메모리 절감 (frontend/postgres는 musl이라 무의미)
       MALLOC_ARENA_MAX: "2"
     depends_on:

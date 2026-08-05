@@ -10,15 +10,19 @@ import { useMe } from "@/components/providers";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 import {
   addWhitelist,
+  fetchUsers,
   fetchWhitelist,
   removeWhitelist,
   syncUsers,
+  type AppUserEntry,
   type WhitelistEntry,
 } from "@/lib/api";
 
 export default function AdminPage() {
   const me = useMe();
   const [items, setItems] = useState<WhitelistEntry[]>([]);
+  const [users, setUsers] = useState<AppUserEntry[]>([]);
+  const [userFilter, setUserFilter] = useState("");
   const [loginId, setLoginId] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -27,8 +31,15 @@ export default function AdminPage() {
   const [syncing, setSyncing] = useState(false);
   const syncElapsed = useElapsedSeconds(syncing);
 
+  // 화이트리스트와 AD 사용자는 별개 테이블 — 동기화 결과가 보이려면 둘 다 갱신해야 한다
+  // the whitelist and AD users are separate tables; a sync only changes the latter
   const reload = () =>
-    fetchWhitelist().then((r) => setItems(r.items)).catch((e) => setError(e.message));
+    Promise.all([fetchWhitelist(), fetchUsers()])
+      .then(([w, u]) => {
+        setItems(w.items);
+        setUsers(u.items);
+      })
+      .catch((e) => setError(e.message));
 
   useEffect(() => {
     if (me?.is_sysadmin || me?.auth_enabled === false) void reload();
@@ -45,11 +56,20 @@ export default function AdminPage() {
     );
   }
 
+  // 렌더 중 계산 — 파생 상태에 useEffect를 쓰지 않는다 / derived during render
+  const whitelisted = new Set(items.map((item) => item.login_id));
+  const filterText = userFilter.trim().toLowerCase();
+  const visibleUsers = filterText
+    ? users.filter((u) => `${u.login_id} ${u.name ?? ""} ${u.department ?? ""}`
+        .toLowerCase().includes(filterText))
+    : users;
+
+  /** 작업 실행 → 메시지 표시 → 목록 갱신. task가 문자열을 반환하면 그 메시지를 쓴다. */
   const run = (task: () => Promise<unknown>, done: string) => {
     setError(null);
     task()
-      .then(() => {
-        setMessage(done);
+      .then((detail) => {
+        setMessage(typeof detail === "string" ? detail : done);
         return reload();
       })
       .catch((e) => setError(e.message));
@@ -77,10 +97,8 @@ export default function AdminPage() {
               run(async () => {
                 try {
                   const summary = await syncUsers();
-                  setMessage(
-                    `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / ` +
-                    `제외 ${summary.excluded} / 정리 ${summary.purged}`,
-                  );
+                  return `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / `
+                    + `제외 ${summary.excluded} / 정리 ${summary.purged}`;
                 } finally {
                   setSyncing(false);
                 }
@@ -150,6 +168,78 @@ export default function AdminPage() {
             {items.length === 0 && (
               <tr><td colSpan={5} className="py-2" style={{ color: "var(--muted)" }}>
                 등록된 항목 없음
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="mb-6" data-testid="AdminPage-adUsersSection">
+        <div className="mb-2 flex items-center gap-2">
+          <h2 className="text-sm font-medium">AD 사용자</h2>
+          <span className="badge badge--muted" data-testid="AdminPage-adUserCount">
+            {users.length.toLocaleString()}
+          </span>
+          <input
+            className="ml-auto w-56 rounded border px-3 py-1.5 text-sm"
+            style={{ borderColor: "var(--border-light)" }}
+            placeholder="이름·ID·부서 검색"
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+            data-testid="AdminPage-userFilterInput"
+          />
+        </div>
+        <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>
+          AD 전체 동기화로 적재된 목록입니다. 로그인 허용은 위 화이트리스트가 결정합니다.
+        </p>
+        <table className="w-full text-sm" data-testid="AdminPage-adUsersTable">
+          <thead>
+            <tr className="border-b text-left" style={{ borderColor: "var(--hairline)" }}>
+              <th className="py-1.5">login_id</th><th>이름</th><th>부서</th>
+              <th>이메일</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.map((user) => (
+              <tr key={user.login_id} className="border-b"
+                  style={{ borderColor: "var(--border-light)" }}
+                  data-testid={`AdminPage-adUserRow-${user.login_id}`}>
+                <td className="py-1.5 font-mono text-xs">{user.login_id}</td>
+                <td>{user.name ?? "—"}</td>
+                <td className="text-xs" style={{ color: "var(--slate)" }}>
+                  {user.department ?? "—"}
+                </td>
+                <td className="text-xs" style={{ color: "var(--slate)" }}>
+                  {user.email ?? "—"}
+                </td>
+                <td className="text-right">
+                  {whitelisted.has(user.login_id) ? (
+                    <span className="text-xs" style={{ color: "var(--rel-confirmed)" }}>
+                      허용됨
+                    </span>
+                  ) : (
+                    <button
+                      className="icon-button"
+                      onClick={() => run(
+                        () => addWhitelist(user.login_id, user.department ?? undefined),
+                        `${user.login_id} 허용 추가`,
+                      )}
+                      data-testid={`AdminPage-allowButton-${user.login_id}`}
+                    >
+                      허용 추가
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan={5} className="py-2" style={{ color: "var(--muted)" }}>
+                동기화된 사용자 없음 — [AD 전체 동기화]를 실행하세요
+              </td></tr>
+            )}
+            {users.length > 0 && visibleUsers.length === 0 && (
+              <tr><td colSpan={5} className="py-2" style={{ color: "var(--muted)" }}>
+                검색 결과 없음
               </td></tr>
             )}
           </tbody>
