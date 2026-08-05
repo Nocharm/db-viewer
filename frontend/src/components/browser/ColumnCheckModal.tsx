@@ -111,12 +111,15 @@ export function ColumnCheckModal({ column, onClose, onOpenErd }: Props) {
   const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
+    // 바깥 닫기는 mousedown 기준 — click은 mouseup에서 나므로 모달 안에서 누른 채
+    // 밖으로 끌어 놓으면 의도치 않게 닫힌다 / close on mousedown, not on mouseup
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-         onClick={running ? undefined : onClose}>
+         onMouseDown={running ? undefined : onClose}
+    >
       <div
         className="flex max-h-[75vh] w-[34rem] max-w-[92vw] flex-col rounded-xl border p-5"
         style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         data-testid="ColumnCheckModal-root"
       >
         <div className="mb-1 flex items-center gap-2">

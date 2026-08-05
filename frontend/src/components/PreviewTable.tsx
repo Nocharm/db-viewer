@@ -189,12 +189,15 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
 
       {/* 고유값 모달 — 로드된 행 기준임을 명시 / unique-values modal, loaded-rows basis */}
       {uniqueColumn && (
+        // 바깥 닫기는 mousedown 기준 — click은 mouseup에서 나므로 모달 안에서 누른 채
+        // 밖으로 끌어 놓으면(텍스트 드래그 선택 등) 의도치 않게 닫힌다
+        // close on mousedown; a click fires on mouseup and would close on drag-out
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-             onClick={() => setUniqueColumn(null)}>
+             onMouseDown={() => setUniqueColumn(null)}>
           <div
             className="flex max-h-[70vh] w-96 flex-col rounded-xl border p-4"
             style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             data-testid="PreviewTable-uniqueModal"
           >
             <div className="mb-1 flex items-center gap-2">

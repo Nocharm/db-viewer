@@ -3212,12 +3212,14 @@ export function JoinPreviewPanel({ result, error, onClose }: Props) {
   const columns = result && result.rows.length > 0 ? Object.keys(result.rows[0]) : [];
 
   return (
+    // 바깥 닫기는 mousedown 기준 — click은 mouseup에서 나므로 SQL 텍스트를 드래그
+    // 선택하다 밖에서 손을 떼면 모달이 닫혀버린다 / close on mousedown, not mouseup
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-         onClick={onClose}>
+         onMouseDown={onClose}>
       <div
         className="flex max-h-[80vh] w-[56rem] max-w-[94vw] flex-col rounded-xl border p-5"
         style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         data-testid="JoinPreviewPanel-root"
       >
         <div className="mb-2 flex items-center gap-2">

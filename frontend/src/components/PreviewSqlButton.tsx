@@ -45,12 +45,15 @@ export function PreviewSqlButton({ state, visibleColumns, sort, buttonClassName 
         {t("preview.sqlView")}
       </button>
       {open && (
+        // 바깥 닫기는 mousedown 기준 — SQL 텍스트를 드래그 선택하다 밖에서 손을 떼면
+        // click(mouseup)으로는 모달이 닫혀버린다
+        // close on mousedown; selecting SQL text and releasing outside would close it
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-             onClick={() => setOpen(false)}>
+             onMouseDown={() => setOpen(false)}>
           <div
             className="flex max-h-[70vh] w-[36rem] max-w-[90vw] flex-col rounded-xl border p-4"
             style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             data-testid="PreviewSqlButton-modal"
           >
             <div className="mb-1 flex items-center gap-2">
