@@ -132,6 +132,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   // ref가 아니라 state — 버튼 노출 여부가 렌더에 걸린다 / state, because it gates the render
   const [scanOrigin, setScanOrigin] = useState<JoinColumnRef | null>(null);
+  // 스캔이 어떤 컬럼을 위해 시작됐는지 스냅샷 — scanOrigin은 다음 드래그가 덮어쓸 수 있어
+  // 완료 시점에 그대로 읽으면 안 된다 / snapshot of the scan's target; scanOrigin state can be
+  // overwritten by a later drag, so completion must not read it live
+  const scanColumnIdRef = useRef<number | null>(null);
   const dragOriginRef = useRef<JoinColumnRef | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
@@ -230,6 +234,17 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           if (job.status !== "done" && job.status !== "failed") return;
           setScanJobId(null);
           setScanProgress(null);
+          // 그 사이 다른 컬럼의 드래그가 시작됐으면(=활성 드래그가 스캔 대상과 다르면) 늦게
+          // 도착한 결과가 그 드래그를 덮어쓰지 않도록 조용히 버린다 — handleConnectStart의
+          // 라이브니스 가드와 같은 이유, 스캔은 그 창이 훨씬 길다. 드래그가 없으면(보통의
+          // 경로 — 마우스를 놓은 뒤 백그라운드로 완료) 스캔이 여전히 유효한 대상이다.
+          // if a different column's drag has since started, drop the stale results instead of
+          // repainting over it — same reasoning as handleConnectStart's liveness guard, just
+          // with a much longer window. No active drag (the normal path — the mouse was
+          // released and the scan finishes in the background) still counts as valid.
+          const staleDrag = dragOriginRef.current !== null
+            && dragOriginRef.current.columnId !== scanColumnIdRef.current;
+          if (staleDrag) return;
           if (job.status === "failed") {
             setScanNotice(job.error ?? t("ai.failed"));
             return;
@@ -270,6 +285,11 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     if (!check.ok) {
       const reasonText = t(REJECT_REASON_KEY[check.reason]).replace("{max}", String(check.max));
       setDropError(t("join.dropRejected").replace("{reason}", reasonText));
+      // 거절 배너와 스캔 제안이 같은 자리를 다툰다 — 방금 액션에 대한 응답인 거절이 이긴다
+      // (다음 드래그에서 다시 뜰 수 있어 제안 쪽을 접는다)
+      // both banners compete for the same slot; the rejection — about the action just taken —
+      // wins over the scan offer, which can reappear on the next drag
+      setScanOrigin(null);
       return;
     }
     setDropError(null);
@@ -626,7 +646,12 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       const inDraft = dimming
         && draftObjectIds.has(Number(e.source))
         && draftObjectIds.has(Number(e.target));
-      const hit = emphasis ? emphasis.edgeIds.has(e.id) : inDraft;
+      // hover는 조인 경로 강조를 대체가 아니라 덧댄다 — 안 그러면 크라우드된 그래프를
+      // 훑는 동안 조립 중인 경로가 사라진다(no-draft일 때는 inDraft가 항상 false라 무변화)
+      // hover adds to the draft's path highlight rather than replacing it — otherwise
+      // panning the mouse across a crowded graph makes the join-in-progress vanish
+      // (inDraft is always false with no draft, so behaviour is unchanged there)
+      const hit = emphasis ? (emphasis.edgeIds.has(e.id) || inDraft) : inDraft;
       const baseWidth = Number((e.style as { strokeWidth?: number })?.strokeWidth ?? 1.4);
       return {
         ...e,
@@ -741,6 +766,10 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             disabled={scanJobId !== null}
             onClick={() => {
               setScanNotice(null);
+              // 완료 시점에 비교할 스냅샷 — scanOrigin(state)은 그 사이 새 드래그가 덮어쓸 수 있다
+              // snapshot to compare against at completion — scanOrigin (state) can be
+              // overwritten by a newer drag before this job finishes
+              scanColumnIdRef.current = scanOrigin.columnId;
               void startScan(scanOrigin.columnId)
                 .then((res) => setScanJobId(res.job_id))
                 .catch((e: Error) => setScanNotice(e.message));
