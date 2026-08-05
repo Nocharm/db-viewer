@@ -1,4 +1,5 @@
-/** 엣지 시각 언어 — 색=신뢰도, 패턴=종류 (design-app.md) / edge visual language. */
+/** 엣지 시각 언어 — 3등급 압축(확정/추정/미검증) + 계보 별도 축.
+ * Five kinds collapse into three grades; provenance keeps its own axis. */
 
 export type EdgeKind =
   | "fk"
@@ -8,11 +9,28 @@ export type EdgeKind =
   | "view_lineage"
   | "unresolved";
 
+/** 사용자가 구분해야 하는 축은 "얼마나 믿을 수 있나" 하나뿐 — 근거는 클릭 시 표시.
+ * The only axis a reader needs is trust level; provenance shows on click. */
+export type EdgeGrade = "confirmed" | "inferred" | "unresolved" | "lineage";
+
 export interface EdgeVisual {
   stroke: string;
   strokeWidth: number;
   strokeDasharray?: string;
   opacity: number;
+}
+
+const GRADE: Record<EdgeKind, EdgeGrade> = {
+  fk: "confirmed",
+  confirmed: "confirmed",
+  inferred: "inferred",
+  ai_suggested: "inferred",
+  unresolved: "unresolved",
+  view_lineage: "lineage",
+};
+
+export function getEdgeGrade(kind: EdgeKind): EdgeGrade {
+  return GRADE[kind];
 }
 
 /** confidence 3단계 스텝 — 연속 투명도는 비교 불가 (design-app.md) */
@@ -22,31 +40,23 @@ export function confidenceOpacity(confidence: number): number {
   return 0.45;
 }
 
-const DASH: Record<EdgeKind, string | undefined> = {
-  fk: undefined, // 실선
-  confirmed: undefined, // 실선 + ✓ 배지는 라벨에서
-  inferred: "8 4",
-  ai_suggested: "3 3",
-  view_lineage: "1.5 4",
-  unresolved: "10 4 2 4", // 일점쇄선
-};
-
-const COLOR: Record<EdgeKind, string> = {
-  fk: "var(--rel-confirmed)",
-  confirmed: "var(--rel-confirmed)",
-  inferred: "var(--rel-inferred)",
-  ai_suggested: "var(--rel-ai)",
-  view_lineage: "var(--rel-lineage)",
-  unresolved: "var(--rel-unresolved)",
+const GRADE_STYLE: Record<EdgeGrade, { stroke: string; dash?: string; opacity: number }> = {
+  confirmed: { stroke: "var(--rel-confirmed)", opacity: 1.0 },
+  inferred: { stroke: "var(--rel-inferred)", dash: "8 4", opacity: 1.0 },
+  unresolved: { stroke: "var(--rel-unresolved)", dash: "2 4", opacity: 0.5 },
+  lineage: { stroke: "var(--rel-lineage)", dash: "1.5 4", opacity: 0.5 },
 };
 
 export function getEdgeVisual(kind: EdgeKind, confidence?: number): EdgeVisual {
+  const grade = getEdgeGrade(kind);
+  const style = GRADE_STYLE[grade];
   return {
-    stroke: COLOR[kind],
+    stroke: style.stroke,
     strokeWidth: 2,
-    strokeDasharray: DASH[kind],
-    opacity: kind === "inferred" && confidence !== undefined
+    strokeDasharray: style.dash,
+    // 추정 등급 안에서만 confidence로 단계 구분 / confidence steps within the inferred grade
+    opacity: grade === "inferred" && confidence !== undefined
       ? confidenceOpacity(confidence)
-      : 1.0,
+      : style.opacity,
   };
 }

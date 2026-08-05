@@ -1,40 +1,67 @@
 import { describe, expect, it } from "vitest";
 
-import { confidenceOpacity, getEdgeVisual } from "./edge-style";
+import { confidenceOpacity, getEdgeGrade, getEdgeVisual } from "./edge-style";
+
+describe("getEdgeGrade", () => {
+  it("collapses five kinds into three grades", () => {
+    expect(getEdgeGrade("fk")).toBe("confirmed");
+    expect(getEdgeGrade("confirmed")).toBe("confirmed");
+    expect(getEdgeGrade("inferred")).toBe("inferred");
+    expect(getEdgeGrade("ai_suggested")).toBe("inferred");
+    expect(getEdgeGrade("unresolved")).toBe("unresolved");
+  });
+
+  it("keeps view_lineage on its own axis — it is provenance, not a relation", () => {
+    expect(getEdgeGrade("view_lineage")).toBe("lineage");
+  });
+});
 
 describe("getEdgeVisual", () => {
-  it("maps kinds to design-app.md tokens and dash patterns", () => {
+  it("draws confirmed grades solid and inferred grades dashed", () => {
     expect(getEdgeVisual("fk")).toMatchObject({
       stroke: "var(--rel-confirmed)", strokeDasharray: undefined, opacity: 1,
     });
+    expect(getEdgeVisual("confirmed").strokeDasharray).toBeUndefined();
     expect(getEdgeVisual("inferred").strokeDasharray).toBe("8 4");
-    expect(getEdgeVisual("ai_suggested")).toMatchObject({
-      stroke: "var(--rel-ai)", strokeDasharray: "3 3",
+    // AI 제안도 추정 등급 — 같은 파선으로 합류 / ai_suggested joins the inferred grade
+    expect(getEdgeVisual("ai_suggested").strokeDasharray).toBe("8 4");
+    expect(getEdgeVisual("ai_suggested").stroke).toBe("var(--rel-inferred)");
+  });
+
+  it("draws unresolved faint and dotted", () => {
+    expect(getEdgeVisual("unresolved")).toMatchObject({
+      stroke: "var(--rel-unresolved)", strokeDasharray: "2 4",
     });
-    expect(getEdgeVisual("view_lineage")).toMatchObject({
-      stroke: "var(--rel-lineage)", strokeDasharray: "1.5 4",
-    });
-    expect(getEdgeVisual("unresolved").stroke).toBe("var(--rel-unresolved)");
+    expect(getEdgeVisual("unresolved").opacity).toBeLessThan(1);
+  });
+
+  it("keeps view_lineage grey and faint", () => {
+    expect(getEdgeVisual("view_lineage").stroke).toBe("var(--rel-lineage)");
+    expect(getEdgeVisual("view_lineage").strokeDasharray).toBe("1.5 4");
   });
 
   it("uses 2px strokes everywhere", () => {
-    for (const kind of ["fk", "inferred", "ai_suggested", "view_lineage", "unresolved"] as const) {
+    for (const kind of
+      ["fk", "confirmed", "inferred", "ai_suggested", "view_lineage", "unresolved"] as const) {
       expect(getEdgeVisual(kind).strokeWidth).toBe(2);
     }
   });
 
-  it("applies stepped confidence opacity only to inferred edges", () => {
+  it("applies stepped confidence opacity only inside the inferred grade", () => {
     expect(getEdgeVisual("inferred", 0.999).opacity).toBe(1.0);
     expect(getEdgeVisual("inferred", 0.96).opacity).toBe(0.7);
     expect(getEdgeVisual("inferred", 0.5).opacity).toBe(0.45);
+    expect(getEdgeVisual("ai_suggested", 0.5).opacity).toBe(0.45);
+    // 확정 등급은 confidence로 흐려지지 않는다 / confirmed never fades
     expect(getEdgeVisual("fk", 0.5).opacity).toBe(1.0);
+    expect(getEdgeVisual("confirmed", 0.5).opacity).toBe(1.0);
   });
 });
 
 describe("confidenceOpacity", () => {
-  it("is a 3-step scale, never below 0.45", () => {
+  it("steps at 0.99 and 0.95", () => {
     expect(confidenceOpacity(1.0)).toBe(1.0);
-    expect(confidenceOpacity(0.97)).toBe(0.7);
-    expect(confidenceOpacity(0)).toBe(0.45);
+    expect(confidenceOpacity(0.95)).toBe(0.7);
+    expect(confidenceOpacity(0.94)).toBe(0.45);
   });
 });
