@@ -22,7 +22,7 @@ import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
-import { planMerge, type MergePlan } from "@/lib/graph-merge";
+import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph, MAX_VISIBLE_COLUMNS } from "@/lib/layout";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
@@ -82,6 +82,11 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   // 숨긴 노드 — 레이아웃·엣지에서 제외, 우클릭 메뉴로 복원 / hidden via the context menu
   const [hiddenNodes, setHiddenNodes] = useState<Set<number>>(new Set());
+  // 뷰 882개가 그래프를 폭발시킨다 — 기본 꺼짐, 표시 계층에서만 필터
+  // views explode the graph at real scale; filtered at the display layer only
+  const [showViews, setShowViews] = useState(false);
+  // 임계 초과 확인 대기 — 값은 켰을 때 그려질 노드 수 / node count awaiting confirmation
+  const [pendingViews, setPendingViews] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
   // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
@@ -230,6 +235,12 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     [graph, hiddenNodes],
   );
 
+  // 필터로 안 그려진 뷰 수 — 목록이 왜 짧은지 화면에서 드러나게 한다
+  const filteredViewCount = useMemo(
+    () => (showViews ? 0 : (graph?.nodes ?? []).filter((n) => n.type === "view").length),
+    [graph, showViews],
+  );
+
   const openPreview = useCallback((nodeId: number, limit?: number) => {
     setPreviewLoading(true);
     setPreviewObjectId(nodeId);
@@ -291,14 +302,17 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       return;
     }
     let cancelled = false;
-    const visibleGraphNodes = graph.nodes.filter((n) => !hiddenNodes.has(n.id));
+    const visibleGraphNodes = graph.nodes.filter(
+      (n) => !hiddenNodes.has(n.id) && (showViews || n.type !== "view"),
+    );
+    const renderedIds = new Set(visibleGraphNodes.map((n) => n.id));
     const sized = visibleGraphNodes.map((n) => ({
       id: n.id,
       ...estimateNodeSize(n, expandedNodes.has(n.id)),
     }));
-    // 숨긴 노드에 닿는 엣지 제외 + 접힌 뷰의 lineage 엣지 숨김
+    // 렌더되지 않는 노드에 닿는 엣지 제외 + 접힌 뷰의 lineage 엣지 숨김
     const visibleEdges = graph.edges.filter(
-      (e) => !hiddenNodes.has(e.src_object_id) && !hiddenNodes.has(e.tgt_object_id)
+      (e) => renderedIds.has(e.src_object_id) && renderedIds.has(e.tgt_object_id)
         && (e.kind !== "view_lineage" || expandedNodes.has(e.src_object_id)),
     );
     // 컬럼 행 핸들 해석용 — 펼침 여부·렌더되는 컬럼 / anchor info per node
@@ -376,7 +390,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedNodes, hiddenNodes, expandNeighbors, toggleNode, onSelectColumn, centerOn]);
+  }, [graph, expandedNodes, hiddenNodes, showViews,
+      expandNeighbors, toggleNode, onSelectColumn, centerOn]);
 
   // 강조 상태를 렌더에만 입힌다 — ELK 재배치 없이 / emphasis decorates render only, no relayout
   const displayNodes = useMemo(() => {
@@ -407,6 +422,44 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   return (
     <div ref={wrapperRef} className="relative h-full w-full" data-testid="ErdCanvas-root">
       <CardinalityMarkerDefs />
+
+      {/* 뷰 렌더 필터 — 기본 OFF, 표시 계층에서만 필터 / view render filter, display-layer only */}
+      <div
+        className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border px-3 py-1.5"
+        style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
+        data-testid="ErdCanvas-viewFilter"
+      >
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+          <input
+            type="checkbox"
+            checked={showViews}
+            onChange={(event) => {
+              const next = event.target.checked;
+              // 뷰를 켜면 노드가 급증한다 — 이웃 확장과 같은 임계 확인을 태운다
+              const wouldRender = (graph?.nodes ?? []).filter((n) => !hiddenNodes.has(n.id)).length;
+              const rendered = (graph?.nodes ?? []).filter(
+                (n) => !hiddenNodes.has(n.id) && n.type !== "view").length;
+              if (next && wouldRender > NODE_CONFIRM_THRESHOLD
+                  && rendered <= NODE_CONFIRM_THRESHOLD) {
+                setPendingViews(wouldRender);
+                return;
+              }
+              setShowViews(next);
+            }}
+            data-testid="ErdCanvas-showViewsToggle"
+          />
+          {t("erd.showViews")}
+        </label>
+        {filteredViewCount > 0 && (
+          <span
+            className="badge badge--muted"
+            title={t("erd.viewsHiddenTip")}
+            data-testid="ErdCanvas-viewsHiddenBadge"
+          >
+            {t("erd.viewsHidden").replace("{n}", String(filteredViewCount))}
+          </span>
+        )}
+      </div>
       <ReactFlow
         nodes={displayNodes}
         edges={displayEdges}
@@ -692,6 +745,37 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
                   setGraph(pending.merged);
                   setPending(null);
                 }}
+              >
+                {t("erd.render")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 뷰 토글 임계 확인 — 그래프 병합 모달과 별개 (뷰 토글은 병합이 아니다) / separate from the merge-confirm modal */}
+      {pendingViews !== null && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50">
+          <div
+            className="rounded-xl border p-6"
+            style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
+            data-testid="ErdCanvas-viewConfirmModal"
+          >
+            <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
+              {t("erd.viewConfirm").replace("{n}", String(pendingViews))}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-secondary"
+                data-testid="ErdCanvas-viewConfirmCancel"
+                onClick={() => setPendingViews(null)}
+              >
+                {t("erd.cancel")}
+              </button>
+              <button
+                className="btn-primary"
+                data-testid="ErdCanvas-viewConfirmOk"
+                onClick={() => { setShowViews(true); setPendingViews(null); }}
               >
                 {t("erd.render")}
               </button>

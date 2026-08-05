@@ -161,6 +161,16 @@ export const MESSAGES = {
   "erd.expandColumns": { ko: "컬럼 펼치기", en: "Expand columns" },
   "erd.collapseColumns": { ko: "접기", en: "Collapse" },
   "erd.expandNeighbors": { ko: "이웃 1-hop 확장", en: "Expand 1-hop neighbors" },
+  "erd.showViews": { ko: "뷰 표시", en: "Show views" },
+  "erd.viewsHidden": { ko: "뷰 {n}개 숨김", en: "{n} views hidden" },
+  "erd.viewsHiddenTip": {
+    ko: "뷰를 통해서만 이어지던 경로는 끊겨 보입니다 — 켜면 복원됩니다.",
+    en: "Paths that only ran through views appear broken — turn views on to restore them.",
+  },
+  "erd.viewConfirm": {
+    ko: "뷰를 포함하면 {n}개 노드를 그립니다. 계속할까요?",
+    en: "Including views renders {n} nodes. Continue?",
+  },
 
   "panel.verify": { ko: "T2 검증", en: "Verify (T2)" },
   "panel.preview20": { ko: "미리보기 20행", en: "Preview 20 rows" },
