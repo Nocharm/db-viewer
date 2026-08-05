@@ -322,6 +322,76 @@ def test_search_tables_smart_uses_embedding_path_and_ranks_by_cosine(
     assert hits[0].qname == "dbo.T_CLOSE"
 
 
+def test_search_tables_smart_propagates_rerank_failure_without_fallback(
+    migrated_engine, monkeypatch,
+):
+    """임베딩 경로에서 rerank_tables(실제 LLM 호출) 실패는 폴백 대상이 아니라 502 전파 대상 —
+    순수 의미 질의에서 LLM 장애를 200 빈 결과로 은폐하면 안 된다 (리뷰 Critical 1)."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+
+    def _boom_rerank(self, query, candidates):
+        raise AiUnavailableError("llm request failed after retries", {"cause": "down"})
+
+    monkeypatch.setattr(LlmAiClient, "rerank_tables", _boom_rerank)
+
+    tables = [TableMeta("dbo.T_CLOSE", [ColumnMeta("A", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.commit()
+        with pytest.raises(AiUnavailableError):
+            search_tables_smart(db, "query text", tables, ai, settings)
+
+
+def test_search_tables_smart_skips_corrupt_vector_rows(migrated_engine, monkeypatch, caplog):
+    """손상 vector 행은 스킵하고 나머지로 임베딩 경로를 유지 — 인덱스 일부 손상이 검색
+    전체를 죽이면 안 된다 (리뷰 Critical 2)."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+    monkeypatch.setattr(
+        LlmAiClient, "rerank_tables",
+        lambda self, query, candidates: [
+            AiTableHit(qname=candidates[0].qname, score=0.9, reason="stub")
+        ],
+    )
+
+    tables = [TableMeta("dbo.T_OK", [ColumnMeta("A", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_OK", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.add(AiEmbedding(object_qname="dbo.T_BROKEN", model="e",
+                           vector="not-json", source_hash="h2", updated_at=now))
+        db.commit()
+        with caplog.at_level("WARNING"):
+            mode, hits = search_tables_smart(db, "query text", tables, ai, settings)
+    assert mode == "embedding"
+    assert hits[0].qname == "dbo.T_OK"
+    assert any("corrupt" in r.message for r in caplog.records)
+
+
+def test_search_tables_smart_falls_back_when_all_vectors_corrupt(migrated_engine, monkeypatch):
+    """전부 손상이면 rows가 비어 embed_texts조차 호출하지 않고 키워드로."""
+    calls: list = []
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: calls.append(a) or [[1.0]])
+
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="not-json",
+                           source_hash="h", updated_at=datetime.now(UTC)))
+        db.commit()
+        mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert calls == []
+
+
 def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]
