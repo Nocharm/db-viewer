@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { ChatPanel } from "@/components/ChatPanel";
 import { useI18n } from "@/components/i18n";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
@@ -157,6 +158,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </nav>
       <div className="ml-auto flex items-center gap-2">
         {children}
+        <ChatPanel />
         <LangToggle />
         <ThemeToggle />
         <UserMenu />

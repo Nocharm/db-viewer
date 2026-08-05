@@ -221,6 +221,16 @@ export const MESSAGES = {
   "ai.working": { ko: "생성 중…", en: "Generating…" },
   "ai.failed": { ko: "AI 작업 실패", en: "AI job failed" },
 
+  "chat.title": { ko: "스키마 Q&A", en: "Schema Q&A" },
+  "chat.placeholder": { ko: "스키마에 대해 질문…", en: "Ask about the schema…" },
+  "chat.send": { ko: "전송", en: "Send" },
+  "chat.mockBadge": { ko: "AI 미연결 — 목업 응답", en: "AI offline — mock reply" },
+  "chat.emptyHint": {
+    ko: "예: 수주와 출하를 잇는 테이블은?",
+    en: "e.g. which tables link orders to shipping?",
+  },
+  "chat.you": { ko: "나", en: "You" },
+
   "browser.categories": { ko: "카테고리", en: "Categories" },
 
   "tip.joinKeys": {

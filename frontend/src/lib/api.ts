@@ -356,3 +356,11 @@ export function fetchAiJob(jobId: number): Promise<AiJobStatus> {
 export function startEmbedIndex(): Promise<{ job_id: number; status: string }> {
   return postJson("/api/ai/embed-index", {});
 }
+
+export interface ChatTurn { role: "user" | "assistant"; content: string }
+export interface ChatResponse { answer: string; tables: string[]; mock: boolean }
+
+/** 스키마 Q&A — 히스토리는 서버가 6턴으로 캡 (사이클2 Task 10). / schema chat; history capped server-side at 6 turns. */
+export function chatAi(question: string, history: ChatTurn[]): Promise<ChatResponse> {
+  return postJson("/api/ai/chat", { question, history });
+}
