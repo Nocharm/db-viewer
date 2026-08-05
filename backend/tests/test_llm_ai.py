@@ -7,10 +7,18 @@ from urllib.error import URLError
 import pytest
 
 from app.adapters import llm_ai
-from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta, ValidationFacts, ViewFacts
+from app.adapters.ai import (
+    CandidatePair,
+    ChatContext,
+    ChatTableContext,
+    ColumnMeta,
+    TableMeta,
+    ValidationFacts,
+    ViewFacts,
+)
 from app.adapters.llm_ai import (
-    AiUnavailableError, LlmAiClient, _extract_json, _post_chat,
-    filter_search_candidates, embed_texts, cosine_similarity,
+    AiUnavailableError, CHAT_HISTORY_LIMIT, LlmAiClient, _extract_json, _post_chat,
+    build_chat_prompt, filter_search_candidates, embed_texts, cosine_similarity,
 )
 from app.config import Settings
 from app.services.ai_search import rank_by_cosine
@@ -488,3 +496,48 @@ def test_rank_by_cosine_caps_at_top_k():
     query_vec = [1.0, 0.0]
     rows = [(f"dbo.T_{i:02d}", [1.0, 0.0]) for i in range(10)]
     assert len(rank_by_cosine(query_vec, rows, top_k=3)) == 3
+
+
+# Task 10 (사이클2): build_chat_prompt, LlmAiClient.answer_question
+
+
+def _chat_context() -> ChatContext:
+    return ChatContext(tables=[ChatTableContext(
+        qname="dbo.T_ORD", columns=[ColumnMeta("ORD_NO", "int", is_pk=True)],
+        summary="주문 테이블", relations=["dbo.T_ORD.ORD_NO → dbo.T_SHP.ORD_NO (validated)"],
+        base_tables=["dbo.V_ORD_BASE"],
+    )])
+
+
+def test_build_chat_prompt_includes_context_history_and_question():
+    history = [("user", "이전 질문"), ("assistant", "이전 답변")]
+    prompt = build_chat_prompt("새 질문", history, _chat_context())
+    assert "dbo.T_ORD" in prompt and "ORD_NO" in prompt  # 컨텍스트 테이블·컬럼
+    assert "주문 테이블" in prompt and "dbo.T_SHP.ORD_NO" in prompt and "dbo.V_ORD_BASE" in prompt
+    assert "이전 질문" in prompt and "이전 답변" in prompt  # 이전 대화
+    assert "새 질문" in prompt  # 질문
+
+
+def test_build_chat_prompt_omits_history_block_when_empty():
+    prompt = build_chat_prompt("질문", [], ChatContext(tables=[]))
+    assert "이전 대화" not in prompt
+
+
+def test_build_chat_prompt_keeps_only_last_history_limit_turns():
+    history = [("user", f"q{i}") for i in range(8)]
+    prompt = build_chat_prompt("질문", history, ChatContext(tables=[]))
+    assert CHAT_HISTORY_LIMIT == 6
+    assert "q0" not in prompt and "q1" not in prompt  # 상한 밖 — 잘림
+    assert "q2" in prompt and "q7" in prompt  # 최근 6턴만 유지
+
+
+def test_answer_question_maps_llm_text_response(captured):
+    captured["content"] = '{"text": "답변입니다"}'
+    assert _client().answer_question("질문", [], ChatContext(tables=[])) == "답변입니다"
+
+
+def test_answer_question_sends_context_and_history_in_prompt(captured):
+    captured["content"] = '{"text": "답변"}'
+    _client().answer_question("두 번째 질문", [("user", "첫 질문")], _chat_context())
+    user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
+    assert "dbo.T_ORD" in user_msg and "첫 질문" in user_msg and "두 번째 질문" in user_msg

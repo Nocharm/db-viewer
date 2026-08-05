@@ -6,14 +6,17 @@ Phase 3 검증 큐를 거쳐야 한다 (계획 §5.2).
 
 import json
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from app.adapters.ai import (
     AiClient,
     ColumnMeta,
+    FakeAiClient,
     TableMeta,
     ValidationFacts,
     ViewFacts,
@@ -35,6 +38,7 @@ from app.models import (
     ViewJoin,
     ViewLineageFlat,
 )
+from app.services.ai_chat import build_chat_context
 from app.services.ai_jobs import has_active_job, run_ai_job
 from app.services.ai_search import search_tables_smart
 
@@ -340,3 +344,31 @@ def explain_view(
         definition_excerpt=(obj.definition or "")[:400] or None,
     ))
     return {"object": qname, "explanation": text}
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=6)
+
+
+@router.post("/chat")
+def chat(
+    req: ChatRequest,
+    snapshot_id: int | None = None,
+    db: Session = Depends(get_db),
+    ai: AiClient = Depends(get_ai_client),
+) -> dict:
+    """스키마 Q&A — 검색 컨텍스트 기반 동기 응답 (사이클2 §4). / schema Q&A chat."""
+    snapshot = resolve_snapshot(db, snapshot_id)
+    tables = _load_table_meta(db, snapshot.id)
+    context = build_chat_context(db, snapshot.id, req.question, tables, ai, get_settings())
+    answer = ai.answer_question(
+        req.question, [(t.role, t.content) for t in req.history], context)
+    return {"answer": answer,
+            "tables": [t.qname for t in context.tables],
+            "mock": isinstance(ai, FakeAiClient)}

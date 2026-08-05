@@ -12,8 +12,9 @@ from app.adapters.llm_ai import AiUnavailableError, LlmAiClient
 from app.api.ai import get_ai_session_factory, select_ai_candidates
 from app.config import Settings
 from app.domain import scoring
-from app.models import AiEmbedding, AiJob, Base
+from app.models import AiEmbedding, AiJob, Base, CatalogColumn, CatalogObject, Relation, Snapshot, ViewLineageFlat
 from app.services import ai_search
+from app.services.ai_chat import CHAT_RELATIONS_LIMIT, CHAT_TOP_K, build_chat_context
 from app.services.ai_search import search_tables_smart
 
 
@@ -631,3 +632,141 @@ def test_start_suggest_job_conflicts_with_active_job(client, migrated_engine):
 
     res = client.post("/api/ai/suggest-relations")
     assert res.status_code == 409
+
+
+# Task 10 (사이클2): build_chat_context — search_tables_smart 재사용 top-8 + 관계·lineage
+
+
+def _new_snapshot(db) -> Snapshot:
+    snap = Snapshot(collected_at=datetime.now(UTC), source_db="TEST", status="ready")
+    db.add(snap)
+    db.flush()
+    return snap
+
+
+def _add_table(db, snapshot_id: int, oid: int, name: str, columns: list[tuple[str, bool]]):
+    obj = CatalogObject(snapshot_id=snapshot_id, schema="dbo", name=name,
+                        type="table", object_id=oid, row_count=10)
+    db.add(obj)
+    db.flush()
+    for i, (col_name, is_pk) in enumerate(columns, start=1):
+        db.add(CatalogColumn(object_id=obj.id, name=col_name, ordinal=i, data_type="int",
+                             max_length=4, is_nullable=False, is_pk=is_pk, is_computed=False))
+    db.flush()
+    return obj
+
+
+def test_build_chat_context_returns_empty_when_no_search_hits(migrated_engine):
+    """히트 없으면 빈 컨텍스트 — Fake의 '관련 테이블 없음' 경로로 이어진다."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        db.commit()
+        tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int", True)])]
+        context = build_chat_context(db, snap.id, "ZZQX_NOPE", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert context.tables == []
+
+
+def test_build_chat_context_caps_at_top_eight(migrated_engine):
+    """검색 히트가 8개를 넘어도 컨텍스트는 top-8만 담는다."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        tables = []
+        for i in range(10):
+            name = f"T_ORD_{i:02d}"
+            _add_table(db, snap.id, 9_000_000 + i, name, [("ORD_NO", True)])
+            tables.append(TableMeta(f"dbo.{name}", [ColumnMeta("ORD_NO", "int", True)]))
+        db.commit()
+        context = build_chat_context(db, snap.id, "ORD", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert CHAT_TOP_K == 8
+    assert len(context.tables) == 8
+    # FakeAiClient는 동점을 qname 오름차순으로 깨므로 앞 8개가 선택된다
+    assert [t.qname for t in context.tables] == [f"dbo.T_ORD_{i:02d}" for i in range(8)]
+
+
+def test_build_chat_context_formats_relations_and_caps_at_ten(migrated_engine):
+    """validated·confirmed만 'src.col → tgt.col (status)' 형식으로, 최대 10건."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        _add_table(db, snap.id, 9_100_000, "T_ANCHOR", [("ANCHOR_NO", True)])
+        now = datetime.now(UTC)
+        for i in range(12):  # 상한(10)보다 많은 validated/confirmed
+            db.add(Relation(
+                src_object="dbo.T_ANCHOR", src_column="ANCHOR_NO",
+                tgt_object=f"dbo.T_TGT_{i:02d}", tgt_column="TGT_NO",
+                status="validated" if i % 2 == 0 else "confirmed", origin="ai",
+                confidence=0.9, cardinality="1:N", last_verified_at=now,
+                reason=None, created_at=now,
+            ))
+        # candidate/rejected는 챗 컨텍스트에서 제외되어야 한다
+        db.add(Relation(
+            src_object="dbo.T_ANCHOR", src_column="ANCHOR_NO",
+            tgt_object="dbo.T_NOISE", tgt_column="NOISE_NO",
+            status="candidate", origin="ai", confidence=None, cardinality=None,
+            last_verified_at=None, reason=None, created_at=now,
+        ))
+        db.commit()
+        tables = [TableMeta("dbo.T_ANCHOR", [ColumnMeta("ANCHOR_NO", "int", True)])]
+        context = build_chat_context(db, snap.id, "ANCHOR", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert len(context.tables) == 1
+    relations = context.tables[0].relations
+    assert CHAT_RELATIONS_LIMIT == 10
+    assert len(relations) == 10
+    assert all(r.startswith("dbo.T_ANCHOR.ANCHOR_NO → dbo.T_TGT_") for r in relations)
+    assert all(r.endswith("(validated)") or r.endswith("(confirmed)") for r in relations)
+    assert not any("NOISE" in r for r in relations)  # candidate 상태는 제외
+
+
+def test_build_chat_context_backtracks_base_tables_via_lineage(migrated_engine):
+    """ViewLineageFlat 역추적 — summarize_object/explain_view와 동일한 쿼리 관용."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        anchor = _add_table(db, snap.id, 9_200_000, "V_ORD_SUMMARY", [("ORD_NO", False)])
+        base = _add_table(db, snap.id, 9_200_001, "T_ORD_BASE", [("ORD_NO", True)])
+        db.add(ViewLineageFlat(
+            snapshot_id=snap.id, view_object_id=anchor.id, view_column="ORD_NO",
+            base_object_id=base.id, base_column="ORD_NO", depth=1,
+            mapping_kind="direct", flag=None,
+        ))
+        db.commit()
+        tables = [TableMeta("dbo.V_ORD_SUMMARY", [ColumnMeta("ORD_NO", "int")])]
+        context = build_chat_context(db, snap.id, "ORD", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert context.tables[0].base_tables == ["dbo.T_ORD_BASE"]
+
+
+# Task 10 (사이클2): POST /api/ai/chat — Fake 경로·mock 플래그·history 상한
+
+
+def test_chat_endpoint_fake_path_returns_answer_mock_and_matching_tables(client, load_fixture):
+    _seed(client, load_fixture)
+    manifest = load_fixture("manifest.json")
+    trap = manifest["cases"]["low_cardinality"][0]
+    table_name = trap.rsplit(".", 1)[0].split(".", 1)[1]
+
+    res = client.post("/api/ai/chat", json={"question": table_name})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["mock"] is True  # FakeAiClient 경로 (사이클2 §4)
+    assert body["answer"]
+    # tables는 서버가 컨텍스트에서 구성 — search-tables 테스트와 동일하게 최상위 히트만 단언
+    # (Fake는 정규화 부분일치라 HR_EMP_FAMILY 등도 함께 매칭되지만 동점 tie-break로 정확 일치가 1위)
+    assert body["tables"] and body["tables"][0].endswith(table_name)
+
+
+def test_chat_endpoint_no_hits_falls_back_to_empty_context(client, load_fixture):
+    _seed(client, load_fixture)
+    res = client.post("/api/ai/chat", json={"question": "ZZQX_NOPE_ZZ"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["tables"] == []
+    assert "관련 테이블 없음" in body["answer"]  # Fake 목업 응답 경로
+
+
+def test_chat_endpoint_rejects_history_over_six_turns(client, load_fixture):
+    _seed(client, load_fixture)
+    history = [{"role": "user", "content": f"질문 {i}"} for i in range(7)]
+    res = client.post("/api/ai/chat", json={"question": "테스트 질문", "history": history})
+    assert res.status_code == 422
