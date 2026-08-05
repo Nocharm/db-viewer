@@ -220,23 +220,31 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             view_svc_ids.add(svc)
 
     rows = []
+    # 카탈로그(테이블·뷰) 밖을 가리키는 참조 수 — 함수·시노님·시퀀스 등 / refs outside the catalog
+    outside_refs = 0
+    skipped_deps = 0
     for dep in payload.deps:
         view_svc = oid_map.get(dep.view_object_id)
         if view_svc is None:
-            raise _bad_request("dep references unknown view", {"view_object_id": dep.view_object_id})
+            # 스냅샷에 없는 뷰의 의존성은 버린다(수집 중 DROP 등) — 단계를 죽이지 않는다
+            logger.warning("skipping dep for unknown view",
+                           extra={"view_object_id": dep.view_object_id})
+            skipped_deps += 1
+            continue
         ref_svc = None
         if dep.referenced_object_id is not None:
             ref_svc = oid_map.get(dep.referenced_object_id)
             if ref_svc is None:
-                raise _bad_request(
-                    "resolved dep references object missing from snapshot",
-                    {"referenced_object_id": dep.referenced_object_id},
-                )
+                # 뷰는 테이블·뷰 외에 함수·시노님·시퀀스도 참조한다. 카탈로그가 담지 않는
+                # 개체이므로 오류가 아니라 **미해석 참조**로 보존한다 — 이름은 남겨 Phase 2가 본다.
+                # views also reference functions/synonyms; keep them flagged, never fail the step
+                outside_refs += 1
         rows.append({
             "snapshot_id": snapshot.id, "view_object_id": view_svc,
             "referenced_object_id": ref_svc, "referenced_database": dep.referenced_database,
             "referenced_name": dep.referenced_name, "referenced_column": dep.referenced_column,
-            "is_resolved": dep.is_resolved,
+            # 대상을 못 찾았으면 해석된 것으로 볼 수 없다 / unresolved when the target is unknown
+            "is_resolved": dep.is_resolved and ref_svc is not None,
         })
     if rows:
         db.execute(insert(ViewDep), rows)
@@ -244,7 +252,10 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
     for unresolved in payload.unresolved_objects:
         svc = oid_map.get(unresolved.object_id)
         if svc is None:
-            raise _bad_request("unresolved entry for unknown object", {"object_id": unresolved.object_id})
+            logger.warning("skipping DMV-failure entry for unknown object",
+                           extra={"object_id": unresolved.object_id})
+            skipped_deps += 1
+            continue
         db.execute(
             update(CatalogObject).where(CatalogObject.id == svc).values(dmv_unresolved=True)
         )
@@ -262,7 +273,8 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             "deps_chunks_total": payload.chunk_total,
         })
         return {"snapshot_id": snapshot.id,
-                "chunk_index": payload.chunk_index, "chunk_total": payload.chunk_total}
+                "chunk_index": payload.chunk_index, "chunk_total": payload.chunk_total,
+                "refs_outside_catalog": outside_refs, "skipped": skipped_deps}
 
     # 재귀 해석 → view_lineage_flat 적재 (UI가 읽는 유일한 lineage 테이블)
     # 분할 수집이면 이 청크의 rows가 전부가 아니므로 DB에서 전체 deps를 다시 읽는다
@@ -272,7 +284,9 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
         select(ViewDep.view_object_id, ViewDep.referenced_object_id, ViewDep.referenced_column)
         .where(ViewDep.snapshot_id == snapshot.id, ViewDep.is_resolved)
     ):
-        deps_by_view[view_svc].append((ref_svc, ref_svc in view_svc_ids, ref_column))
+        # 뷰가 아닌 참조원이 섞여도 KeyError로 단계가 죽지 않게 한다 / never KeyError here
+        deps_by_view.setdefault(view_svc, []).append(
+            (ref_svc, ref_svc in view_svc_ids, ref_column))
     lineage_rows = lineage.resolve_lineage(
         deps_by_view, depth_limit=get_settings().lineage_depth_limit
     )
@@ -290,10 +304,17 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
         select(func.count()).select_from(CatalogObject)
         .where(CatalogObject.snapshot_id == snapshot.id,
                CatalogObject.dmv_unresolved)).scalar_one()
+    # 미해석 참조 총계 — 카탈로그 밖 개체(함수·시노님)·크로스 DB·DMV 실패분을 포함
+    deps_unresolved = db.execute(
+        select(func.count()).select_from(ViewDep)
+        .where(ViewDep.snapshot_id == snapshot.id, ViewDep.is_resolved.is_(False))).scalar_one()
     counts = {
-        "deps": total_deps, "unresolved_objects": unresolved_total,
+        "deps": total_deps, "deps_unresolved": deps_unresolved,
+        "unresolved_objects": unresolved_total,
         "lineage_rows": len(lineage_rows), **phase2_counts,
     }
+    if skipped_deps:  # 스냅샷에 없는 뷰의 항목을 버린 건수 — 조용히 사라지지 않게
+        counts["deps_skipped"] = skipped_deps
     if payload.chunk_total > 1:
         counts["deps_chunks_done"] = payload.chunk_total
         counts["deps_chunks_total"] = payload.chunk_total

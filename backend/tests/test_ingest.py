@@ -215,3 +215,49 @@ def test_ingest_view_deps_chunked_finalizes_on_last(client, migrated_engine, loa
         status = conn.execute(
             sa.select(snap_t.c.status).where(snap_t.c.id == snapshot_id)).scalar_one()
     assert status == "ready"
+
+
+def test_view_dep_to_non_catalog_object_is_kept_unresolved(client, migrated_engine, load_fixture):
+    """뷰가 함수·시노님을 참조해도 단계가 죽지 않고 미해석 참조로 보존된다.
+
+    실서버 2단계 실패(resolved dep references object missing from snapshot) 회귀 가드 —
+    카탈로그는 테이블·뷰만 담으므로 그 밖의 개체 참조는 정상 상황이다.
+    """
+    snapshot_id, _ = _ingest_catalog(client, load_fixture)
+    vd = load_fixture("view_deps.json")
+    a_view = vd["deps"][0]["view_object_id"]
+    payload = {
+        "snapshot_id": snapshot_id,
+        "deps": [{
+            "view_object_id": a_view,
+            "referenced_object_id": 942014487,   # 카탈로그에 없는 개체 (예: 테이블값 함수)
+            "referenced_database": None, "referenced_name": "dbo.fn_split",
+            "referenced_column": None, "is_resolved": True,
+        }],
+        "unresolved_objects": [],
+    }
+    res = client.post("/api/ingest/view-deps", json=payload)
+    assert res.status_code == 200, res.text
+
+    t = Base.metadata.tables["view_deps"]
+    with migrated_engine.connect() as conn:
+        row = conn.execute(sa.select(t).where(t.c.referenced_name == "dbo.fn_split")).one()
+    assert row.referenced_object_id is None
+    assert bool(row.is_resolved) is False   # 대상을 못 찾았으면 해석된 것이 아니다
+    assert res.json()["counts"]["deps_unresolved"] >= 1
+
+
+def test_view_deps_skips_entries_for_unknown_views(client, migrated_engine, load_fixture):
+    """스냅샷에 없는 뷰의 항목은 버리고 단계는 계속한다 (수집 중 DROP 등)."""
+    snapshot_id, _ = _ingest_catalog(client, load_fixture)
+    res = client.post("/api/ingest/view-deps", json={
+        "snapshot_id": snapshot_id,
+        "deps": [{
+            "view_object_id": 888_001, "referenced_object_id": None,
+            "referenced_database": None, "referenced_name": "gone.view",
+            "referenced_column": None, "is_resolved": False,
+        }],
+        "unresolved_objects": [{"object_id": 888_002, "reason": "dropped mid-collection"}],
+    })
+    assert res.status_code == 200, res.text
+    assert _count(migrated_engine, "view_deps") == 0
