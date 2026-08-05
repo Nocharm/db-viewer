@@ -100,11 +100,11 @@ class Settings(BaseSettings):
     # Tuning: 임베딩 응답 대기 상한(초) — 채팅보다 짧다 (배치 호출·질의 경로 블로킹 방지)
     embed_timeout_seconds: int = 30
     # Tuning: 배치당 텍스트 수 / texts per embedding batch
-    ai_embed_batch: int = 32
+    embed_batch: int = 32
     # Tuning: 인덱싱 잡 상한 — 사용자 부하 제약 (2000 초과 금지) / indexing job cap
-    ai_embed_job_cap: int = Field(1000, le=2000)
+    embed_job_cap: int = Field(1000, le=2000)
     # Tuning: 배치 간 대기(ms) — 사용자 요청 우선 / inter-batch sleep
-    ai_embed_sleep_ms: int = 500
+    embed_sleep_ms: int = 500
 
     # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
     # W1a 창당 객체 수 — DB 조회·n8n 아이템·POST 크기를 함께 제한 / objects per catalog window

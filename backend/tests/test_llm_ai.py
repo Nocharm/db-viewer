@@ -35,9 +35,9 @@ def test_ai_settings_defaults():
     assert s.embed_url == ""
     assert s.embed_model == ""
     assert s.embed_timeout_seconds == 30
-    assert s.ai_embed_batch == 32
-    assert s.ai_embed_job_cap == 1000
-    assert s.ai_embed_sleep_ms == 500
+    assert s.embed_batch == 32
+    assert s.embed_job_cap == 1000
+    assert s.embed_sleep_ms == 500
 
 
 class _FakeResponse(io.BytesIO):

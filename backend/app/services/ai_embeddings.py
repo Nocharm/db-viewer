@@ -1,7 +1,7 @@
 """Embedding index builder — capped, batched, throttled. / 임베딩 인덱싱 (사이클2 §3).
 
-부하 제약(사용자 지시): 잡 1회 상한 AI_EMBED_JOB_CAP(2000 초과 금지),
-호출당 AI_EMBED_BATCH, 호출 간 AI_EMBED_SLEEP_MS 대기. 남은 분량은
+부하 제약(사용자 지시): 잡 1회 상한 EMBED_JOB_CAP(2000 초과 금지),
+호출당 EMBED_BATCH, 호출 간 EMBED_SLEEP_MS 대기. 남은 분량은
 재실행이 이어간다 — 제안 페이징과 같은 문법.
 """
 
@@ -70,12 +70,12 @@ def run_embed_index(db: Session, job: AiJob, settings: Settings) -> dict:
         pending.append((qname, text, source_hash))
 
     total_pending = len(pending)
-    batch_input = pending[:settings.ai_embed_job_cap]
+    batch_input = pending[:settings.embed_job_cap]
     job.progress_total = len(batch_input)
     db.commit()
 
     indexed = 0
-    batch = settings.ai_embed_batch
+    batch = settings.embed_batch
     for start in range(0, len(batch_input), batch):
         chunk = batch_input[start:start + batch]
         # 사내 임베딩 서버는 무인증 — 채팅 토큰을 다른 호스트로 보내지 않는다
@@ -98,8 +98,8 @@ def run_embed_index(db: Session, job: AiJob, settings: Settings) -> dict:
         indexed += len(chunk)
         job.progress_done = indexed
         db.commit()  # 부분 진행 보존 — 실패해도 인덱싱분 유지
-        if start + batch < len(batch_input) and settings.ai_embed_sleep_ms > 0:
-            time.sleep(settings.ai_embed_sleep_ms / 1000)
+        if start + batch < len(batch_input) and settings.embed_sleep_ms > 0:
+            time.sleep(settings.embed_sleep_ms / 1000)
 
     return {"indexed": indexed, "skipped": skipped,
             "remaining": total_pending - indexed}

@@ -27,7 +27,7 @@ def _settings(**overrides) -> Settings:
     # _env_file=None — 로컬 .env 간섭 차단, 실행 중 값은 인자로만 주입 / no local .env leakage
     defaults = dict(
         _env_file=None, ai_base_url="http://llm/v1", embed_url="http://embed/v1", embed_model="e",
-        ai_embed_batch=32, ai_embed_job_cap=1000, ai_embed_sleep_ms=0,
+        embed_batch=32, embed_job_cap=1000, embed_sleep_ms=0,
     )
     defaults.update(overrides)
     return Settings(**defaults)
@@ -91,7 +91,7 @@ def test_run_embed_index_caps_job_and_reports_remaining(
     session_factory = sessionmaker(bind=migrated_engine)
     with session_factory() as db:
         job = _job(db)
-        result = run_embed_index(db, job, _settings(ai_embed_job_cap=2, ai_embed_batch=2))
+        result = run_embed_index(db, job, _settings(embed_job_cap=2, embed_batch=2))
         # job은 세션이 닫히면 만료된 속성 접근 시 DetachedInstanceError — 세션 안에서 단언
         assert job.progress_total == 2
 
@@ -99,12 +99,12 @@ def test_run_embed_index_caps_job_and_reports_remaining(
     assert result["remaining"] > 0  # 실측 스케일(409 테이블)에서 상한 밖 잔여 존재
 
 
-def test_ai_embed_job_cap_rejects_over_2000():
+def test_embed_job_cap_rejects_over_2000():
     """최종 전체 리뷰 Fix 3: 사용자 부하 상한(2,000) 초과 설정은 기동 시점에 막힌다."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, ai_embed_job_cap=2001)
+        Settings(_env_file=None, embed_job_cap=2001)
 
 
 def test_run_embed_index_skips_unchanged_hash_on_rerun(
@@ -121,14 +121,14 @@ def test_run_embed_index_skips_unchanged_hash_on_rerun(
 
     with session_factory() as db:
         job = _job(db)
-        first = run_embed_index(db, job, _settings(ai_embed_job_cap=1000, ai_embed_batch=50))
+        first = run_embed_index(db, job, _settings(embed_job_cap=1000, embed_batch=50))
     assert first["indexed"] > 0
     assert first["remaining"] == 0  # 1회차에 전체 소진
 
     fake_embed.clear()
     with session_factory() as db:
         job = _job(db)
-        second = run_embed_index(db, job, _settings(ai_embed_job_cap=1000, ai_embed_batch=50))
+        second = run_embed_index(db, job, _settings(embed_job_cap=1000, embed_batch=50))
 
     assert second["indexed"] == 0
     assert second["skipped"] == first["indexed"]  # 앞서 인덱싱한 전량이 스킵
@@ -143,7 +143,7 @@ def test_run_embed_index_splits_calls_by_batch_size(
     session_factory = sessionmaker(bind=migrated_engine)
     with session_factory() as db:
         job = _job(db)
-        result = run_embed_index(db, job, _settings(ai_embed_job_cap=3, ai_embed_batch=1))
+        result = run_embed_index(db, job, _settings(embed_job_cap=3, embed_batch=1))
 
     assert result["indexed"] == 3
     assert len(fake_embed) == 3  # 배치=1 → 대상 수만큼 호출
@@ -153,7 +153,7 @@ def test_run_embed_index_splits_calls_by_batch_size(
 def test_run_embed_index_never_sleeps_when_sleep_ms_is_zero(
     client, migrated_engine, load_fixture, fake_embed, monkeypatch,
 ):
-    """ai_embed_sleep_ms=0이면 배치 간 time.sleep을 호출하지 않는다."""
+    """embed_sleep_ms=0이면 배치 간 time.sleep을 호출하지 않는다."""
     def _boom(*_args, **_kwargs):
         raise AssertionError("time.sleep should not be called when sleep_ms=0")
 
@@ -163,7 +163,7 @@ def test_run_embed_index_never_sleeps_when_sleep_ms_is_zero(
     with session_factory() as db:
         job = _job(db)
         result = run_embed_index(
-            db, job, _settings(ai_embed_job_cap=4, ai_embed_batch=1, ai_embed_sleep_ms=0),
+            db, job, _settings(embed_job_cap=4, embed_batch=1, embed_sleep_ms=0),
         )
     assert result["indexed"] == 4
     assert len(fake_embed) == 4  # 다중 배치 경계를 거쳤는데도 sleep 없이 통과
@@ -187,7 +187,7 @@ def test_run_embed_index_persists_partial_progress_on_failure(
     with session_factory() as db:
         job = _job(db)
         with pytest.raises(RuntimeError, match="embed provider down"):
-            run_embed_index(db, job, _settings(ai_embed_job_cap=3, ai_embed_batch=1))
+            run_embed_index(db, job, _settings(embed_job_cap=3, embed_batch=1))
 
     with session_factory() as db:
         # 1번째 배치(1건)는 커밋되어 남고, 실패한 2번째 이후는 반영되지 않는다
