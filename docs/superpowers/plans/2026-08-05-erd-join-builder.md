@@ -21,7 +21,13 @@
 - **UI 문자열은 `lib/i18n.ts` 사전 경유** — ko/en 양쪽 필수.
 - **`data-testid`는 `ComponentName-role`** (`rules/frontend/identifiers.md`).
 - **커밋 메시지:** `type(scope): English summary — 한국어 요약`. 커밋 직전 `PROGRESS.md` 갱신(`rules/common/git.md`).
-- **검증 명령:** 프론트 `cd frontend && npx vitest run`, `npx tsc --noEmit`, `npx eslint .` / 백엔드 `cd backend && python3 -m pytest`, `ruff check .`
+- **검증 명령 (경로는 저장소 루트 기준, 반드시 이대로):**
+  - 프론트: `cd frontend && npx vitest run` · `npx tsc --noEmit` · `npx eslint src`
+  - 백엔드: `cd backend && .venv/bin/python -m pytest` · `.venv/bin/python -m ruff check .`
+  - **`python3 -m pytest`는 동작하지 않는다** — 의존성이 `backend/.venv`에만 있다.
+    계획 본문의 `python3 -m pytest`·`ruff check`는 모두 위 형태로 읽는다.
+- **Baseline (2026-08-05, feat/erd-join-builder 분기 시점):** 프론트 37 passed / 9 files,
+  백엔드 266 passed. 태스크가 끝날 때 이 수보다 줄면 회귀다.
 
 ---
 
@@ -777,10 +783,14 @@ export function estimateNodeSize(
 Run: `cd frontend && npx vitest run src/lib/layout.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 남은 참조 정리**
+- [ ] **Step 5: 남은 참조 확인 (커밋하지 않는다)**
 
 Run: `cd frontend && grep -rn "MAX_VISIBLE_COLUMNS" src`
-`TableNode.tsx`와 `ErdCanvas.tsx`가 걸린다 — Task 6에서 함께 고치므로 지금은 **커밋하지 않고 Task 6으로 이어간다.**
+`TableNode.tsx`와 `ErdCanvas.tsx`가 걸린다 — 여기서 커밋하면 타입 검사가 깨진 상태가 커밋된다.
+
+> **Task 5와 Task 6은 한 번에 구현하고 한 번에 커밋한다.** `MAX_VISIBLE_COLUMNS`
+> 제거가 두 파일을 동시에 깨뜨려 중간 커밋이 성립하지 않는다. Task 6 Step 9의
+> 커밋 하나가 두 태스크를 함께 담는다.
 
 ---
 
