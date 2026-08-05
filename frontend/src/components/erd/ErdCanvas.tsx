@@ -44,6 +44,8 @@ const nodeTypes = { tableNode: TableNode };
 
 interface Props {
   anchorId: number | null;
+  /** 딥링크로 들어온 컬럼 — 추천 하이라이트를 켠 채로 드래그를 기다린다 */
+  initialColumnId?: number | null;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
   onQuickStart: (name: string) => void;
 }
@@ -94,7 +96,7 @@ export function ErdCanvas(props: Props) {
   );
 }
 
-function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
+function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStart }: Props) {
   const { t } = useI18n();
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   // 모든 노드 기본 접힘 — 앵커만 자동 펼침 / everything folded; only the anchor auto-expands
@@ -226,7 +228,24 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     // dragHint·scanOrigin은 유지 — 드래그를 놓은 뒤에도 추천·제안이 남는다
   }, []);
 
-  // 스캔 폴링 — 완료·실패까지 1.5초 간격 (ColumnPanel과 같은 관용)
+  // 딥링크(?col=) — 그 컬럼의 추천을 미리 켜 드래그 출발점을 알려준다
+  // deep link: pre-light the candidates so the user knows where to drag from
+  useEffect(() => {
+    if (!initialColumnId || !graph) return;
+    void fetchCandidates(initialColumnId)
+      .then((res) => {
+        const byNode = new Map<number, string[]>();
+        for (const candidate of res.candidates) {
+          const node = graph.nodes.find((n) => `${n.schema}.${n.name}` === candidate.object);
+          if (!node) continue;
+          byNode.set(node.id, [...(byNode.get(node.id) ?? []), candidate.column]);
+        }
+        setDragHint(byNode);
+      })
+      .catch(() => undefined);
+  }, [initialColumnId, graph]);
+
+  // 스캔 폴링 — 완료·실패까지 1.5초 간격 (다른 비동기 작업과 동일한 폴링 관용)
   // scanJobId가 done/failed에서 null로 바뀌면 이 effect가 재실행되며 클린업이 먼저 돌아
   // 이전 인터벌을 지운다 — 완료된 잡이 폴러를 남기지 않는다 / cleared on every terminal path
   useEffect(() => {

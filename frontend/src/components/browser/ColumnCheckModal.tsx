@@ -5,10 +5,10 @@
 
 import { useEffect, useState } from "react";
 
-import { PATTERN_LABELS } from "@/components/ColumnPanel";
 import { CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { fetchCandidates, runContainment } from "@/lib/api";
+import { PATTERN_LABELS } from "@/lib/join-verdict";
 import type { CandidateItem, ContainmentResponse } from "@/lib/types";
 
 // 자동 검증하는 상위 후보 수 — 상세 탐색은 ERD 패널에서 / auto-checked top candidates

@@ -173,10 +173,6 @@ export const MESSAGES = {
   },
 
   "panel.verify": { ko: "T2 검증", en: "Verify (T2)" },
-  "panel.preview20": { ko: "미리보기 20행", en: "Preview 20 rows" },
-  "panel.confirm": { ko: "확정", en: "Confirm" },
-  "panel.noCandidates": { ko: "후보 없음", en: "No candidates" },
-  "panel.history": { ko: "검증 이력", en: "Validation history" },
 
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
   "collect.hint": {
@@ -233,7 +229,6 @@ export const MESSAGES = {
 
   "ai.generateSummary": { ko: "AI 요약 생성", en: "Generate AI summary" },
   "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
-  "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },
   "ai.failed": { ko: "AI 작업 실패", en: "AI job failed" },
   "ai.mockBadge": { ko: "AI 미연결 — 목업", en: "AI offline — mock" },
@@ -303,17 +298,6 @@ export const MESSAGES = {
     ko: "원본 소스에 새 질의를 보내 받은 상위 N행입니다. 필터·행수 변경은 재질의하고, 정렬·고유값은 로드된 행 기준입니다.",
     en: "Top-N rows from a fresh source query. Filter and limit re-query; sort and unique values use the loaded rows.",
   },
-
-  "scan.button": { ko: "전수 탐색 (T3)", en: "Full scan (T3)" },
-  "scan.hint": {
-    ko: "이름과 무관하게 타입 호환 전 컬럼을 샘플→정밀 2단계로 훑습니다.",
-    en: "Name-agnostic sweep of every type-compatible column, sample then full recheck.",
-  },
-  "scan.queued": { ko: "대기 중…", en: "Queued…" },
-  "scan.running": { ko: "탐색 중", en: "Scanning" },
-  "scan.results": { ko: "탐색 결과 (상위)", en: "Top hits" },
-  "scan.none": { ko: "탐색 결과 없음", en: "No hits" },
-  "scan.failed": { ko: "탐색 실패", en: "Scan failed" },
 
   "erd.graphLoading": { ko: "그래프 계산 중…", en: "Computing graph…" },
 
