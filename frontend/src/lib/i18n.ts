@@ -320,6 +320,26 @@ export const MESSAGES = {
   "common.seconds": { ko: "{n}초", en: "{n}s" },
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },
+
+  "join.title": { ko: "조인 빌더", en: "Join builder" },
+  "join.empty": {
+    ko: "컬럼을 끌어 다른 테이블 컬럼에 놓으면 조인이 시작됩니다",
+    en: "Drag a column onto another table's column to start a join",
+  },
+  "join.overall": { ko: "전체", en: "Overall" },
+  "join.weakestLink": { ko: "가장 약한 고리는 {n}번", en: "Weakest link: step {n}" },
+  "join.showNumbers": { ko: "수치 보기", en: "Show numbers" },
+  "join.hideNumbers": { ko: "수치 숨기기", en: "Hide numbers" },
+  "join.applyLeftJoin": { ko: "LEFT JOIN 적용", en: "Apply LEFT JOIN" },
+  "join.removeStep": { ko: "이 조인 지우기", en: "Remove this join" },
+  "join.clear": { ko: "전부 지우기", en: "Clear all" },
+  "join.preview": { ko: "SQL과 20행 보기", en: "Show SQL and 20 rows" },
+  "join.verifying": { ko: "검증 중…", en: "Verifying…" },
+  "join.stepFailed": { ko: "검증 실패", en: "Verification failed" },
+  "join.levelSafe": { ko: "안전", en: "Safe" },
+  "join.levelCaution": { ko: "주의", en: "Caution" },
+  "join.levelDanger": { ko: "위험", en: "Danger" },
+  "join.levelUnknown": { ko: "미정", en: "Unknown" },
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;
