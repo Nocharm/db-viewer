@@ -29,6 +29,35 @@ def test_search_filters_by_name_and_type(client, load_fixture):
     assert tables_only["items"] == []
 
 
+def test_search_reports_total_so_truncation_is_visible(client, load_fixture):
+    """items가 잘렸는지 클라이언트가 알 수 있어야 한다 — 조용한 절단은 목록을 거짓말하게 만든다."""
+    _seed(client, load_fixture)
+    capped = client.get("/api/objects", params={"limit": 10}).json()
+    assert len(capped["items"]) == 10
+    assert capped["total"] > 10  # 실규모(495 객체)에서 잘린 사실이 드러난다
+
+    # total은 필터 적용 후 기준 — 타입 필터를 걸면 그 모집단의 크기다
+    views = client.get("/api/objects", params={"limit": 5, "type": "view"}).json()
+    assert views["total"] < capped["total"]
+
+
+def test_search_pages_through_every_object_with_offset(client, load_fixture):
+    """offset 페이징으로 전량 수집이 가능해야 한다 — 상한(1000)이 곧 조회 가능 총량이면 안 된다."""
+    _seed(client, load_fixture)
+    first = client.get("/api/objects", params={"limit": 200, "offset": 0}).json()
+    total = first["total"]
+
+    collected = list(first["items"])
+    while len(collected) < total:
+        page = client.get("/api/objects",
+                          params={"limit": 200, "offset": len(collected)}).json()
+        assert page["items"], "offset 페이지가 비면 무한 루프 — 페이징이 깨진 것"
+        collected.extend(page["items"])
+
+    assert len(collected) == total
+    assert len({i["id"] for i in collected}) == total  # 페이지 경계 중복·누락 없음
+
+
 def test_search_without_ready_snapshot_is_404(client):
     res = client.get("/api/objects", params={"q": "x"})
     assert res.status_code == 404

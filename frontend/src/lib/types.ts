@@ -12,6 +12,8 @@ export interface ObjectSummary {
 
 export interface SearchResponse {
   snapshot_id: number;
+  /** 필터 적용 후 전체 수 — items는 limit만큼만 담긴다 / full count; items holds one page */
+  total: number;
   items: ObjectSummary[];
 }
 

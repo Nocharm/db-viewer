@@ -50,24 +50,37 @@ def search_objects(
     type_filter: Literal["table", "view"] | None = Query(None, alias="type"),
     snapshot_id: int | None = None,
     limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ) -> dict:
+    """객체 목록 — limit은 페이지 크기, total은 필터 적용 후 전체 수.
+
+    total 없이 잘린 목록만 주면 화면이 "이게 전부"라고 거짓말한다 (실규모 3,224 객체 >
+    페이지 상한 1,000). 클라이언트는 total까지 offset으로 페이징해 전량을 모은다.
+    """
     snapshot = resolve_snapshot(db, snapshot_id)
     column_count = (
         select(func.count())
         .where(CatalogColumn.object_id == CatalogObject.id)
         .scalar_subquery()
     )
+    filters = [CatalogObject.snapshot_id == snapshot.id]
+    if q:
+        filters.append(CatalogObject.name.ilike(f"%{q}%"))
+    if type_filter:
+        filters.append(CatalogObject.type == type_filter)
+
+    total = db.execute(
+        select(func.count()).select_from(CatalogObject).where(*filters)
+    ).scalar_one()
     stmt = (
         select(CatalogObject, column_count)
-        .where(CatalogObject.snapshot_id == snapshot.id)
-        .order_by(CatalogObject.schema, CatalogObject.name)
+        .where(*filters)
+        # 페이지 경계에서 중복·누락이 없으려면 정렬이 결정론적이어야 한다 — 동명 대비 id 타이브레이크
+        .order_by(CatalogObject.schema, CatalogObject.name, CatalogObject.id)
         .limit(limit)
+        .offset(offset)
     )
-    if q:
-        stmt = stmt.where(CatalogObject.name.ilike(f"%{q}%"))
-    if type_filter:
-        stmt = stmt.where(CatalogObject.type == type_filter)
 
     items = [
         {
@@ -77,7 +90,7 @@ def search_objects(
         }
         for obj, col_count in db.execute(stmt)
     ]
-    return {"snapshot_id": snapshot.id, "items": items}
+    return {"snapshot_id": snapshot.id, "total": total, "items": items}
 
 
 @router.get("/{object_id}/detail")

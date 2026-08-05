@@ -26,6 +26,7 @@ export const MESSAGES = {
   },
   "tablelist.empty": { ko: "조건에 맞는 테이블 없음", en: "No tables match" },
   "tablelist.columnPrefix": { ko: "컬럼", en: "column" },
+  "tablelist.countSuffix": { ko: "개", en: " objects" },
 
   "detail.empty": { ko: "왼쪽 목록에서 테이블을 선택하세요", en: "Select a table from the list" },
   "detail.preview": { ko: "미리보기 TOP 20", en: "Preview TOP 20" },

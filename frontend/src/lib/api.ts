@@ -204,9 +204,26 @@ export function fetchJoinKeys(): Promise<{ items: JoinKeyItem[] }> {
   return getJson("/api/join-keys");
 }
 
-/** 테이블+뷰 전체 — 메인 브라우저 목록 / every object for the browser list. */
-export function fetchAllObjects(): Promise<SearchResponse> {
-  return getJson("/api/objects?limit=1000");
+// 서버 페이지 상한과 동일 — 왕복 수를 최소화한다 / matches the server-side page cap
+const OBJECTS_PAGE_SIZE = 1000;
+
+/** 테이블+뷰 전체 — total까지 페이징해 전량 수집 / every object, paged until complete.
+ *
+ * 한 번에 다 못 받는다: 실규모 3,224개 > 서버 페이지 상한 1,000. 예전엔 limit=1000
+ * 한 방이라 2,224개가 조용히 잘렸고, 목록에 없는 테이블이 링크로만 열렸다.
+ * 목록·카테고리 집계·초성/컬럼 검색이 모두 이 전량 집합을 쓰므로 여기서 다 모은다
+ * (렌더는 TableList가 무한 스크롤로 잘라서 그린다). */
+export async function fetchAllObjects(): Promise<SearchResponse> {
+  const first = await getJson<SearchResponse>(`/api/objects?limit=${OBJECTS_PAGE_SIZE}`);
+  const items = [...first.items];
+  while (items.length < first.total) {
+    const page = await getJson<SearchResponse>(
+      `/api/objects?limit=${OBJECTS_PAGE_SIZE}&offset=${items.length}`,
+    );
+    if (page.items.length === 0) break; // 서버가 빈 페이지를 주면 중단 — 무한 루프 방지
+    items.push(...page.items);
+  }
+  return { ...first, items };
 }
 
 export interface ObjectDetail {
