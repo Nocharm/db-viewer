@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { confidenceOpacity, getEdgeGrade, getEdgeVisual } from "./edge-style";
+import { confidenceOpacity, getCardinalityEnds, getEdgeGrade, getEdgeVisual } from "./edge-style";
 
 describe("getEdgeGrade", () => {
   it("collapses five kinds into three grades", () => {
@@ -63,5 +63,22 @@ describe("confidenceOpacity", () => {
     expect(confidenceOpacity(1.0)).toBe(1.0);
     expect(confidenceOpacity(0.95)).toBe(0.7);
     expect(confidenceOpacity(0.94)).toBe(0.45);
+  });
+});
+
+describe("getCardinalityEnds", () => {
+  it("maps cardinality strings to crow's-foot ends in src:tgt order", () => {
+    // 문자열은 항상 src:tgt 순서 — ErdCanvas가 source=src_object_id로 엣지를 만든다
+    expect(getCardinalityEnds("1:N")).toEqual({ source: "one", target: "many" });
+    expect(getCardinalityEnds("N:1")).toEqual({ source: "many", target: "one" });
+    expect(getCardinalityEnds("N:M")).toEqual({ source: "many", target: "many" });
+    expect(getCardinalityEnds("1:1")).toEqual({ source: "one", target: "one" });
+  });
+
+  it("draws nothing when cardinality is unknown — absence means unverified", () => {
+    expect(getCardinalityEnds(null)).toEqual({ source: null, target: null });
+    expect(getCardinalityEnds(undefined)).toEqual({ source: null, target: null });
+    expect(getCardinalityEnds("")).toEqual({ source: null, target: null });
+    expect(getCardinalityEnds("garbage")).toEqual({ source: null, target: null });
   });
 });

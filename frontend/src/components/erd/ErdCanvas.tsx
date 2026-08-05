@@ -21,10 +21,11 @@ import { PreviewTable } from "@/components/PreviewTable";
 import { fetchGraph, fetchObjectPreview, type TablePreview } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
-import { getEdgeVisual } from "@/lib/edge-style";
+import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
 import { planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph, MAX_VISIBLE_COLUMNS } from "@/lib/layout";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
+import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { TableNode, type TableFlowNode } from "./TableNode";
 import { Legend } from "./Legend";
 
@@ -334,16 +335,13 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
       setFlowEdges(
         visibleEdges.map((e) => {
           const visual = getEdgeVisual(e.kind, e.confidence ?? undefined);
-          let label =
+          // 라벨은 컬럼명만 — 카디널리티는 마커, 근거(✓·AI)는 엣지 클릭 시 표시
+          // label carries columns only; cardinality goes to markers, provenance to click
+          const label =
             PAIR_KINDS.has(e.kind) && Array.isArray(e.columns) && e.columns.length > 0
-              ? (e.columns as { src_column: string }[])
-                  .map((c) => c.src_column)
-                  .join(", ")
+              ? (e.columns as { src_column: string }[]).map((c) => c.src_column).join(", ")
               : undefined;
-          // N:M은 FK 아님 — 교차 관계 표기 (계획 §3.2) / cross relation marker
-          if (e.cardinality === "N:M") label = `${label ?? ""} [N:M]`.trim();
-          if (e.kind === "confirmed") label = `✓ ${label ?? ""}`.trim();
-          if (e.kind === "ai_suggested") label = `AI ${label ?? ""}`.trim();
+          const ends = getCardinalityEnds(e.cardinality);
           return {
             id: e.id,
             source: String(e.src_object_id),
@@ -352,6 +350,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
             ...resolveEdgeHandles(
               e, anchorInfo.get(e.src_object_id), anchorInfo.get(e.tgt_object_id)),
             style: visual,
+            markerStart: ends.source ? `url(#${MARKER_ID[ends.source]})` : undefined,
+            markerEnd: ends.target ? `url(#${MARKER_ID[ends.target]})` : undefined,
             label,
             labelStyle: { fontSize: 10, fill: "var(--slate)" },
             "data-testid": `ErdCanvas-edge-${e.id}`,
@@ -406,6 +406,7 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
 
   return (
     <div ref={wrapperRef} className="relative h-full w-full" data-testid="ErdCanvas-root">
+      <CardinalityMarkerDefs />
       <ReactFlow
         nodes={displayNodes}
         edges={displayEdges}

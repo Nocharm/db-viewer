@@ -60,3 +60,36 @@ export function getEdgeVisual(kind: EdgeKind, confidence?: number): EdgeVisual {
       : style.opacity,
   };
 }
+
+/** 까그발 표기 한쪽 끝 / one end of a crow's-foot notation. */
+export type CardinalityEnd = "one" | "many" | null;
+
+export interface CardinalityEnds {
+  source: CardinalityEnd;
+  target: CardinalityEnd;
+}
+
+/** React Flow 마커 element id — CardinalityMarkerDefs가 defs로 심는다. */
+export const MARKER_ID: Record<"one" | "many", string> = {
+  one: "dbv-card-one",
+  many: "dbv-card-many",
+};
+
+function parseEnd(token: string): CardinalityEnd {
+  if (token === "1") return "one";
+  if (token === "N" || token === "M") return "many";
+  return null;
+}
+
+/** "1:N" → {source:"one", target:"many"}. 미검증(null·미인식)은 양끝 null.
+ * The string is always src:tgt, matching how ErdCanvas orders edge endpoints. */
+export function getCardinalityEnds(
+  cardinality: string | null | undefined,
+): CardinalityEnds {
+  const parts = (cardinality ?? "").split(":");
+  if (parts.length !== 2) return { source: null, target: null };
+  const source = parseEnd(parts[0]);
+  const target = parseEnd(parts[1]);
+  if (source === null || target === null) return { source: null, target: null };
+  return { source, target };
+}
