@@ -12,7 +12,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "dbv-catalog",
-        "responseMode": "lastNode"
+        "responseMode": "lastNode",
+        "responseData": "allEntries"
       }
     },
     {

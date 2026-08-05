@@ -102,30 +102,6 @@ if (smoke && smoke.error) {
 return [{ json: report }];
 """
 
-# (노드 이름, SQL 파일) — 실행 순서 / execution order
-SQL_NODES = [
-    ("01 objects", "01_objects.sql"),
-    ("02 columns", "02_columns.sql"),
-    ("03 key constraints", "03_key_constraints.sql"),
-    ("04 foreign keys", "04_foreign_keys.sql"),
-    ("05 view definitions", "05_view_definitions.sql"),
-    ("06 view deps", "06_view_deps.sql"),
-    ("07 referenced entities", "07_referenced_entities.sql"),
-]
-
-
-
-
-# 단계 워크플로용 SQL 분할 — 1단계 카탈로그(01-05) / 2단계 뷰 의존(06-07)
-
-
-
-
-
-# 한 세트 전략 — 워크플로는 $env가 있으면 그 값(로컬 리허설: compose가 주입),
-# 없으면 리터럴 폴백(실서버 n8n: UI 접근만 가능해 env 주입 불가)을 쓴다.
-# one set serves both: local compose injects $env; production falls back to literals
-
 # 정상적으로 0행일 수 있는 쿼리 노드 — n8n은 출력 0건이면 체인을 멈추므로
 # alwaysOutputData로 빈 아이템을 흘려보낸다 (FK 없는 레거시 DB가 이 프로젝트의 전제)
 # these queries can legitimately return zero rows; without alwaysOutputData n8n halts the chain
@@ -133,10 +109,6 @@ EMPTYABLE_SQL_NODES = {
     "recon 04 cross database refs",  # 크로스 DB 참조 없음이 정상 / no cross-db refs is normal
     "Run query",                     # 빈 결과가 정상인 조회 다수 / many queries legitimately return none
 }
-
-
-
-
 
 
 def _node(name: str, node_type: str, position: list[int], parameters: dict,
@@ -152,16 +124,12 @@ def _node(name: str, node_type: str, position: list[int], parameters: dict,
     return node
 
 
-
-
 def _chain(nodes: list[dict]) -> dict:
     order = [n["name"] for n in nodes]
     return {
         src: {"main": [[{"node": dst, "type": "main", "index": 0}]]}
         for src, dst in zip(order, order[1:])
     }
-
-
 
 
 # kind별 파라미터 치환 — 정수만 통과시켜 SQL 조립 경로를 닫는다 (W2와 동일 원칙)
@@ -205,6 +173,9 @@ def build_catalog_query_workflow() -> dict:
                 "httpMethod": "POST", "path": "dbv-catalog",
                 # 동기 응답 — 백엔드가 결과를 받아 다음 쿼리를 결정한다 / rows are the response
                 "responseMode": "lastNode",
+                # ★ 기본값은 "첫 항목만"이다 — 지정하지 않으면 쿼리 결과가 1행으로 잘린다
+                # n8n defaults to the first entry only; every row must come back
+                "responseData": "allEntries",
             }, type_version=2),
             _node("Build query", "n8n-nodes-base.code", [220, 0],
                   {"jsCode": build_js}, type_version=2),
@@ -236,6 +207,8 @@ def build_query_executor_workflow() -> dict:
             "httpMethod": "POST", "path": "dbv-query",
             # 동기 응답 — 쿼리 결과가 HTTP 응답이 된다 / last node's output is the response
             "responseMode": "lastNode",
+            # ★ 기본값 "첫 항목만"이면 미리보기·조인 프리뷰가 1행으로 잘린다
+            "responseData": "allEntries",
         }, type_version=2),
         _node("Build query", "n8n-nodes-base.code", [220, 0],
               {"jsCode": BUILD_QUERY_JS}, type_version=2),

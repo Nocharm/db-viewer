@@ -45,6 +45,9 @@ def test_executors_are_short_and_stateless():
         trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
         # 결과가 곧 HTTP 응답 — 백엔드가 받아서 다음 쿼리를 정한다
         assert trigger["parameters"]["responseMode"] == "lastNode", path.name
+        # n8n 기본값은 "첫 항목만" — 지정하지 않으면 결과가 1행으로 잘린다(실서버에서
+        # 테이블 11개·컬럼 1개만 적재된 사고의 원인). 전 행 반환을 계약으로 고정한다.
+        assert trigger["parameters"]["responseData"] == "allEntries", path.name
         mssql = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.microsoftSql")
         # SQL은 Code 노드 산출물만 — 외부 문자열을 직접 실행하지 않는다
         assert mssql["parameters"]["query"] == "={{ $json.query }}", path.name
