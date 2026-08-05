@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     # Environment: n8n webhook 베이스 URL — 버튼 수집(W1a/b)과 live 검증·미리보기(W2) 공용
     # (예: http://182.199.63.71:5678/webhook). 비우면 해당 기능이 비활성.
     n8n_webhook_base: str = ""
-    # Tuning: W2 쿼리 대기 상한(초) — 대형 테이블 containment는 수십 초 가능
+    # Tuning: n8n 쿼리 응답 대기 상한(초) — W1 수집 쿼리·W2 검증 쿼리 공용
     n8n_query_timeout: int = 120
 
     # Environment: 사내 LLM OpenAI 호환 베이스 URL (예: http://<llm-host>:11434/v1).
@@ -95,8 +95,6 @@ class Settings(BaseSettings):
     collect_catalog_chunk_size: int = 300
     # W1b 호출당 뷰 수 — DMV 커서 배치 크기, 커지면 소스 DB 점유 시간 증가 / views per deps call
     collect_deps_chunk_size: int = 100
-    # 청크 하나의 ingest 콜백 대기 상한(초) / per-chunk callback wait cap
-    collect_chunk_timeout: int = 600
 
     # Tuning: T3 탐색 스캔 (계획 §4) / exploratory scan tuning
     scan_max_concurrent: int = 2

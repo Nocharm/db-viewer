@@ -89,152 +89,136 @@ def test_jobs_list_recent_first(cclient):
     assert [items[0]["job_id"], items[1]["job_id"]] == [second, first]
 
 
-def test_n8n_runner_pages_catalog_windows(migrated_engine):
-    """카탈로그도 객체 창 단위로 반복 호출 — 총 청크 수는 n8n이 알려준다."""
-    import json as jsonlib
-    from datetime import UTC, datetime
+def _fake_query_runner(migrated_engine, rows_by_kind, chunk_size=2, deps_size=2):
+    """W1 응답을 kind별로 대신 주는 러너 — HTTP 경계만 대체 / stubs only the HTTP boundary."""
+    from app.adapters.collect_runner import N8nCollectRunner
 
-    from app.adapters.collect_runner import N8nWebhookRunner
-    from app.models import CollectJob
+    calls: list[dict] = []
+    runner = N8nCollectRunner("http://n8n/webhook", sessionmaker(bind=migrated_engine),
+                              catalog_chunk_size=chunk_size, deps_chunk_size=deps_size)
 
-    session_factory = sessionmaker(bind=migrated_engine)
-    now = datetime.now(UTC)
-    with session_factory() as db:
-        job = CollectJob(mode="step", stage="catalog_running", triggered_by="test",
+    def fake_query(kind: str, params: dict | None = None) -> list[dict]:
+        calls.append({"kind": kind, **(params or {})})
+        value = rows_by_kind.get(kind, [])
+        return value(params or {}) if callable(value) else value
+
+    runner._query = fake_query
+    return runner, calls
+
+
+def test_n8n_runner_drives_the_cascade_per_object_page(migrated_engine):
+    """n8n은 단문 쿼리만 — 객체 페이지마다 그 페이지 id로 컬럼·키·뷰정의를 따로 부른다."""
+    objects = [
+        {"object_id": 10, "schema": "dbo", "name": "HR_EMP", "type": "table", "row_count": 5},
+        {"object_id": 11, "schema": "dbo", "name": "HR_DEPT", "type": "table", "row_count": 2},
+        {"object_id": 12, "schema": "dbo", "name": "V_EMP", "type": "view", "row_count": None},
+    ]
+    columns = {
+        10: [{"object_id": 10, "name": "EMP_NO", "ordinal": 1, "data_type": "int",
+              "max_length": 4, "is_nullable": False, "is_computed": False}],
+        11: [{"object_id": 11, "name": "DEPT_CD", "ordinal": 1, "data_type": "varchar",
+              "max_length": 10, "is_nullable": False, "is_computed": False}],
+        12: [{"object_id": 12, "name": "EMP_NO", "ordinal": 1, "data_type": "int",
+              "max_length": 4, "is_nullable": True, "is_computed": False}],
+    }
+    rows = {
+        "totals": [{"object_total": 3, "view_total": 1}],
+        "objects": lambda p: objects[p["offset"]: p["offset"] + p["limit"]],
+        "columns": lambda p: [c for oid in p["object_ids"] for c in columns[oid]],
+        "key_constraints": lambda p: (
+            [{"name": "PK_HR_EMP", "type": "pk", "object_id": 10, "column_name": "EMP_NO"}]
+            if 10 in p["object_ids"] else []),
+        "foreign_keys": [],
+        "view_definitions": lambda p: [{"object_id": oid, "definition": "SELECT 1"}
+                                       for oid in p["object_ids"]],
+    }
+    runner, calls = _fake_query_runner(migrated_engine, rows, chunk_size=2)
+    with sessionmaker(bind=migrated_engine)() as db:
+        from datetime import UTC, datetime
+
+        from app.models import CollectJob
+        now = datetime.now(UTC)
+        job = CollectJob(mode="step", stage="catalog_running", triggered_by="t",
                          created_at=now, updated_at=now)
         db.add(job)
         db.commit()
         job_id = job.id
 
-    calls: list[dict] = []
-    runner = N8nWebhookRunner("http://n8n/webhook", session_factory,
-                              catalog_chunk_size=300, chunk_timeout=5)
-    chunk_total = 3
-
-    def fake_post(path: str, body: dict) -> None:
-        calls.append(body)
-        index = len(calls)
-        with session_factory() as db:
-            j = db.get(CollectJob, job_id)
-            j.counts = jsonlib.dumps({"catalog_chunks_done": index,
-                                      "catalog_chunks_total": chunk_total})
-            if index == chunk_total:  # 마지막 창에서 ingest가 단계 완료로 전환
-                j.stage = "catalog_done"
-            j.updated_at = datetime.now(UTC)
-            db.commit()
-
-    runner._post = fake_post
     runner.run_catalog(job_id)
 
-    assert [c["offset"] for c in calls] == [0, 300, 600]
-    assert all(c["limit"] == 300 and c["collect_job_id"] == job_id for c in calls)
+    # 페이지 1은 id 10·11로, 페이지 2는 id 12로 각각 별도 쿼리 (캐스케이드가 서비스에 있다)
+    # 페이지1(테이블만)은 뷰 정의 쿼리를 아예 부르지 않는다 / no views on page 1 → no call
+    assert [c["kind"] for c in calls] == [
+        "totals",
+        "objects", "columns", "key_constraints",
+        "objects", "columns", "key_constraints", "foreign_keys", "view_definitions",
+    ]
+    assert [c["object_ids"] for c in calls if c["kind"] == "columns"] == [[10, 11], [12]]
+    # 뷰 정의는 그 페이지의 뷰에만 / view defs only for views on that page
+    assert [c["object_ids"] for c in calls if c["kind"] == "view_definitions"] == [[12]]
+
+    import sqlalchemy as sa
+
+    from app.models import Base
+    with migrated_engine.connect() as conn:
+        counted = {name: conn.execute(
+            sa.select(sa.func.count()).select_from(Base.metadata.tables[name])).scalar()
+            for name in ("objects", "columns")}
+    assert counted == {"objects": 3, "columns": 3}
+    with sessionmaker(bind=migrated_engine)() as db:
+        from app.models import CollectJob
+        assert db.get(CollectJob, job_id).stage == "catalog_done"
 
 
-def test_n8n_runner_single_catalog_chunk_stops_immediately(migrated_engine):
-    """소규모 DB — 첫 콜백이 catalog_done이면 추가 호출 없음."""
+def test_n8n_runner_batches_view_deps_by_view_ids(migrated_engine):
+    """뷰 의존도 배치 id 목록으로 — DMV 커서 크기를 서비스가 통제한다."""
     from datetime import UTC, datetime
 
-    from app.adapters.collect_runner import N8nWebhookRunner
-    from app.models import CollectJob
-
-    session_factory = sessionmaker(bind=migrated_engine)
-    now = datetime.now(UTC)
-    with session_factory() as db:
-        job = CollectJob(mode="step", stage="catalog_running", triggered_by="test",
-                         created_at=now, updated_at=now)
-        db.add(job)
-        db.commit()
-        job_id = job.id
-
-    calls: list[dict] = []
-    runner = N8nWebhookRunner("http://n8n/webhook", session_factory, chunk_timeout=5)
-
-    def fake_post(path: str, body: dict) -> None:
-        calls.append(body)
-        with session_factory() as db:
-            j = db.get(CollectJob, job_id)
-            j.stage = "catalog_done"
-            j.updated_at = datetime.now(UTC)
-            db.commit()
-
-    runner._post = fake_post
-    runner.run_catalog(job_id)
-    assert len(calls) == 1
-
-
-def test_n8n_runner_pages_view_deps_and_waits_callbacks(migrated_engine):
-    """뷰 N개 단위 분할 호출 — 청크 콜백 확인 후 다음 청크 진행 / paged webhook calls."""
-    import json as jsonlib
-    from datetime import UTC, datetime
-
-    from app.adapters.collect_runner import N8nWebhookRunner
     from app.models import CatalogObject, CollectJob, Snapshot
 
-    session_factory = sessionmaker(bind=migrated_engine)
+    factory = sessionmaker(bind=migrated_engine)
     now = datetime.now(UTC)
-    with session_factory() as db:
-        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
-        db.add(snapshot)
+    with factory() as db:
+        snap = Snapshot(collected_at=now, source_db="T", status="collecting")
+        db.add(snap)
         db.flush()
-        for i in range(5):
-            db.add(CatalogObject(snapshot_id=snapshot.id, schema="dbo",
-                                 name=f"V_{i}", type="view", object_id=i + 1))
-        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
-                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
+        for oid in (21, 22, 23):
+            db.add(CatalogObject(snapshot_id=snap.id, schema="dbo", name=f"V{oid}",
+                                 type="view", object_id=oid))
+        job = CollectJob(mode="step", stage="deps_running", triggered_by="t",
+                         created_at=now, updated_at=now, snapshot_id=snap.id)
         db.add(job)
         db.commit()
-        snapshot_id, job_id = snapshot.id, job.id
+        snapshot_id, job_id = snap.id, job.id
 
-    calls: list[dict] = []
-    runner = N8nWebhookRunner("http://n8n/webhook", session_factory,
-                              deps_chunk_size=2, chunk_timeout=5)
-
-    def fake_post(path: str, body: dict) -> None:  # ingest 콜백까지 즉시 시뮬레이션
-        calls.append(body)
-        with session_factory() as db:
-            j = db.get(CollectJob, job_id)
-            j.counts = jsonlib.dumps({
-                "deps_chunks_done": body["chunk_index"],
-                "deps_chunks_total": body["chunk_total"],
-            })
-            if body["chunk_index"] == body["chunk_total"]:
-                j.stage = "ready"
-            j.updated_at = datetime.now(UTC)
-            db.commit()
-
-    runner._post = fake_post  # HTTP 경계만 목킹 / mock only the HTTP boundary
+    runner, calls = _fake_query_runner(
+        migrated_engine, {"view_refs": [], "view_deps": []}, deps_size=2)
     runner.run_view_deps(job_id, snapshot_id)
 
-    assert [c["offset"] for c in calls] == [0, 2, 4]  # ceil(5/2) = 3청크
-    assert [c["chunk_index"] for c in calls] == [1, 2, 3]
-    assert all(c["chunk_total"] == 3 and c["limit"] == 2 for c in calls)
+    assert [c["object_ids"] for c in calls if c["kind"] == "view_refs"] == [[21, 22], [23]]
+    assert [c["kind"] for c in calls] == [
+        "view_refs", "view_deps", "view_refs", "view_deps"]
 
 
-def test_n8n_runner_raises_when_chunk_never_completes(migrated_engine):
-    from datetime import UTC, datetime
+def test_n8n_runner_raises_after_query_retries(migrated_engine, monkeypatch):
+    from urllib.error import URLError
 
     import pytest as _pytest
 
     from app.adapters import collect_runner as cr
-    from app.models import CollectJob, Snapshot
 
-    session_factory = sessionmaker(bind=migrated_engine)
-    now = datetime.now(UTC)
-    with session_factory() as db:
-        snapshot = Snapshot(collected_at=now, source_db="T", status="collecting")
-        db.add(snapshot)
-        db.flush()
-        job = CollectJob(mode="step", stage="deps_running", triggered_by="test",
-                         created_at=now, updated_at=now, snapshot_id=snapshot.id)
-        db.add(job)
-        db.commit()
-        snapshot_id, job_id = snapshot.id, job.id
+    attempts = []
 
-    runner = cr.N8nWebhookRunner("http://n8n/webhook", session_factory,
-                                 deps_chunk_size=10, chunk_timeout=0)  # 즉시 만료
-    runner._post = lambda path, body: None  # 콜백이 오지 않는 상황
-    with _pytest.raises(RuntimeError, match="did not complete"):
-        runner.run_view_deps(job_id, snapshot_id)
+    def failing_urlopen(request, timeout=None):
+        attempts.append(1)
+        raise URLError("connection refused")
+
+    # 모듈 리로드는 다른 테스트의 클래스 동일성을 깨뜨린다 — monkeypatch로 국한
+    monkeypatch.setattr(cr.urllib.request, "urlopen", failing_urlopen)
+    runner = cr.N8nCollectRunner("http://n8n/webhook", sessionmaker(bind=migrated_engine))
+    with _pytest.raises(RuntimeError, match="catalog query failed"):
+        runner._query("totals")
+    assert len(attempts) == 2  # 1회 재시도 후 마지막 오류 / one retry then raise
 
 
 def test_runner_selection_routes_on_webhook_base_not_source_mode(tmp_path):
@@ -242,11 +226,11 @@ def test_runner_selection_routes_on_webhook_base_not_source_mode(tmp_path):
     import pytest as _pytest
 
     from app.adapters import create_collect_runner
-    from app.adapters.collect_runner import N8nWebhookRunner
+    from app.adapters.collect_runner import N8nCollectRunner
     from app.config import Settings
 
     connected = Settings(source_mode="fixture", n8n_webhook_base="http://n8n/webhook")
-    assert isinstance(create_collect_runner(connected, None), N8nWebhookRunner)
+    assert isinstance(create_collect_runner(connected, None), N8nCollectRunner)
 
     offline = Settings(source_mode="fixture", n8n_webhook_base="", fixture_dir=str(tmp_path))
     assert isinstance(create_collect_runner(offline, None), FixtureCollectRunner)

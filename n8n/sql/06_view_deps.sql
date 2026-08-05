@@ -1,10 +1,6 @@
 -- 객체 수준 뷰 의존성 / object-level view dependencies → view_deps.json deps[] (1차)
 -- referenced_id IS NULL = 미해석 참조 — 버리지 말고 플래그로 보존해 Phase 2로 이관
 -- NULL referenced_id = unresolved ref; keep it flagged, defer to Phase 2
--- 뷰 윈도우 분할 — 생성기가 {{VIEW_OFFSET}}/{{VIEW_LIMIT}}를 치환 (W1b는 webhook 값, W1은 전체)
--- windowed by view slice; the generator substitutes the placeholders
-DECLARE @v_offset int = {{VIEW_OFFSET}};
-DECLARE @v_limit int = {{VIEW_LIMIT}};
 SELECT d.referencing_id AS view_object_id,
        d.referenced_id AS referenced_object_id,
        d.referenced_database_name AS referenced_database,
@@ -13,7 +9,4 @@ SELECT d.referencing_id AS view_object_id,
        CASE WHEN d.referenced_id IS NULL THEN 0 ELSE 1 END AS is_resolved
 FROM sys.sql_expression_dependencies d
 JOIN sys.objects o ON d.referencing_id = o.object_id AND o.type = 'V'
-WHERE d.referencing_id IN (
-    SELECT object_id FROM sys.views ORDER BY object_id
-    OFFSET @v_offset ROWS FETCH NEXT @v_limit ROWS ONLY
-);
+WHERE d.referencing_id IN ({{ID_LIST}});

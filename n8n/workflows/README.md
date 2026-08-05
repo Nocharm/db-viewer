@@ -1,35 +1,49 @@
-# n8n 워크플로 — 한 세트로 로컬·실서버 겸용
+# n8n 워크플로 — 단문 쿼리 실행기
 
-이 폴더의 JSON은 `python tools/build_n8n_workflow.py` 가 생성한다(단일 소스는
-`n8n/sql/*.sql` + 생성기). **손으로 고치지 말 것** — 테스트
-(`backend/tests/test_n8n_workflow.py`)가 커밋본과 생성 결과의 일치를 강제한다.
+**원칙: n8n 워크플로는 짧게 유지한다.** 실행기는 `webhook → Code(고정 SQL 선택) → MSSQL`
+3노드가 전부이고, 캐스케이드(객체 목록 → 그 객체들의 컬럼 → 키 → 뷰 정의 …)는
+**백엔드가 주도한다**(`backend/app/adapters/collect_runner.py`). n8n은 상태도 분기도 갖지 않는다.
 
-값은 `$env.DB_VIEWER_* ?? '폴백'` 표현식이라 환경에 따라 자동 분기된다:
+```
+백엔드                                   n8n (W1)              MSSQL
+  │  kind=totals                          │                      │
+  ├─────────────────────────────────────► │ ── SELECT COUNT ───► │
+  │  kind=objects (offset/limit)          │                      │
+  ├─────────────────────────────────────► │ ── 페이지 1 ───────► │
+  │  kind=columns (object_ids=[…])        │                      │
+  ├─────────────────────────────────────► │ ── 그 id들만 ─────► │
+  │  … 페이지마다 반복, 적재는 백엔드에서
+```
 
-| 환경 | 동작 |
-|---|---|
-| 로컬 리허설 | compose가 `$env.DB_VIEWER_*` 주입 → env 값 사용 (`docker-compose.local.yml`) |
-| 실서버 (기존 n8n, UI 접근만) | env 없음 → 리터럴 폴백 사용, **키만 UI에서 교체** |
+이 구조의 이점: 소스 DB 점유·n8n 메모리·응답 크기가 **페이지 하나 크기로 묶인다**.
+페이지 크기는 `.env`의 `COLLECT_CATALOG_CHUNK_SIZE`(객체) / `COLLECT_DEPS_CHUNK_SIZE`(뷰).
 
-## 실서버 임포트 절차 (브라우저만 사용)
+JSON은 `python tools/build_n8n_workflow.py`가 생성한다(단일 소스는 `n8n/sql/*.sql`).
+**손으로 고치지 말 것** — 테스트가 커밋본과 생성 결과의 일치를 강제한다.
 
-파일마다: n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow →
-우상단 ⋯ → **Import from File**:
+## 임포트 절차 (브라우저만 사용)
 
-| 파일 | 임포트 후 할 일 | Activate |
-|---|---|---|
-| `w0_recon_queries.json` | credential 연결 | ❌ (수동 실행 1회용 — 정찰 끝나면 삭제 가능) |
-| `w1a_collect_catalog.json` | credential 연결 + **키 교체** | ✅ |
-| `w1b_collect_viewdeps.json` | credential 연결 + **키 교체** | ✅ |
-| `w2_query_executor.json` | credential 연결 | ✅ |
-| `w1_catalog_snapshot.json` | (선택 — 주기 자동수집 쓸 때만) credential 연결 + **키 교체 2곳** | 쓸 때만 ✅ |
+n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 ⋯ → **Import from File**:
 
-- **credential 연결**: MSSQL 노드(⚠️ 표시) 더블클릭 → Credential 드롭다운에서
-  등록된 **읽기 전용** MSSQL 계정 선택. 워크플로마다 전체 MSSQL 노드에 반복.
-- **키 교체**: `POST catalog` / `POST view-deps` 노드 더블클릭 → Headers의
-  `X-API-Key` 값에서 `PASTE-INGEST-API-KEY-HERE` 부분을 서버 `.env`의
-  `INGEST_API_KEY` 값으로 교체 (표현식 전체를 지우고 키만 남겨도 된다).
+| 파일 | 역할 | 임포트 후 할 일 | Activate |
+|---|---|---|---|
+| `w1_catalog_query.json` | 수집 쿼리 실행기 (백엔드가 호출) | credential 연결 | ✅ |
+| `w2_query_executor.json` | live 검증·미리보기 실행기 | credential 연결 | ✅ |
+| `w0_recon_queries.json` | 배포 전 진단 1회용 (사람이 UI에서 실행) | credential 연결 | ❌ |
+
+- **credential 연결**: MSSQL 노드(⚠️ 표시) 더블클릭 → Credential 드롭다운에서 등록된
+  **읽기 전용** 계정 선택. Request Timeout은 300000(5분) 권장.
 - **Activate**: 우상단 토글 — webhook은 활성일 때만 프로덕션 URL이 열린다.
+- **편집할 값 없음** — 환경변수도 API 키도 참조하지 않는다. n8n이 백엔드를 호출하지 않고
+  백엔드가 n8n을 호출하기 때문(수집 결과는 HTTP 응답으로 돌아온다).
 
-source_db 라벨은 폴백 `'MSSQL'` — 실 DB명으로 바꾸려면 w1a/w1의 Code 노드에서
-`source_db:` 값을 수정한다 (표시용 라벨일 뿐 동작 무관).
+## 워크플로별 계약
+
+- **W1 `dbv-catalog`** — body `{kind, offset/limit 또는 object_ids}`. kind는 `totals`,
+  `objects`, `columns`, `key_constraints`, `foreign_keys`, `view_definitions`,
+  `view_deps`, `view_refs`. 파라미터는 **정수만** 보간되고 SQL 문자열은 받지 않는다.
+- **W2 `dbv-query`** — body `{kind, 식별자…}`. kind는 `containment`, `join_preview`,
+  `table_preview`. 값 데이터에 닿으므로 `SOURCE_MODE=live` 게이트 뒤에서만 쓰인다
+  (W1은 메타데이터 전용이라 게이트와 무관 — 두 실행기를 분리해 둔 이유).
+- **W0** — 정찰 6종 + 리포트. 유일한 다중 노드 워크플로이며 백엔드 경로가 없다
+  (배포 전 1회 진단용, 끝나면 삭제 가능).

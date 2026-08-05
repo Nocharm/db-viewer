@@ -1,4 +1,8 @@
-"""W1 workflow JSON consistency tests. / n8n W1 워크플로 정합성 테스트."""
+"""n8n 워크플로 JSON 정합성 테스트 / workflow JSON consistency tests.
+
+핵심 계약: n8n은 **단문 쿼리 실행기**다 — 워크플로는 짧게 유지하고, 캐스케이드는
+백엔드(N8nCollectRunner)가 주도한다. 정찰(W0)만 사람이 UI에서 한 번 돌리는 예외다.
+"""
 
 import json
 import re
@@ -10,133 +14,115 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import build_n8n_workflow  # noqa: E402
 
-WORKFLOW_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_snapshot.json"
 RECON_PATH = REPO_ROOT / "n8n" / "workflows" / "w0_recon_queries.json"
-W1A_PATH = REPO_ROOT / "n8n" / "workflows" / "w1a_collect_catalog.json"
-W1B_PATH = REPO_ROOT / "n8n" / "workflows" / "w1b_collect_viewdeps.json"
+W1_PATH = REPO_ROOT / "n8n" / "workflows" / "w1_catalog_query.json"
 W2_PATH = REPO_ROOT / "n8n" / "workflows" / "w2_query_executor.json"
+EXECUTORS = (W1_PATH, W2_PATH)
 
 
-def test_committed_workflow_matches_regeneration():
+def _load(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def test_committed_workflows_match_regeneration():
     # SQL 파일이 단일 소스 — 커밋본과 재생성본이 다르면 드리프트 / drift guard
-    committed = json.loads(WORKFLOW_PATH.read_text())
-    assert committed == build_n8n_workflow.build_workflow()
+    assert _load(RECON_PATH) == build_n8n_workflow.build_recon_workflow()
+    assert _load(W1_PATH) == build_n8n_workflow.build_catalog_query_workflow()
+    assert _load(W2_PATH) == build_n8n_workflow.build_query_executor_workflow()
 
 
-def test_committed_recon_workflow_matches_regeneration():
-    committed = json.loads(RECON_PATH.read_text())
-    assert committed == build_n8n_workflow.build_recon_workflow()
+def test_workflow_files_are_exactly_the_generated_set():
+    """생성기가 쓰는 파일 외에 워크플로 JSON이 남아 있으면 안 된다 (구 캐스케이드 잔재 방지)."""
+    on_disk = {p.name for p in (REPO_ROOT / "n8n" / "workflows").glob("*.json")}
+    assert on_disk == {RECON_PATH.name, W1_PATH.name, W2_PATH.name}
 
 
-def test_committed_collect_workflows_match_regeneration():
-    assert json.loads(W1A_PATH.read_text()) == build_n8n_workflow.build_collect_catalog_workflow()
-    assert json.loads(W1B_PATH.read_text()) == build_n8n_workflow.build_collect_viewdeps_workflow()
-
-
-def test_env_refs_all_have_literal_fallbacks():
-    """한 세트 전략 — $env 참조는 전부 `?? '폴백'` 형태 (실서버는 env 주입 불가)."""
-    for path in (WORKFLOW_PATH, RECON_PATH, W1A_PATH, W1B_PATH, W2_PATH):
-        text = path.read_text()
-        for m in re.finditer(r"\$env\.\w+(.{0,4})", text):
-            assert m.group(1).startswith(" ?? "), f"{path.name}: {m.group(0)}"
-
-
-def test_collect_workflows_echo_job_id_and_split_sql():
-    """단계 워크플로 계약 — webhook 트리거, collect_job_id 반향, SQL 분할이 W1 전체를 덮는다."""
-    w1a = json.loads(W1A_PATH.read_text())
-    w1b = json.loads(W1B_PATH.read_text())
-    for wf in (w1a, w1b):
+def test_executors_are_short_and_stateless():
+    """단문 실행기 계약 — webhook → Code → MSSQL 3노드, 동기 응답, 체인 하나."""
+    for path in EXECUTORS:
+        wf = _load(path)
+        assert len(wf["nodes"]) == 3, path.name
         trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
-        assert trigger["parameters"]["httpMethod"] == "POST"
-        code = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.code")
-        assert "collect_job_id" in code["parameters"]["jsCode"]
-        for ref in re.findall(r"\$\('([^']+)'\)", code["parameters"]["jsCode"]):
-            assert ref in {n["name"] for n in wf["nodes"]}
-    # 분할 SQL 합집합 == W1 전체 / the two steps cover exactly the W1 query set
-    split = [n for n, _ in build_n8n_workflow.CATALOG_SQL_NODES] + [
-        n for n, _ in build_n8n_workflow.VIEW_DEPS_SQL_NODES
-    ]
-    assert split == [n for n, _ in build_n8n_workflow.SQL_NODES]
-    # 2단계는 snapshot_id를 webhook body에서 받는다 / step 2 reads snapshot_id from the trigger
-    w1b_code = next(n for n in w1b["nodes"] if n["type"] == "n8n-nodes-base.code")
-    assert "trigger.snapshot_id" in w1b_code["parameters"]["jsCode"]
+        # 결과가 곧 HTTP 응답 — 백엔드가 받아서 다음 쿼리를 정한다
+        assert trigger["parameters"]["responseMode"] == "lastNode", path.name
+        mssql = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.microsoftSql")
+        # SQL은 Code 노드 산출물만 — 외부 문자열을 직접 실행하지 않는다
+        assert mssql["parameters"]["query"] == "={{ $json.query }}", path.name
 
 
-def test_committed_query_executor_matches_regeneration():
-    assert json.loads(W2_PATH.read_text()) == build_n8n_workflow.build_query_executor_workflow()
+def test_executors_need_no_env_or_secrets():
+    """실서버 n8n은 env 주입이 불가하고 임포트 후 편집도 없어야 한다."""
+    for path in EXECUTORS:
+        text = path.read_text()
+        assert "$env." not in text, path.name
+        assert "INGEST" not in text and "API-KEY" not in text, path.name
+
+
+def test_catalog_executor_covers_every_collect_query():
+    """W1 계약 — kind별 고정 SQL이 파일과 일치하고, 정수 외 파라미터는 통과 못 한다."""
+    wf = _load(W1_PATH)
+    trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
+    assert trigger["parameters"]["path"] == "dbv-catalog"
+    js = next(n for n in wf["nodes"]
+              if n["type"] == "n8n-nodes-base.code")["parameters"]["jsCode"]
+    marker = "const TEMPLATES = "
+    templates, _ = json.JSONDecoder().raw_decode(js, js.index(marker) + len(marker))
+    for kind, filename in build_n8n_workflow.CATALOG_QUERY_KINDS:
+        assert templates[kind] == (REPO_ROOT / "n8n" / "sql" / filename).read_text()
+    assert "parseInt" in js and "Number.isInteger" in js  # 정수만 보간
+    assert "unknown kind" in js                            # 그 외 kind 거부
+
+
+def test_catalog_runner_kinds_match_the_workflow():
+    """서비스가 부르는 kind와 워크플로 템플릿이 어긋나면 런타임에만 터진다 — 여기서 잡는다."""
+    runner_src = (REPO_ROOT / "backend" / "app" / "adapters" / "collect_runner.py").read_text()
+    called = set(re.findall(r'self\._query\("(\w+)"', runner_src))
+    assert called <= {kind for kind, _ in build_n8n_workflow.CATALOG_QUERY_KINDS}
+    # 파라미터 있는 kind는 모두 id 목록 또는 페이지 창을 쓴다 / every template is bounded
+    for kind, filename in build_n8n_workflow.CATALOG_QUERY_KINDS:
+        sql = (REPO_ROOT / "n8n" / "sql" / filename).read_text()
+        if kind in {"columns", "key_constraints", "view_definitions", "view_deps", "view_refs"}:
+            assert "{{ID_LIST}}" in sql, kind
+        if kind == "objects":
+            assert "{{OFFSET}}" in sql and "{{LIMIT}}" in sql
 
 
 def test_query_executor_contract():
-    """W2 계약 — 동기 응답, 고정 템플릿 3종, 이스케이프, 동적 SQL 미수신."""
-    wf = json.loads(W2_PATH.read_text())
-    trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
-    assert trigger["parameters"]["responseMode"] == "lastNode"  # 쿼리 결과가 곧 응답
-    code = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.code")
-    js = code["parameters"]["jsCode"]
+    """W2 계약 — 고정 템플릿 3종, 이스케이프, 동적 SQL 미수신."""
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"]
+              if n["type"] == "n8n-nodes-base.code")["parameters"]["jsCode"]
     for kind in ("containment", "join_preview", "table_preview"):
         assert kind in js
     assert "']]'" in js or "]]" in js      # 식별자 브래킷 이스케이프
     assert "''" in js                       # 리터럴 이스케이프
     assert "unknown kind" in js             # 그 외 kind 거부
-    mssql = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.microsoftSql")
-    # SQL은 Code 노드 산출물만 — 외부에서 온 문자열을 직접 실행하지 않는다
-    assert mssql["parameters"]["query"] == "={{ $json.query }}"
 
 
 def test_recon_workflow_structure():
-    wf = json.loads(RECON_PATH.read_text())
+    """W0만 다중 노드 — 사람이 UI에서 1회 돌리는 진단이라 백엔드 경로가 없다."""
+    wf = _load(RECON_PATH)
     names = {n["name"] for n in wf["nodes"]}
     for src, conn in wf["connections"].items():
         assert src in names
         for branch in conn["main"]:
             for target in branch:
                 assert target["node"] in names
-    # 6종 쿼리가 파일과 일치 / all six recon queries embed their files
     by_name = {n["name"]: n for n in wf["nodes"]}
     for name, filename in build_n8n_workflow.RECON_SQL_NODES:
         assert by_name[name]["parameters"]["query"] == (
             REPO_ROOT / "n8n" / "sql" / filename
         ).read_text()
-    # 리포트 노드가 6개 노드를 모두 참조 / report references every query node
     report_js = by_name["Recon report"]["parameters"]["jsCode"]
     for name, _ in build_n8n_workflow.RECON_SQL_NODES:
         assert f"$('{name}')" in report_js
 
 
-def test_connections_reference_existing_nodes():
-    wf = json.loads(WORKFLOW_PATH.read_text())
-    names = {n["name"] for n in wf["nodes"]}
-    for src, conn in wf["connections"].items():
-        assert src in names
-        for branch in conn["main"]:
-            for target in branch:
-                assert target["node"] in names
-
-
 def test_code_nodes_reference_existing_nodes():
-    wf = json.loads(WORKFLOW_PATH.read_text())
-    names = {n["name"] for n in wf["nodes"]}
-    for node in wf["nodes"]:
-        if node["type"] == "n8n-nodes-base.code":
-            for ref in re.findall(r"\$\('([^']+)'\)", node["parameters"]["jsCode"]):
-                assert ref in names, f"code node references unknown node: {ref}"
-
-
-def test_sql_nodes_embed_current_sql_files():
-    wf = json.loads(WORKFLOW_PATH.read_text())
-    by_name = {n["name"]: n for n in wf["nodes"]}
-    for name, filename in build_n8n_workflow.SQL_NODES:
-        embedded = by_name[name]["parameters"]["query"]
-        if filename in build_n8n_workflow.WINDOWED_SQL_FILES:
-            # 윈도우 파일은 전체 범위 치환본과 비교 / windowed files embed the full-range variant
-            assert embedded == build_n8n_workflow._read_sql(filename, "0", "1000000")
-        else:
-            assert embedded == (REPO_ROOT / "n8n" / "sql" / filename).read_text()
-
-
-def test_http_nodes_target_ingest_contract():
-    wf = json.loads(WORKFLOW_PATH.read_text())
-    urls = [n["parameters"]["url"] for n in wf["nodes"]
-            if n["type"] == "n8n-nodes-base.httpRequest"]
-    assert any(u.endswith("/api/ingest/catalog") for u in urls)
-    assert any(u.endswith("/api/ingest/view-deps") for u in urls)
+    for path in (RECON_PATH, *EXECUTORS):
+        wf = _load(path)
+        names = {n["name"] for n in wf["nodes"]}
+        for node in wf["nodes"]:
+            if node["type"] == "n8n-nodes-base.code":
+                for ref in re.findall(r"\$\('([^']+)'\)", node["parameters"]["jsCode"]):
+                    assert ref in names, f"{path.name}: unknown node ref {ref}"

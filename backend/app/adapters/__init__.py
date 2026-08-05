@@ -49,14 +49,14 @@ def create_collect_runner(settings: Settings, session_factory) -> "CollectRunner
     [1단계 카탈로그 수집]을 눌러 실 스키마를 적재한다 (docs/connect.md).
     Collection routes on the webhook base, not the query-source mode.
     """
-    from app.adapters.collect_runner import FixtureCollectRunner, N8nWebhookRunner
+    from app.adapters.collect_runner import FixtureCollectRunner, N8nCollectRunner
 
     if settings.n8n_webhook_base:
-        return N8nWebhookRunner(
+        return N8nCollectRunner(
             settings.n8n_webhook_base, session_factory,
             catalog_chunk_size=settings.collect_catalog_chunk_size,
             deps_chunk_size=settings.collect_deps_chunk_size,
-            chunk_timeout=settings.collect_chunk_timeout,
+            query_timeout=settings.n8n_query_timeout,
         )
     if settings.source_mode != "fixture":
         raise RuntimeError("N8N_WEBHOOK_BASE is required outside fixture mode")

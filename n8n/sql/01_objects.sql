@@ -1,9 +1,6 @@
 -- objects: 테이블·뷰 + 행수 / tables & views with row counts
 -- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count
--- 객체 창(window) 분할 — 생성기가 {{OBJ_OFFSET}}/{{OBJ_LIMIT}}를 치환 (W1a는 webhook 값, W1은 전체)
--- windowed by object slice; the generator substitutes the placeholders
-DECLARE @o_offset int = {{OBJ_OFFSET}};
-DECLARE @o_limit int = {{OBJ_LIMIT}};
+-- 페이지 창 — 서비스가 offset/limit을 넘긴다 / the service drives paging
 SELECT o.object_id,
        s.name AS [schema],
        o.name,
@@ -20,5 +17,5 @@ OUTER APPLY (
 WHERE o.type IN ('U', 'V')
   AND o.object_id IN (
     SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')
-    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY
+    ORDER BY object_id OFFSET {{OFFSET}} ROWS FETCH NEXT {{LIMIT}} ROWS ONLY
 );
