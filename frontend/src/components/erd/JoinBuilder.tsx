@@ -48,9 +48,12 @@ function StepRow({
   const { t } = useI18n();
   const [showNumbers, setShowNumbers] = useState(false);
   const level = step.verdict?.level ?? "unknown";
+  // React key와 동일한 안정 식별자 — 인덱스는 제거 후 다른 행을 가리킬 수 있다
+  // same stable identity as the React key — index shifts after a removal
+  const stepKey = `${step.left.columnId}-${step.right.columnId}`;
 
   return (
-    <li className="py-1.5" data-testid={`JoinBuilder-step-${index}`}>
+    <li className="py-1.5" data-testid={`JoinBuilder-step-${stepKey}`}>
       <div className="flex items-center gap-2 font-mono text-xs">
         <span className="truncate">
           {step.left.qname}.{step.left.column}
@@ -64,7 +67,7 @@ function StepRow({
           className="icon-button ml-auto"
           title={t("join.removeStep")}
           onClick={() => onRemoveStep(index)}
-          data-testid={`JoinBuilder-removeStep-${index}`}
+          data-testid={`JoinBuilder-removeStep-${stepKey}`}
         >
           <CloseIcon />
         </button>
@@ -72,7 +75,7 @@ function StepRow({
 
       {step.status === "verifying" && (
         <p className="mt-0.5 text-xs" style={{ color: "var(--muted)" }}
-           data-testid={`JoinBuilder-stepVerifying-${index}`}>
+           data-testid={`JoinBuilder-stepVerifying-${stepKey}`}>
           {t("join.verifying")}
         </p>
       )}
@@ -80,7 +83,7 @@ function StepRow({
       {step.verdict && (
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold" style={{ color: LEVEL_COLOR[level] }}
-                data-testid={`JoinBuilder-stepLevel-${index}`}>
+                data-testid={`JoinBuilder-stepLevel-${stepKey}`}>
             {t(LEVEL_LABEL[level])}
           </span>
           <span style={{ color: "var(--body-text)" }}>{step.verdict.symptom}</span>
@@ -92,7 +95,7 @@ function StepRow({
             <button
               className="btn-secondary !py-0.5 text-xs"
               onClick={() => onSetJoinType(index, "left")}
-              data-testid={`JoinBuilder-applyLeftJoin-${index}`}
+              data-testid={`JoinBuilder-applyLeftJoin-${stepKey}`}
             >
               {t("join.applyLeftJoin")}
             </button>
@@ -101,7 +104,7 @@ function StepRow({
             <button
               className="icon-button"
               onClick={() => setShowNumbers((current) => !current)}
-              data-testid={`JoinBuilder-toggleNumbers-${index}`}
+              data-testid={`JoinBuilder-toggleNumbers-${stepKey}`}
             >
               {showNumbers ? t("join.hideNumbers") : t("join.showNumbers")}
             </button>
@@ -111,19 +114,20 @@ function StepRow({
 
       {showNumbers && step.result && (
         <div className="mt-1 text-xs" style={{ color: "var(--slate)" }}
-             data-testid={`JoinBuilder-numbers-${index}`}>
+             data-testid={`JoinBuilder-numbers-${stepKey}`}>
           <div>
-            containment <b>{(step.result.containment * 100).toFixed(2)}%</b>
+            {t("join.numbersContainment")} <b>{(step.result.containment * 100).toFixed(2)}%</b>
             {" · "}{step.result.cardinality}
-            {" · "}고아 {step.result.orphan_count.toLocaleString()}
-            {" · "}distinct {step.result.src_distinct.toLocaleString()}
+            {" · "}{t("join.numbersOrphan")} {step.result.orphan_count.toLocaleString()}
+            {" · "}{t("join.numbersDistinct")} {step.result.src_distinct.toLocaleString()}
           </div>
           <div>
-            confidence {step.result.confidence ?? "—"} · 관측 {step.result.observations}회 ·{" "}
-            {PATTERN_LABELS[step.result.pattern] ?? step.result.pattern}
+            {t("join.numbersConfidence")} {step.result.confidence ?? "—"}
+            {" · "}{t("join.numbersObserved").replace("{n}", String(step.result.observations))}
+            {" · "}{PATTERN_LABELS[step.result.pattern] ?? step.result.pattern}
           </div>
           <div style={{ color: "var(--muted)" }}>
-            last verified {new Date(step.result.observed_at).toLocaleString()}
+            {t("join.numbersLastVerified")} {new Date(step.result.observed_at).toLocaleString()}
           </div>
         </div>
       )}
@@ -136,11 +140,14 @@ export function JoinBuilder({
 }: Props) {
   const { t } = useI18n();
   // 타입 가드 없이 filter하면 (JoinVerdict|null)[]로 남는다 / narrow with a type predicate
-  const verdicts = draft.steps
-    .map((s) => s.verdict)
-    .filter((v): v is JoinVerdict => v !== null);
-  const worst = getWorstVerdictIndex(verdicts);
-  const overall = worst >= 0 ? verdicts[worst] : null;
+  // worst는 필터된 배열의 인덱스라 draft.steps 인덱스와 어긋난다 — 원본 인덱스를 같이 들고 다닌다
+  // worst indexes the filtered array, not draft.steps — carry the original index through the filter
+  const verdictEntries = draft.steps
+    .map((s, index) => ({ verdict: s.verdict, index }))
+    .filter((e): e is { verdict: JoinVerdict; index: number } => e.verdict !== null);
+  const worst = getWorstVerdictIndex(verdictEntries.map((e) => e.verdict));
+  const overall = worst >= 0 ? verdictEntries[worst].verdict : null;
+  const worstStepIndex = worst >= 0 ? verdictEntries[worst].index : -1;
 
   return (
     <div
@@ -191,7 +198,7 @@ export function JoinBuilder({
                 </span>
                 {draft.steps.length > 1 && overall.level !== "safe" && (
                   <span style={{ color: "var(--slate)" }}>
-                    {" · "}{t("join.weakestLink").replace("{n}", String(worst + 1))}
+                    {" · "}{t("join.weakestLink").replace("{n}", String(worstStepIndex + 1))}
                   </span>
                 )}
               </span>

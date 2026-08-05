@@ -340,6 +340,14 @@ export const MESSAGES = {
   "join.levelCaution": { ko: "주의", en: "Caution" },
   "join.levelDanger": { ko: "위험", en: "Danger" },
   "join.levelUnknown": { ko: "미정", en: "Unknown" },
+  // 수치 패널 chrome 라벨 — symptom/remedy·PATTERN_LABELS(도메인 문구)는 카테고리 라벨과 같은 이유로 제외
+  // chrome labels for the numbers panel — symptom/remedy and PATTERN_LABELS stay out, same reason as category labels
+  "join.numbersContainment": { ko: "containment", en: "containment" },
+  "join.numbersOrphan": { ko: "고아", en: "orphans" },
+  "join.numbersDistinct": { ko: "distinct", en: "distinct" },
+  "join.numbersConfidence": { ko: "confidence", en: "confidence" },
+  "join.numbersObserved": { ko: "관측 {n}회", en: "observed {n} times" },
+  "join.numbersLastVerified": { ko: "last verified", en: "last verified" },
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;
