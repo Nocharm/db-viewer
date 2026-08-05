@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     ai_suggest_max_pairs: int = 40
 
     # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
-    # W1a 전송 청크당 객체 수 — 커지면 POST 크기 증가 / objects per catalog POST chunk
+    # W1a 창당 객체 수 — DB 조회·n8n 아이템·POST 크기를 함께 제한 / objects per catalog window
     collect_catalog_chunk_size: int = 300
     # W1b 호출당 뷰 수 — DMV 커서 배치 크기, 커지면 소스 DB 점유 시간 증가 / views per deps call
     collect_deps_chunk_size: int = 100

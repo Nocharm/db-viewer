@@ -102,12 +102,22 @@ class N8nWebhookRunner:
             pass
 
     def run_catalog(self, job_id: int) -> None:
-        # 카탈로그 조회는 단일 스캔이 소스 DB에 가장 가볍다 — 분할은 전송(n8n 청크 POST)이 담당
-        # a single catalog scan is the lightest on the source DB; n8n chunks the transport
-        self._post("dbv-collect-catalog", {
-            "collect_job_id": job_id,
-            "catalog_chunk_size": self._catalog_chunk_size,
-        })
+        """객체 창 단위로 webhook을 반복 호출 — 창 하나가 끝나야 다음을 쏜다.
+
+        총 청크 수는 n8n이 객체 총계로 계산해 페이로드에 실어 보내므로, 백엔드는
+        첫 청크 콜백에서 그 값을 받아 남은 창을 돈다.
+        """
+        offset, index = 0, 1
+        while True:
+            self._post("dbv-collect-catalog", {
+                "collect_job_id": job_id,
+                "offset": offset, "limit": self._catalog_chunk_size,
+            })
+            chunk_total = self._wait_for_chunk(job_id, "catalog", index)
+            if chunk_total is None or index >= chunk_total:
+                return
+            offset += self._catalog_chunk_size
+            index += 1
 
     def _count_views(self, snapshot_id: int) -> int:
         from app.models import CatalogObject
@@ -119,8 +129,14 @@ class N8nWebhookRunner:
                        CatalogObject.type == "view")
             ).scalar_one()
 
-    def _wait_for_chunk(self, job_id: int, expected_done: int) -> None:
-        """청크 하나의 ingest 콜백 대기 — 실패·시간 초과는 오류로 올린다."""
+    # 단계별 종료 상태 — 이 단계에 도달하면 더 기다릴 청크가 없다 / terminal stage per phase
+    _DONE_STAGE = {"catalog": "catalog_done", "deps": "ready"}
+
+    def _wait_for_chunk(self, job_id: int, phase: str, expected_done: int) -> int | None:
+        """청크 하나의 ingest 콜백 대기 → 총 청크 수 반환(단계 완료면 None).
+
+        실패·시간 초과는 오류로 올린다 / raises on failure or timeout.
+        """
         from app.models import CollectJob
 
         deadline = time.monotonic() + self._chunk_timeout
@@ -128,15 +144,15 @@ class N8nWebhookRunner:
             with self._session_factory() as db:
                 job = db.get(CollectJob, job_id)
                 if job is None or job.stage == "failed":
-                    raise RuntimeError(f"collect job {job_id} failed during view-deps chunks")
-                if job.stage == "ready":
-                    return
+                    raise RuntimeError(f"collect job {job_id} failed during {phase} chunks")
+                if job.stage == self._DONE_STAGE[phase]:
+                    return None
                 counts = json.loads(job.counts) if job.counts else {}
-                if counts.get("deps_chunks_done", 0) >= expected_done:
-                    return
+                if counts.get(f"{phase}_chunks_done", 0) >= expected_done:
+                    return counts.get(f"{phase}_chunks_total")
             time.sleep(CHUNK_POLL_INTERVAL)
         raise RuntimeError(
-            f"view-deps chunk {expected_done} did not complete within {self._chunk_timeout}s"
+            f"{phase} chunk {expected_done} did not complete within {self._chunk_timeout}s"
         )
 
     def run_view_deps(self, job_id: int, snapshot_id: int) -> None:
@@ -149,4 +165,4 @@ class N8nWebhookRunner:
                 "limit": self._deps_chunk_size,
                 "chunk_index": index + 1, "chunk_total": chunk_total,
             })
-            self._wait_for_chunk(job_id, index + 1)
+            self._wait_for_chunk(job_id, "deps", index + 1)

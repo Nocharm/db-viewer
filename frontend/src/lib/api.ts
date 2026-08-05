@@ -274,6 +274,10 @@ export function triggerCollectFull(): Promise<CollectJob> {
   return postJson("/api/collect/full", {});
 }
 
+export function cancelCollectJob(jobId: number): Promise<CollectJob> {
+  return postJson(`/api/collect/jobs/${jobId}/cancel`, {});
+}
+
 export function fetchCollectJobs(): Promise<{ items: CollectJob[] }> {
   return getJson("/api/collect/jobs");
 }

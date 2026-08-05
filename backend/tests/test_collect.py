@@ -89,6 +89,79 @@ def test_jobs_list_recent_first(cclient):
     assert [items[0]["job_id"], items[1]["job_id"]] == [second, first]
 
 
+def test_n8n_runner_pages_catalog_windows(migrated_engine):
+    """카탈로그도 객체 창 단위로 반복 호출 — 총 청크 수는 n8n이 알려준다."""
+    import json as jsonlib
+    from datetime import UTC, datetime
+
+    from app.adapters.collect_runner import N8nWebhookRunner
+    from app.models import CollectJob
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        job = CollectJob(mode="step", stage="catalog_running", triggered_by="test",
+                         created_at=now, updated_at=now)
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    calls: list[dict] = []
+    runner = N8nWebhookRunner("http://n8n/webhook", session_factory,
+                              catalog_chunk_size=300, chunk_timeout=5)
+    chunk_total = 3
+
+    def fake_post(path: str, body: dict) -> None:
+        calls.append(body)
+        index = len(calls)
+        with session_factory() as db:
+            j = db.get(CollectJob, job_id)
+            j.counts = jsonlib.dumps({"catalog_chunks_done": index,
+                                      "catalog_chunks_total": chunk_total})
+            if index == chunk_total:  # 마지막 창에서 ingest가 단계 완료로 전환
+                j.stage = "catalog_done"
+            j.updated_at = datetime.now(UTC)
+            db.commit()
+
+    runner._post = fake_post
+    runner.run_catalog(job_id)
+
+    assert [c["offset"] for c in calls] == [0, 300, 600]
+    assert all(c["limit"] == 300 and c["collect_job_id"] == job_id for c in calls)
+
+
+def test_n8n_runner_single_catalog_chunk_stops_immediately(migrated_engine):
+    """소규모 DB — 첫 콜백이 catalog_done이면 추가 호출 없음."""
+    from datetime import UTC, datetime
+
+    from app.adapters.collect_runner import N8nWebhookRunner
+    from app.models import CollectJob
+
+    session_factory = sessionmaker(bind=migrated_engine)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        job = CollectJob(mode="step", stage="catalog_running", triggered_by="test",
+                         created_at=now, updated_at=now)
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    calls: list[dict] = []
+    runner = N8nWebhookRunner("http://n8n/webhook", session_factory, chunk_timeout=5)
+
+    def fake_post(path: str, body: dict) -> None:
+        calls.append(body)
+        with session_factory() as db:
+            j = db.get(CollectJob, job_id)
+            j.stage = "catalog_done"
+            j.updated_at = datetime.now(UTC)
+            db.commit()
+
+    runner._post = fake_post
+    runner.run_catalog(job_id)
+    assert len(calls) == 1
+
+
 def test_n8n_runner_pages_view_deps_and_waits_callbacks(migrated_engine):
     """뷰 N개 단위 분할 호출 — 청크 콜백 확인 후 다음 청크 진행 / paged webhook calls."""
     import json as jsonlib
@@ -191,3 +264,28 @@ def test_fixture_runner_reports_missing_fixture_with_remedy(migrated_engine, tmp
     runner = FixtureCollectRunner(session_factory, str(tmp_path / "missing"))
     with _pytest.raises(RuntimeError, match="N8N_WEBHOOK_BASE"):
         runner.run_catalog(1)
+
+
+def test_cancel_unblocks_a_stuck_job(cclient):
+    """멈춘 잡이 새 수집을 막지 않도록 실패로 닫는다 / cancel frees the UI gate."""
+    from app.api.collect import get_collect_runner
+
+    class HangingRunner:  # 트리거만 하고 콜백이 오지 않는 상황 (n8n 실행 유실)
+        def run_catalog(self, job_id: int) -> None:
+            pass
+
+        def run_view_deps(self, job_id: int, snapshot_id: int) -> None:
+            pass
+
+    cclient.app.dependency_overrides[get_collect_runner] = lambda: HangingRunner()
+    job_id = cclient.post("/api/collect/catalog", json={}).json()["job_id"]
+    assert cclient.get(f"/api/collect/jobs/{job_id}").json()["stage"] == "catalog_running"
+
+    res = cclient.post(f"/api/collect/jobs/{job_id}/cancel")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["stage"] == "failed" and "cancelled" in body["error"]
+
+    # 이미 끝난 잡은 409 / cancelling a finished job is a conflict
+    assert cclient.post(f"/api/collect/jobs/{job_id}/cancel").status_code == 409
+    assert cclient.post("/api/collect/jobs/999/cancel").status_code == 404

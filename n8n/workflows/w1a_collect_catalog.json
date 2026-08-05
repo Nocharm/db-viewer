@@ -16,7 +16,7 @@
       }
     },
     {
-      "name": "01 objects",
+      "name": "00 object count",
       "type": "n8n-nodes-base.microsoftSql",
       "typeVersion": 1.1,
       "position": [
@@ -25,7 +25,26 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- objects: 테이블·뷰 + 행수 / tables & views with row counts\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\nSELECT o.object_id,\n       s.name AS [schema],\n       o.name,\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\n       ps.row_count\nFROM sys.objects o\nJOIN sys.schemas s ON o.schema_id = s.schema_id\nOUTER APPLY (\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\n    SELECT SUM(p.row_count) AS row_count\n    FROM sys.dm_db_partition_stats p\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\n) ps\nWHERE o.type IN ('U', 'V');\n"
+        "query": "-- 객체 총수 / total object count — 분할 수집의 청크 수 산출용 (W1a)\n-- 창(window) 쿼리와 같은 필터를 써야 청크 경계가 어긋나지 않는다\nSELECT COUNT(*) AS object_total\nFROM sys.objects\nWHERE type IN ('U', 'V');\n"
+      },
+      "credentials": {
+        "microsoftSql": {
+          "id": "REPLACE_ME",
+          "name": "MSSQL readonly"
+        }
+      }
+    },
+    {
+      "name": "01 objects",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=-- objects: 테이블·뷰 + 행수 / tables & views with row counts\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\n-- 객체 창(window) 분할 — 생성기가 {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}/{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }}를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }};\nDECLARE @o_limit int = {{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }};\nSELECT o.object_id,\n       s.name AS [schema],\n       o.name,\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\n       ps.row_count\nFROM sys.objects o\nJOIN sys.schemas s ON o.schema_id = s.schema_id\nOUTER APPLY (\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\n    SELECT SUM(p.row_count) AS row_count\n    FROM sys.dm_db_partition_stats p\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\n) ps\nWHERE o.type IN ('U', 'V')\n  AND o.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
       "credentials": {
         "microsoftSql": {
@@ -39,13 +58,14 @@
       "type": "n8n-nodes-base.microsoftSql",
       "typeVersion": 1.1,
       "position": [
-        440,
+        660,
         0
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\nSELECT c.object_id,\n       c.name,\n       c.column_id AS ordinal,\n       t.name AS data_type,\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\n       c.is_nullable,\n       c.is_computed\nFROM sys.columns c\nJOIN sys.types t ON c.user_type_id = t.user_type_id\nJOIN sys.objects o ON c.object_id = o.object_id\nWHERE o.type IN ('U', 'V');\n"
+        "query": "=-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\n-- 객체 창(window) 분할 — 생성기가 {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}/{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }}를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }};\nDECLARE @o_limit int = {{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }};\nSELECT c.object_id,\n       c.name,\n       c.column_id AS ordinal,\n       t.name AS data_type,\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\n       c.is_nullable,\n       c.is_computed\nFROM sys.columns c\nJOIN sys.types t ON c.user_type_id = t.user_type_id\nJOIN sys.objects o ON c.object_id = o.object_id\nWHERE o.type IN ('U', 'V')\n  AND c.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -58,12 +78,12 @@
       "type": "n8n-nodes-base.microsoftSql",
       "typeVersion": 1.1,
       "position": [
-        660,
+        880,
         0
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nORDER BY kc.name, ic.key_ordinal;\n"
+        "query": "=-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\n-- 객체 창(window) 분할 — 생성기가 {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}/{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }}를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }};\nDECLARE @o_limit int = {{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }};\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nWHERE kc.parent_object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n)\nORDER BY kc.name, ic.key_ordinal;\n"
       },
       "alwaysOutputData": true,
       "credentials": {
@@ -78,7 +98,7 @@
       "type": "n8n-nodes-base.microsoftSql",
       "typeVersion": 1.1,
       "position": [
-        880,
+        1100,
         0
       ],
       "parameters": {
@@ -98,13 +118,14 @@
       "type": "n8n-nodes-base.microsoftSql",
       "typeVersion": 1.1,
       "position": [
-        1100,
+        1320,
         0
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- 뷰 DDL / view definitions → catalog.json view_definitions[]\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\nSELECT v.object_id,\n       m.definition\nFROM sys.views v\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id;\n"
+        "query": "=-- 뷰 DDL / view definitions → catalog.json view_definitions[]\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\n-- 객체 창(window) 분할 — 생성기가 {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }}/{{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }}를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = {{ Math.max(parseInt($('Webhook').first().json.body.offset, 10) || 0, 0) }};\nDECLARE @o_limit int = {{ Math.min(Math.max(parseInt($('Webhook').first().json.body.limit, 10) || 300, 1), 2000) }};\nSELECT v.object_id,\n       m.definition\nFROM sys.views v\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id\nWHERE v.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -117,11 +138,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        1540,
         0
       ],
       "parameters": {
-        "jsCode": "// raw rows → catalog contract, 객체 슬라이스 청크로 분할 (기계적 그룹핑·분할만)\n// chunked by object slices to bound each POST; grouping and slicing only\nconst trigger = $('Webhook').first().json.body ?? {};\nconst chunkSize = Math.min(Math.max(parseInt(trigger.catalog_chunk_size, 10) || 300, 50), 2000);\nconst objects = $('01 objects').all().map(i => i.json);\nconst columns = $('02 columns').all().map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  if (!r.name) continue;\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nconst collectedAt = new Date().toISOString();\nconst chunkTotal = Math.max(1, Math.ceil(objects.length / chunkSize));\nconst items = [];\nfor (let c = 0; c < chunkTotal; c++) {\n  const slice = objects.slice(c * chunkSize, (c + 1) * chunkSize);\n  const ids = new Set(slice.map(o => o.object_id));\n  items.push({ json: {\n    collect_job_id: trigger.collect_job_id ?? null,\n    source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',\n    collected_at: collectedAt,\n    chunk_index: c + 1, chunk_total: chunkTotal,\n    objects: slice,\n    columns: columns.filter(col => ids.has(col.object_id)),\n    key_constraints: Object.values(kcs).filter(k => ids.has(k.object_id)),\n    // FK는 두 객체에 걸친다 — 전 객체가 적재된 마지막 청크에만 / FKs only on the last chunk\n    foreign_keys: c === chunkTotal - 1 ? Object.values(fks) : [],\n    view_definitions: viewDefs.filter(v => ids.has(v.object_id)),\n  } });\n}\nreturn items;\n"
+        "jsCode": "// raw rows → catalog contract. 창(window) 하나만 조회되므로 여기선 그룹핑만 한다\n// one object window per call; this node only groups rows into the contract shape\nconst trigger = $('Webhook').first().json.body ?? {};\nconst offset = Math.max(parseInt(trigger.offset, 10) || 0, 0);\nconst limit = Math.min(Math.max(parseInt(trigger.limit, 10) || 300, 1), 2000);\nconst objectTotal = Number($('00 object count').first().json.object_total ?? 0);\nconst chunkTotal = Math.max(1, Math.ceil(objectTotal / limit));\nconst chunkIndex = Math.min(Math.floor(offset / limit) + 1, chunkTotal);\nconst objects = $('01 objects').all().map(i => i.json).filter(o => o.object_id != null);\nconst columns = $('02 columns').all().filter(i => i.json.object_id != null).map(i => ({\n  ...i.json, is_nullable: !!i.json.is_nullable, is_computed: !!i.json.is_computed,\n}));\nconst kcs = {};\nfor (const { json: r } of $('03 key constraints').all()) {\n  if (!r.name) continue;  // alwaysOutputData의 빈 아이템({}) 무시 / skip empty passthrough item\n  (kcs[r.name] ??= { name: r.name, type: r.type, object_id: r.object_id, columns: [] })\n    .columns.push(r.column_name);\n}\nconst fks = {};\nfor (const { json: r } of $('04 foreign keys').all()) {\n  if (!r.name) continue;\n  (fks[r.name] ??= { name: r.name, src_object_id: r.src_object_id,\n                     tgt_object_id: r.tgt_object_id, columns: [] })\n    .columns.push({ src_column: r.src_column, tgt_column: r.tgt_column });\n}\nconst viewDefs = $('05 view definitions').all()\n  .filter(i => i.json.object_id != null)\n  .map(i => ({ object_id: i.json.object_id, definition: i.json.definition ?? null }));\nreturn [{ json: {\n  collect_job_id: trigger.collect_job_id ?? null,\n  source_db: $env.DB_VIEWER_SOURCE_DB ?? 'MSSQL',\n  collected_at: new Date().toISOString(),\n  chunk_index: chunkIndex, chunk_total: chunkTotal,\n  objects, columns,\n  key_constraints: Object.values(kcs),\n  // FK는 객체 창을 가로지른다 — 전 객체가 적재된 마지막 청크에만 / FKs only on the last chunk\n  foreign_keys: chunkIndex >= chunkTotal ? Object.values(fks) : [],\n  view_definitions: viewDefs,\n} }];\n"
       }
     },
     {
@@ -129,7 +150,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1540,
+        1760,
         0
       ],
       "parameters": {
@@ -152,6 +173,17 @@
   ],
   "connections": {
     "Webhook": {
+      "main": [
+        [
+          {
+            "node": "00 object count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "00 object count": {
       "main": [
         [
           {

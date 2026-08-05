@@ -30,7 +30,7 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- objects: 테이블·뷰 + 행수 / tables & views with row counts\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\nSELECT o.object_id,\n       s.name AS [schema],\n       o.name,\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\n       ps.row_count\nFROM sys.objects o\nJOIN sys.schemas s ON o.schema_id = s.schema_id\nOUTER APPLY (\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\n    SELECT SUM(p.row_count) AS row_count\n    FROM sys.dm_db_partition_stats p\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\n) ps\nWHERE o.type IN ('U', 'V');\n"
+        "query": "-- objects: 테이블·뷰 + 행수 / tables & views with row counts\n-- contract keys → catalog.json objects[]: object_id, schema, name, type, row_count\n-- 객체 창(window) 분할 — 생성기가 0/1000000를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = 0;\nDECLARE @o_limit int = 1000000;\nSELECT o.object_id,\n       s.name AS [schema],\n       o.name,\n       CASE o.type WHEN 'U' THEN 'table' ELSE 'view' END AS [type],\n       ps.row_count\nFROM sys.objects o\nJOIN sys.schemas s ON o.schema_id = s.schema_id\nOUTER APPLY (\n    -- heap(0)·clustered(1)만 합산 — 보조 인덱스 중복 방지 / avoid double counting secondary indexes\n    SELECT SUM(p.row_count) AS row_count\n    FROM sys.dm_db_partition_stats p\n    WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)\n) ps\nWHERE o.type IN ('U', 'V')\n  AND o.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
       "credentials": {
         "microsoftSql": {
@@ -49,8 +49,9 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\nSELECT c.object_id,\n       c.name,\n       c.column_id AS ordinal,\n       t.name AS data_type,\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\n       c.is_nullable,\n       c.is_computed\nFROM sys.columns c\nJOIN sys.types t ON c.user_type_id = t.user_type_id\nJOIN sys.objects o ON c.object_id = o.object_id\nWHERE o.type IN ('U', 'V');\n"
+        "query": "-- columns: 테이블·뷰의 전체 컬럼 / all columns of tables and views\n-- contract keys → catalog.json columns[]: object_id, name, ordinal, data_type, max_length, is_nullable, is_computed\n-- 객체 창(window) 분할 — 생성기가 0/1000000를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = 0;\nDECLARE @o_limit int = 1000000;\nSELECT c.object_id,\n       c.name,\n       c.column_id AS ordinal,\n       t.name AS data_type,\n       c.max_length,          -- varchar(max) 등은 -1 / -1 for MAX types\n       c.is_nullable,\n       c.is_computed\nFROM sys.columns c\nJOIN sys.types t ON c.user_type_id = t.user_type_id\nJOIN sys.objects o ON c.object_id = o.object_id\nWHERE o.type IN ('U', 'V')\n  AND c.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
@@ -68,7 +69,7 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nORDER BY kc.name, ic.key_ordinal;\n"
+        "query": "-- PK/UQ 제약 + 구성 컬럼 / key constraints with member columns\n-- W1이 행을 {name, type, object_id, columns: []}로 그룹핑 → catalog.json key_constraints[]\n-- 객체 창(window) 분할 — 생성기가 0/1000000를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = 0;\nDECLARE @o_limit int = 1000000;\nSELECT kc.name,\n       CASE kc.type WHEN 'PK' THEN 'pk' ELSE 'uq' END AS [type],\n       kc.parent_object_id AS object_id,\n       col.name AS column_name,\n       ic.key_ordinal\nFROM sys.key_constraints kc\nJOIN sys.index_columns ic\n  ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\nJOIN sys.columns col\n  ON ic.object_id = col.object_id AND ic.column_id = col.column_id\nWHERE kc.parent_object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n)\nORDER BY kc.name, ic.key_ordinal;\n"
       },
       "alwaysOutputData": true,
       "credentials": {
@@ -108,8 +109,9 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- 뷰 DDL / view definitions → catalog.json view_definitions[]\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\nSELECT v.object_id,\n       m.definition\nFROM sys.views v\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id;\n"
+        "query": "-- 뷰 DDL / view definitions → catalog.json view_definitions[]\n-- 반드시 sys.sql_modules 사용 — INFORMATION_SCHEMA.VIEWS는 4000자에서 절단된다\n-- MUST use sys.sql_modules; INFORMATION_SCHEMA.VIEWS truncates at 4000 chars\n-- definition IS NULL = VIEW DEFINITION 권한 차단 (에러가 아니라 조용한 NULL — 정찰 쿼리 [3]으로 선확인)\n-- 객체 창(window) 분할 — 생성기가 0/1000000를 치환 (W1a는 webhook 값, W1은 전체)\n-- windowed by object slice; the generator substitutes the placeholders\nDECLARE @o_offset int = 0;\nDECLARE @o_limit int = 1000000;\nSELECT v.object_id,\n       m.definition\nFROM sys.views v\nLEFT JOIN sys.sql_modules m ON v.object_id = m.object_id\nWHERE v.object_id IN (\n    SELECT object_id FROM sys.objects WHERE type IN ('U', 'V')\n    ORDER BY object_id OFFSET @o_offset ROWS FETCH NEXT @o_limit ROWS ONLY\n);\n"
       },
+      "alwaysOutputData": true,
       "credentials": {
         "microsoftSql": {
           "id": "REPLACE_ME",
