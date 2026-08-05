@@ -6,14 +6,17 @@ Phase 3 검증 큐를 거쳐야 한다 (계획 §5.2).
 
 import json
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from app.adapters.ai import (
     AiClient,
     ColumnMeta,
+    FakeAiClient,
     TableMeta,
     ValidationFacts,
     ViewFacts,
@@ -21,6 +24,7 @@ from app.adapters.ai import (
 )
 from app.api.objects import resolve_snapshot
 from app.api.validate import resolve_column_ref
+from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
 from app.domain import scoring
@@ -34,7 +38,9 @@ from app.models import (
     ViewJoin,
     ViewLineageFlat,
 )
+from app.services.ai_chat import build_chat_context
 from app.services.ai_jobs import has_active_job, run_ai_job
+from app.services.ai_search import search_tables_smart
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -147,6 +153,27 @@ def start_suggest_job(
     return {"job_id": job.id, "status": job.status}
 
 
+@router.post("/embed-index", status_code=202, dependencies=[Depends(require_sysadmin)])
+def start_embed_index_job(
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    session_factory: sessionmaker = Depends(get_ai_session_factory),
+) -> dict:
+    """임베딩 인덱싱 — 관리 작업, 상한·배치·대기로 부하 관리 (사이클2 §3)."""
+    settings = get_settings()
+    if not settings.ai_base_url or not settings.ai_embed_model:
+        raise HTTPException(400, {"message": "embedding is not configured",
+                                  "context": {"ai_embed_model": settings.ai_embed_model}})
+    if has_active_job(db, "embed_index"):
+        raise HTTPException(409, {"message": "embed index job already running", "context": {}})
+    job = AiJob(kind="embed_index", status="queued", progress_done=0, progress_total=0,
+                triggered_by="admin", created_at=datetime.now(UTC))
+    db.add(job)
+    db.flush()
+    background.add_task(run_ai_job, session_factory, job.id, create_ai_client(), settings)
+    return {"job_id": job.id, "status": job.status}
+
+
 @router.get("/jobs/{job_id}")
 def get_ai_job(job_id: int, db: Session = Depends(get_db)) -> dict:
     """suggest/embed_index 공용 잡 폴링. / poll job status and parsed result."""
@@ -171,16 +198,18 @@ def search_tables(
     db: Session = Depends(get_db),
     ai: AiClient = Depends(get_ai_client),
 ) -> dict:
-    """자연어 테이블 탐색 (계획 §5.1-2). / natural-language table search."""
+    """자연어 테이블 탐색 (계획 §5.1-2, 임베딩 우선+키워드 폴백은 사이클2 §3). / natural-language table search."""
     snapshot = resolve_snapshot(db, snapshot_id)
-    hits = ai.search_tables(q, _load_table_meta(db, snapshot.id))
+    mode, hits = search_tables_smart(
+        db, q, _load_table_meta(db, snapshot.id), ai, get_settings()
+    )
     id_by_qname = {
         f"{o.schema}.{o.name}": o.id
         for o in db.execute(
             select(CatalogObject).where(CatalogObject.snapshot_id == snapshot.id)
         ).scalars()
     }
-    return {"snapshot_id": snapshot.id, "items": [
+    return {"snapshot_id": snapshot.id, "mode": mode, "items": [
         {"object_id": id_by_qname.get(h.qname), "object": h.qname,
          "score": h.score, "reason": h.reason}
         for h in hits
@@ -315,3 +344,31 @@ def explain_view(
         definition_excerpt=(obj.definition or "")[:400] or None,
     ))
     return {"object": qname, "explanation": text}
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=6)
+
+
+@router.post("/chat")
+def chat(
+    req: ChatRequest,
+    snapshot_id: int | None = None,
+    db: Session = Depends(get_db),
+    ai: AiClient = Depends(get_ai_client),
+) -> dict:
+    """스키마 Q&A — 검색 컨텍스트 기반 동기 응답 (사이클2 §4). / schema Q&A chat."""
+    snapshot = resolve_snapshot(db, snapshot_id)
+    tables = _load_table_meta(db, snapshot.id)
+    context = build_chat_context(db, snapshot.id, req.question, tables, ai, get_settings())
+    answer = ai.answer_question(
+        req.question, [(t.role, t.content) for t in req.history], context)
+    return {"answer": answer,
+            "tables": [t.qname for t in context.tables],
+            "mock": isinstance(ai, FakeAiClient)}

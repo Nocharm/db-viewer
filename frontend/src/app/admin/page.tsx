@@ -7,17 +7,22 @@ import { useEffect, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { AdUserList } from "@/components/admin/AdUserList";
 import { CollectPanel } from "@/components/admin/CollectPanel";
+import { useI18n } from "@/components/i18n";
 import { useMe } from "@/components/providers";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 import {
   addWhitelist,
+  fetchAiJob,
   fetchWhitelist,
   removeWhitelist,
+  startEmbedIndex,
   syncUsers,
+  type AiJobStatus,
   type WhitelistEntry,
 } from "@/lib/api";
 
 export default function AdminPage() {
+  const { t } = useI18n();
   const me = useMe();
   const [items, setItems] = useState<WhitelistEntry[]>([]);
   // 값이 오르면 AD 목록이 첫 페이지부터 다시 읽는다 (동기화·허용 추가 후)
@@ -31,6 +36,14 @@ export default function AdminPage() {
   const syncElapsed = useElapsedSeconds(syncing);
 
   // 화이트리스트와 AD 사용자는 별개 테이블 — 동기화 결과가 보이려면 둘 다 갱신해야 한다
+  // 임베딩 인덱싱 잡 폴링 상태 (사이클2 Task 8) — CollectPanel과 동일한 1.5초 폴링 관용
+  const [embedJobId, setEmbedJobId] = useState<number | null>(null);
+  const [embedJob, setEmbedJob] = useState<AiJobStatus | null>(null);
+  const [embedStarting, setEmbedStarting] = useState(false);
+  const [embedError, setEmbedError] = useState<string | null>(null);
+  const embedBusy = embedStarting
+    || (embedJob !== null && (embedJob.status === "queued" || embedJob.status === "running"));
+
   const reload = () =>
     fetchWhitelist()
       .then((w) => {
@@ -42,6 +55,31 @@ export default function AdminPage() {
   useEffect(() => {
     if (me?.is_sysadmin || me?.auth_enabled === false) void reload();
   }, [me]);
+
+  useEffect(() => {
+    if (embedJobId === null) return;
+    const timer = setInterval(() => {
+      fetchAiJob(embedJobId)
+        .then((job) => {
+          setEmbedJob(job);
+          if (job.status === "done" || job.status === "failed") setEmbedJobId(null);
+        })
+        .catch((e) => {
+          setEmbedError(e.message);
+          setEmbedJobId(null);
+        });
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [embedJobId]);
+
+  const startEmbedIndexing = () => {
+    setEmbedError(null);
+    setEmbedStarting(true);
+    startEmbedIndex()
+      .then((res) => setEmbedJobId(res.job_id))
+      .catch((e) => setEmbedError(e.message))
+      .finally(() => setEmbedStarting(false));
+  };
 
   if (me && me.auth_enabled && !me.is_sysadmin) {
     return (
@@ -77,6 +115,62 @@ export default function AdminPage() {
           </h1>
 
       <CollectPanel />
+
+      <section className="mb-6" data-testid="AdminPage-embedIndexSection">
+        <div className="mb-1 flex items-center gap-2">
+          <h2 className="text-sm font-medium">{t("admin.embedIndexTitle")}</h2>
+        </div>
+        <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
+          {t("admin.embedIndexHint")}
+        </p>
+        <button
+          className="btn-primary mb-3"
+          disabled={embedBusy}
+          onClick={startEmbedIndexing}
+          data-testid="AdminPage-embedIndexButton"
+        >
+          {embedBusy ? t("admin.embedIndexRunning") : t("admin.embedIndexButton")}
+        </button>
+
+        {embedJob && (embedJob.status === "queued" || embedJob.status === "running")
+          && embedJob.progress_total > 0 && (
+          <div data-testid="AdminPage-embedIndexProgress">
+            <p className="mb-1 text-xs" style={{ color: "var(--body-text)" }}>
+              {t("admin.embedIndexProgress")} ({embedJob.progress_done}/{embedJob.progress_total})
+            </p>
+            <div className="rate-bar !w-full">
+              <div className="rate-bar__fill transition-all duration-300 ease-in-out"
+                   style={{
+                     width: `${Math.round((embedJob.progress_done / embedJob.progress_total) * 100)}%`,
+                   }} />
+            </div>
+          </div>
+        )}
+
+        {embedJob && embedJob.status === "done" && embedJob.result && "indexed" in embedJob.result && (
+          <p className="text-sm" style={{ color: "var(--rel-confirmed)" }}
+             data-testid="AdminPage-embedIndexResult">
+            {t("admin.embedIndexDone")
+              .replace("{indexed}", String(embedJob.result.indexed))
+              .replace("{skipped}", String(embedJob.result.skipped))
+              .replace("{remaining}", String(embedJob.result.remaining))}
+          </p>
+        )}
+
+        {embedJob && embedJob.status === "failed" && (
+          <p className="text-sm" style={{ color: "var(--error)" }}
+             data-testid="AdminPage-embedIndexErrorText">
+            {t("admin.embedIndexFailed")} — {embedJob.error}
+          </p>
+        )}
+
+        {embedError && (
+          <p className="text-sm" style={{ color: "var(--error)" }}
+             data-testid="AdminPage-embedIndexStartErrorText">
+            {embedError}
+          </p>
+        )}
+      </section>
 
       <section className="mb-6">
         <div className="mb-2 flex items-center gap-2">

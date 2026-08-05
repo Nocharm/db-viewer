@@ -11,7 +11,15 @@ import math
 import urllib.request
 from urllib.error import URLError
 
-from app.adapters.ai import AiTableHit, CandidatePair, RelationJudgement, TableMeta, ValidationFacts, ViewFacts
+from app.adapters.ai import (
+    AiTableHit,
+    CandidatePair,
+    ChatContext,
+    RelationJudgement,
+    TableMeta,
+    ValidationFacts,
+    ViewFacts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +212,34 @@ def build_view_prompt(facts: ViewFacts) -> str:
     )
 
 
+# 프롬프트에 싣는 최근 턴 수 / recent turns kept in prompt
+CHAT_HISTORY_LIMIT = 6
+
+
+def build_chat_prompt(question: str, history: list[tuple[str, str]],
+                      context: ChatContext) -> str:
+    """챗 컨텍스트·이전 대화·질문 → 프롬프트 (순수 함수, 페이로드는 메타만) / chat prompt builder."""
+    payload = {
+        "tables": [{
+            "qname": t.qname,
+            "columns": [{"name": c.name, "type": c.data_type, "pk": c.is_pk}
+                        for c in t.columns],
+            "summary": t.summary,
+            "relations": t.relations,
+            "base_tables": t.base_tables,
+        } for t in context.tables],
+    }
+    lines = [f"{role}: {content}" for role, content in history[-CHAT_HISTORY_LIMIT:]]
+    history_block = ("이전 대화:\n" + "\n".join(lines) + "\n\n") if lines else ""
+    return (
+        "다음 스키마 컨텍스트만 근거로 사용자의 질문에 답하라. "
+        "컨텍스트에 없는 테이블·컬럼·관계는 추측하지 말고 모른다고 답하라.\n"
+        '출력 스키마: {"text": "<한국어 답변, 3~6문장>"}\n\n'
+        f"{history_block}질문: {question}\n\n스키마 컨텍스트:\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
 class LlmAiClient:
     """OpenAI 호환 서버 위 AiClient 구현 — 프롬프트는 순수 빌더로 분리."""
 
@@ -253,8 +289,13 @@ class LlmAiClient:
     def search_tables(self, query: str, tables: list[TableMeta]) -> list[AiTableHit]:
         """사용자 질의 → 관련 테이블 재랭크 (프리필터 → LLM 판정 → 정렬) / query to ranked table hits."""
         candidates = filter_search_candidates(query, tables)
-        if not candidates:
-            return []
+        return [] if not candidates else self.rerank_tables(query, candidates)
+
+    def rerank_tables(self, query: str, candidates: list[TableMeta]) -> list[AiTableHit]:
+        """프리필터(또는 임베딩 코사인) 후보를 LLM으로 재랭크 (사이클2 Task 9 분리).
+
+        환각 qname 제거·점수 가드·정렬·상한은 입력 출처(키워드/임베딩)와 무관하게 동일.
+        """
         data = self._chat(build_search_prompt(query, candidates))
         items = data.get("items", [])
         if not isinstance(items, list):
@@ -293,3 +334,52 @@ class LlmAiClient:
     def explain_view(self, facts: ViewFacts) -> str:
         """뷰 메타로 기능 설명 / explains view definition and purpose."""
         return _require_text(self._chat(build_view_prompt(facts)))
+
+    def answer_question(self, question: str, history: list[tuple[str, str]],
+                        context: ChatContext) -> str:
+        """검색 컨텍스트 + 최근 대화로 스키마 Q&A 답변 / schema Q&A over search context."""
+        return _require_text(self._chat(build_chat_prompt(question, history, context)))
+
+
+def embed_texts(base_url: str, model: str, api_key: str, timeout: int,
+                texts: list[str]) -> list[list[float]]:
+    """OpenAI 호환 /embeddings 1회 호출 — 배치 입력 / one embeddings call, batched input."""
+    url = f"{base_url.rstrip('/')}/embeddings"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(
+        url, data=json.dumps({"model": model, "input": texts},
+                             ensure_ascii=False).encode(),
+        headers=headers, method="POST",
+    )
+    last_error: Exception | None = None
+    for attempt in range(RETRY_COUNT + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode())
+            data = payload["data"]
+            if not isinstance(data, list) or len(data) != len(texts):
+                raise KeyError("embeddings count mismatch")
+            # index 순 정렬 — 서버가 순서를 보장하지 않을 수 있다
+            data = sorted(data, key=lambda d: d["index"])
+            return [[float(x) for x in d["embedding"]] for d in data]
+        except (URLError, TimeoutError, KeyError, IndexError, TypeError,
+                ValueError, json.JSONDecodeError) as e:
+            last_error = e
+            logger.warning("embeddings attempt failed",
+                           extra={"url": url, "model": model, "attempt": attempt})
+    raise AiUnavailableError("embeddings request failed after retries",
+                             {"url": url, "model": model, "cause": str(last_error)})
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """순수 파이썬 코사인 — 의존성 0 / dependency-free cosine."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)

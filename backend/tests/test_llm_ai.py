@@ -7,12 +7,21 @@ from urllib.error import URLError
 import pytest
 
 from app.adapters import llm_ai
-from app.adapters.ai import ColumnMeta, CandidatePair, TableMeta, ValidationFacts, ViewFacts
+from app.adapters.ai import (
+    CandidatePair,
+    ChatContext,
+    ChatTableContext,
+    ColumnMeta,
+    TableMeta,
+    ValidationFacts,
+    ViewFacts,
+)
 from app.adapters.llm_ai import (
-    AiUnavailableError, LlmAiClient, _extract_json, _post_chat,
-    filter_search_candidates,
+    AiUnavailableError, CHAT_HISTORY_LIMIT, LlmAiClient, _extract_json, _post_chat,
+    build_chat_prompt, filter_search_candidates, embed_texts, cosine_similarity,
 )
 from app.config import Settings
+from app.services.ai_search import rank_by_cosine
 
 
 def test_ai_settings_defaults():
@@ -22,6 +31,11 @@ def test_ai_settings_defaults():
     assert s.ai_api_key == ""
     assert s.ai_timeout == 60
     assert s.ai_suggest_max_pairs == 40
+    # Task 7: embedding settings
+    assert s.ai_embed_model == ""
+    assert s.ai_embed_batch == 32
+    assert s.ai_embed_job_cap == 1000
+    assert s.ai_embed_sleep_ms == 500
 
 
 class _FakeResponse(io.BytesIO):
@@ -298,6 +312,133 @@ def test_empty_text_raises(captured):
         _client().summarize_table(table, base_tables=[])
 
 
+# Task 7: cosine_similarity and embed_texts
+
+
+def test_cosine_similarity_identical_vectors():
+    """벡터가 같으면 1.0 반환 / identical vectors return 1.0."""
+    assert cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) == 1.0
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    """직교 벡터는 0.0 반환 / orthogonal vectors return 0.0."""
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+
+def test_cosine_similarity_opposite_vectors():
+    """반대 방향 벡터는 -1.0 반환 / opposite vectors return -1.0."""
+    assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == -1.0
+
+
+def test_cosine_similarity_length_mismatch_returns_zero():
+    """길이 불일치는 0.0 반환 / length mismatch returns 0.0."""
+    assert cosine_similarity([1.0, 2.0], [3.0, 4.0, 5.0]) == 0.0
+
+
+def test_cosine_similarity_zero_vector_returns_zero():
+    """영벡터는 0.0 반환 / zero vector returns 0.0."""
+    assert cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+
+def test_cosine_similarity_empty_vectors_returns_zero():
+    """빈 벡터는 0.0 반환 / empty vectors return 0.0."""
+    assert cosine_similarity([], []) == 0.0
+
+
+def _embed_response(embeddings: list[list[float]], indices: list[int] | None = None) -> bytes:
+    """임베딩 응답 생성 — index 순 섞음 가능 / generate embeddings response, indices can be shuffled."""
+    if indices is None:
+        indices = list(range(len(embeddings)))
+    data = [{"index": i, "embedding": emb} for i, emb in zip(indices, embeddings)]
+    return json.dumps({"data": data}).encode()
+
+
+@pytest.fixture()
+def embed_captured(monkeypatch):
+    """urlopen 가로채 임베딩 요청 기록 + 준비된 응답 반환 / capture embeddings request, return canned reply."""
+    calls: dict = {"requests": [], "response": _embed_response([[0.1, 0.2]])}
+
+    def fake_urlopen(request, timeout=None):
+        calls["requests"].append(request)
+        calls["timeout"] = timeout
+        return _FakeResponse(calls["response"])
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", fake_urlopen)
+    return calls
+
+
+def test_embed_texts_success(embed_captured):
+    """임베딩 요청 성공 시 벡터 리스트 반환 / successful embeddings request returns vector list."""
+    embed_captured["response"] = _embed_response([
+        [0.1, 0.2],
+        [0.3, 0.4],
+        [0.5, 0.6],
+    ])
+    result = embed_texts("http://llm:11434/v1", "embed-model", "sk-key", 30,
+                         ["text1", "text2", "text3"])
+    assert len(result) == 3
+    assert result[0] == [0.1, 0.2]
+    assert result[2] == [0.5, 0.6]
+    # 요청 검증
+    req = embed_captured["requests"][0]
+    assert req.full_url == "http://llm:11434/v1/embeddings"
+    assert req.get_header("Authorization") == "Bearer sk-key"
+    body = json.loads(req.data.decode())
+    assert body["model"] == "embed-model"
+    assert body["input"] == ["text1", "text2", "text3"]
+
+
+def test_embed_texts_reorders_by_index():
+    """서버가 역순 반환 시 index로 정렬 / reorder by index if server returns out-of-order."""
+    from app.adapters.llm_ai import embed_texts
+    monkeypatch = pytest.MonkeyPatch()
+    calls: dict = {"requests": [], "response": _embed_response(
+        [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+        indices=[2, 0, 1]  # 역순
+    )}
+
+    def fake_urlopen(request, timeout=None):
+        calls["requests"].append(request)
+        return _FakeResponse(calls["response"])
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", fake_urlopen)
+
+    result = embed_texts("http://llm:11434/v1", "model", "key", 30, ["a", "b", "c"])
+    # index 0, 1, 2 순으로 정렬되어야 함
+    assert result[0] == [0.3, 0.4]  # index 0
+    assert result[1] == [0.5, 0.6]  # index 1
+    assert result[2] == [0.1, 0.2]  # index 2
+
+
+def test_embed_texts_mismatch_count_raises(embed_captured):
+    """응답 개수 불일치 시 raise / raise on count mismatch."""
+    embed_captured["response"] = _embed_response([[0.1, 0.2], [0.3, 0.4]])  # 2개만
+    with pytest.raises(AiUnavailableError):
+        embed_texts("http://llm:11434/v1", "model", "key", 30, ["a", "b", "c"])  # 3개 요청
+
+
+def test_embed_texts_retries_on_timeout(monkeypatch):
+    """타임아웃 시 재시도 후 raise / retry on timeout then raise."""
+    attempts = []
+
+    def failing_urlopen(request, timeout=None):
+        attempts.append(1)
+        raise TimeoutError("connection timeout")
+
+    monkeypatch.setattr(llm_ai.urllib.request, "urlopen", failing_urlopen)
+    with pytest.raises(AiUnavailableError):
+        embed_texts("http://llm:11434/v1", "model", "key", 30, ["text"])
+    assert len(attempts) == 2  # 1회 재시도 후 포기
+
+
+def test_embed_texts_omits_auth_without_key(embed_captured):
+    """API 키 없으면 Authorization 헤더 생략 / omit auth header without key."""
+    embed_captured["response"] = _embed_response([[0.1, 0.2]])
+    embed_texts("http://llm:11434/v1", "model", "", 30, ["text"])
+    req = embed_captured["requests"][0]
+    assert req.get_header("Authorization") is None
+
+
 # Task 7: create_ai_client 스위치
 
 def test_create_ai_client_switches_on_base_url(monkeypatch):
@@ -329,3 +470,74 @@ def test_create_ai_client_defaults_to_fake(monkeypatch):
     finally:
         monkeypatch.delenv("AI_BASE_URL", raising=False)
         get_settings.cache_clear()
+
+
+# Task 9: rank_by_cosine — pure ranking, DB/HTTP 없음
+
+
+def test_rank_by_cosine_orders_by_similarity_descending():
+    query_vec = [1.0, 0.0]
+    rows = [
+        ("dbo.T_ORTHO", [0.0, 1.0]),   # 직교 — 유사도 0.0
+        ("dbo.T_EXACT", [1.0, 0.0]),   # 동일 — 유사도 1.0
+        ("dbo.T_CLOSE", [0.9, 0.1]),   # 유사하지만 완전 일치는 아님
+    ]
+    assert rank_by_cosine(query_vec, rows, top_k=2) == ["dbo.T_EXACT", "dbo.T_CLOSE"]
+
+
+def test_rank_by_cosine_breaks_ties_by_qname():
+    """동점이면 qname 오름차순 — 결정론적 순서 보장 / deterministic tie-break."""
+    query_vec = [1.0, 0.0]
+    rows = [("dbo.T_Z", [1.0, 0.0]), ("dbo.T_A", [1.0, 0.0])]
+    assert rank_by_cosine(query_vec, rows, top_k=2) == ["dbo.T_A", "dbo.T_Z"]
+
+
+def test_rank_by_cosine_caps_at_top_k():
+    query_vec = [1.0, 0.0]
+    rows = [(f"dbo.T_{i:02d}", [1.0, 0.0]) for i in range(10)]
+    assert len(rank_by_cosine(query_vec, rows, top_k=3)) == 3
+
+
+# Task 10 (사이클2): build_chat_prompt, LlmAiClient.answer_question
+
+
+def _chat_context() -> ChatContext:
+    return ChatContext(tables=[ChatTableContext(
+        qname="dbo.T_ORD", columns=[ColumnMeta("ORD_NO", "int", is_pk=True)],
+        summary="주문 테이블", relations=["dbo.T_ORD.ORD_NO → dbo.T_SHP.ORD_NO (validated)"],
+        base_tables=["dbo.V_ORD_BASE"],
+    )])
+
+
+def test_build_chat_prompt_includes_context_history_and_question():
+    history = [("user", "이전 질문"), ("assistant", "이전 답변")]
+    prompt = build_chat_prompt("새 질문", history, _chat_context())
+    assert "dbo.T_ORD" in prompt and "ORD_NO" in prompt  # 컨텍스트 테이블·컬럼
+    assert "주문 테이블" in prompt and "dbo.T_SHP.ORD_NO" in prompt and "dbo.V_ORD_BASE" in prompt
+    assert "이전 질문" in prompt and "이전 답변" in prompt  # 이전 대화
+    assert "새 질문" in prompt  # 질문
+
+
+def test_build_chat_prompt_omits_history_block_when_empty():
+    prompt = build_chat_prompt("질문", [], ChatContext(tables=[]))
+    assert "이전 대화" not in prompt
+
+
+def test_build_chat_prompt_keeps_only_last_history_limit_turns():
+    history = [("user", f"q{i}") for i in range(8)]
+    prompt = build_chat_prompt("질문", history, ChatContext(tables=[]))
+    assert CHAT_HISTORY_LIMIT == 6
+    assert "q0" not in prompt and "q1" not in prompt  # 상한 밖 — 잘림
+    assert "q2" in prompt and "q7" in prompt  # 최근 6턴만 유지
+
+
+def test_answer_question_maps_llm_text_response(captured):
+    captured["content"] = '{"text": "답변입니다"}'
+    assert _client().answer_question("질문", [], ChatContext(tables=[])) == "답변입니다"
+
+
+def test_answer_question_sends_context_and_history_in_prompt(captured):
+    captured["content"] = '{"text": "답변"}'
+    _client().answer_question("두 번째 질문", [("user", "첫 질문")], _chat_context())
+    user_msg = json.loads(captured["requests"][0].data.decode())["messages"][1]["content"]
+    assert "dbo.T_ORD" in user_msg and "첫 질문" in user_msg and "두 번째 질문" in user_msg

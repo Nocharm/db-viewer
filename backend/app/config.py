@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     # Tuning: LLM 재판정에 넘길 후보 페어 상한 — 프롬프트 크기·응답 시간 제어
     ai_suggest_max_pairs: int = 40
 
+    # Environment: 임베딩 모델명 — 비우면 임베딩 기능 비활성 / embeddings model name, empty disables
+    ai_embed_model: str = ""
+    # Tuning: 배치당 텍스트 수 / texts per embedding batch
+    ai_embed_batch: int = 32
+    # Tuning: 인덱싱 잡 상한 — 사용자 부하 제약 (2000 초과 금지) / indexing job cap
+    ai_embed_job_cap: int = 1000
+    # Tuning: 배치 간 대기(ms) — 사용자 요청 우선 / inter-batch sleep
+    ai_embed_sleep_ms: int = 500
+
     # Tuning: 수집 분할 (실측 2,342 테이블 대응 — 소스 DB 부하·전송 크기 관리)
     # W1a 창당 객체 수 — DB 조회·n8n 아이템·POST 크기를 함께 제한 / objects per catalog window
     collect_catalog_chunk_size: int = 300

@@ -1,15 +1,21 @@
 """AI endpoint tests — suggestions never become facts. / AI 엔드포인트 테스트 (계획 Phase 5)."""
 
+import json
 from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
-from app.adapters.ai import CandidatePair, ColumnMeta, FakeAiClient, TableMeta
+from app.adapters.ai import AiTableHit, CandidatePair, ColumnMeta, FakeAiClient, TableMeta
+from app.adapters.llm_ai import AiUnavailableError, LlmAiClient
 from app.api.ai import get_ai_session_factory, select_ai_candidates
+from app.config import Settings
 from app.domain import scoring
-from app.models import AiJob, Base
+from app.models import AiEmbedding, AiJob, Base, CatalogColumn, CatalogObject, Relation, Snapshot, ViewLineageFlat
+from app.services import ai_search
+from app.services.ai_chat import CHAT_RELATIONS_LIMIT, CHAT_TOP_K, build_chat_context
+from app.services.ai_search import search_tables_smart
 
 
 def _seed(client, load_fixture) -> None:
@@ -211,6 +217,7 @@ def test_search_tables_endpoint(client, load_fixture):
     _seed(client, load_fixture)
     body = client.get("/api/ai/search-tables", params={"q": "ZZQX_NOPE"}).json()
     assert body["items"] == []  # 매칭 없음 — 빈 결과 상태
+    assert body["mode"] == "keyword"  # Fake 경로(임베딩 미설정)는 항상 키워드 — 사이클2 Task 9
 
     manifest = load_fixture("manifest.json")
     trap = manifest["cases"]["low_cardinality"][0]
@@ -218,6 +225,172 @@ def test_search_tables_endpoint(client, load_fixture):
     body = client.get("/api/ai/search-tables", params={"q": table_name}).json()
     assert body["items"] and body["items"][0]["object"].endswith(table_name)
     assert body["items"][0]["object_id"] is not None
+    assert body["mode"] == "keyword"
+
+
+# 사이클2 Task 9: search_tables_smart — 임베딩 우선 + 자동 키워드 폴백
+#
+# 핵심 계약: 검색은 임베딩 문제(미설정/호출 실패/빈 인덱스)로 502가 되지 않는다.
+# 폴백 경로는 실제 LLM 호출 없이 검증하도록 프리필터가 빈 결과가 되는 질의를 쓴다
+# (LlmAiClient.search_tables가 조기 반환해 네트워크 호출 자체가 없다).
+
+
+def _embed_settings(**overrides) -> Settings:
+    defaults = dict(_env_file=None, ai_base_url="http://llm:11434/v1", ai_embed_model="e")
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def test_search_tables_smart_uses_keyword_when_embed_model_unset(migrated_engine):
+    """모델 미설정 — Fake든 뭐든 임베딩 분기 자체를 타지 않고 바로 키워드."""
+    settings = _embed_settings(ai_embed_model="")
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    with sessionmaker(bind=migrated_engine)() as db:
+        mode, hits = search_tables_smart(db, "ORD", tables, FakeAiClient(), settings)
+    assert mode == "keyword"
+    assert hits == FakeAiClient().search_tables("ORD", tables)
+
+
+def test_search_tables_smart_falls_back_when_index_empty(migrated_engine, monkeypatch):
+    """모델은 설정됐지만 해당 모델의 AiEmbedding 행이 하나도 없음 — embed_texts 호출 없이 키워드."""
+    calls: list = []
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: calls.append(a) or [[1.0]])
+
+    settings = _embed_settings()
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert calls == []  # 빈 인덱스는 embed_texts를 호출하지 않고 바로 폴백
+
+
+def test_search_tables_smart_falls_back_when_embed_texts_unavailable(
+    migrated_engine, monkeypatch, caplog,
+):
+    """embed_texts 호출 실패(AiUnavailableError) — 502 아니라 warning 로그 후 키워드."""
+    def _boom(*args, **kwargs):
+        raise AiUnavailableError("embeddings request failed after retries", {"cause": "boom"})
+
+    monkeypatch.setattr(ai_search, "embed_texts", _boom)
+
+    settings = _embed_settings()
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="[1.0]",
+                           source_hash="h", updated_at=datetime.now(UTC)))
+        db.commit()
+        with caplog.at_level("WARNING"):
+            mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert any("falling back" in r.message for r in caplog.records)
+
+
+def test_search_tables_smart_uses_embedding_path_and_ranks_by_cosine(
+    migrated_engine, monkeypatch,
+):
+    """임베딩 인덱스 가용 — 코사인 상위가 rerank_tables 입력이 되고 mode는 embedding."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+    captured: dict = {}
+
+    def _fake_rerank(self, query, candidates):
+        captured["candidates"] = candidates
+        return [AiTableHit(qname=candidates[0].qname, score=0.9, reason="stub")]
+
+    monkeypatch.setattr(LlmAiClient, "rerank_tables", _fake_rerank)
+
+    tables = [
+        TableMeta("dbo.T_CLOSE", [ColumnMeta("A", "int")]),
+        TableMeta("dbo.T_FAR", [ColumnMeta("B", "int")]),
+    ]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.add(AiEmbedding(object_qname="dbo.T_FAR", model="e",
+                           vector=json.dumps([0.0, 1.0]), source_hash="h2", updated_at=now))
+        db.commit()
+        mode, hits = search_tables_smart(db, "query text", tables, ai, settings)
+
+    assert mode == "embedding"
+    # T_CLOSE(코사인 1.0)가 T_FAR(코사인 0.0)보다 먼저 — rerank 입력 순서로 확인
+    assert [t.qname for t in captured["candidates"]] == ["dbo.T_CLOSE", "dbo.T_FAR"]
+    assert hits[0].qname == "dbo.T_CLOSE"
+
+
+def test_search_tables_smart_propagates_rerank_failure_without_fallback(
+    migrated_engine, monkeypatch,
+):
+    """임베딩 경로에서 rerank_tables(실제 LLM 호출) 실패는 폴백 대상이 아니라 502 전파 대상 —
+    순수 의미 질의에서 LLM 장애를 200 빈 결과로 은폐하면 안 된다 (리뷰 Critical 1)."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+
+    def _boom_rerank(self, query, candidates):
+        raise AiUnavailableError("llm request failed after retries", {"cause": "down"})
+
+    monkeypatch.setattr(LlmAiClient, "rerank_tables", _boom_rerank)
+
+    tables = [TableMeta("dbo.T_CLOSE", [ColumnMeta("A", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.commit()
+        with pytest.raises(AiUnavailableError):
+            search_tables_smart(db, "query text", tables, ai, settings)
+
+
+def test_search_tables_smart_skips_corrupt_vector_rows(migrated_engine, monkeypatch, caplog):
+    """손상 vector 행은 스킵하고 나머지로 임베딩 경로를 유지 — 인덱스 일부 손상이 검색
+    전체를 죽이면 안 된다 (리뷰 Critical 2)."""
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: [[1.0, 0.0]])
+    monkeypatch.setattr(
+        LlmAiClient, "rerank_tables",
+        lambda self, query, candidates: [
+            AiTableHit(qname=candidates[0].qname, score=0.9, reason="stub")
+        ],
+    )
+
+    tables = [TableMeta("dbo.T_OK", [ColumnMeta("A", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_OK", model="e",
+                           vector=json.dumps([1.0, 0.0]), source_hash="h1", updated_at=now))
+        db.add(AiEmbedding(object_qname="dbo.T_BROKEN", model="e",
+                           vector="not-json", source_hash="h2", updated_at=now))
+        db.commit()
+        with caplog.at_level("WARNING"):
+            mode, hits = search_tables_smart(db, "query text", tables, ai, settings)
+    assert mode == "embedding"
+    assert hits[0].qname == "dbo.T_OK"
+    assert any("corrupt" in r.message for r in caplog.records)
+
+
+def test_search_tables_smart_falls_back_when_all_vectors_corrupt(migrated_engine, monkeypatch):
+    """전부 손상이면 rows가 비어 embed_texts조차 호출하지 않고 키워드로."""
+    calls: list = []
+    monkeypatch.setattr(ai_search, "embed_texts", lambda *a, **k: calls.append(a) or [[1.0]])
+
+    tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
+    settings = _embed_settings()
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="not-json",
+                           source_hash="h", updated_at=datetime.now(UTC)))
+        db.commit()
+        mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
+    assert mode == "keyword"
+    assert hits == []
+    assert calls == []
 
 
 def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
@@ -459,3 +632,141 @@ def test_start_suggest_job_conflicts_with_active_job(client, migrated_engine):
 
     res = client.post("/api/ai/suggest-relations")
     assert res.status_code == 409
+
+
+# Task 10 (사이클2): build_chat_context — search_tables_smart 재사용 top-8 + 관계·lineage
+
+
+def _new_snapshot(db) -> Snapshot:
+    snap = Snapshot(collected_at=datetime.now(UTC), source_db="TEST", status="ready")
+    db.add(snap)
+    db.flush()
+    return snap
+
+
+def _add_table(db, snapshot_id: int, oid: int, name: str, columns: list[tuple[str, bool]]):
+    obj = CatalogObject(snapshot_id=snapshot_id, schema="dbo", name=name,
+                        type="table", object_id=oid, row_count=10)
+    db.add(obj)
+    db.flush()
+    for i, (col_name, is_pk) in enumerate(columns, start=1):
+        db.add(CatalogColumn(object_id=obj.id, name=col_name, ordinal=i, data_type="int",
+                             max_length=4, is_nullable=False, is_pk=is_pk, is_computed=False))
+    db.flush()
+    return obj
+
+
+def test_build_chat_context_returns_empty_when_no_search_hits(migrated_engine):
+    """히트 없으면 빈 컨텍스트 — Fake의 '관련 테이블 없음' 경로로 이어진다."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        db.commit()
+        tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int", True)])]
+        context = build_chat_context(db, snap.id, "ZZQX_NOPE", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert context.tables == []
+
+
+def test_build_chat_context_caps_at_top_eight(migrated_engine):
+    """검색 히트가 8개를 넘어도 컨텍스트는 top-8만 담는다."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        tables = []
+        for i in range(10):
+            name = f"T_ORD_{i:02d}"
+            _add_table(db, snap.id, 9_000_000 + i, name, [("ORD_NO", True)])
+            tables.append(TableMeta(f"dbo.{name}", [ColumnMeta("ORD_NO", "int", True)]))
+        db.commit()
+        context = build_chat_context(db, snap.id, "ORD", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert CHAT_TOP_K == 8
+    assert len(context.tables) == 8
+    # FakeAiClient는 동점을 qname 오름차순으로 깨므로 앞 8개가 선택된다
+    assert [t.qname for t in context.tables] == [f"dbo.T_ORD_{i:02d}" for i in range(8)]
+
+
+def test_build_chat_context_formats_relations_and_caps_at_ten(migrated_engine):
+    """validated·confirmed만 'src.col → tgt.col (status)' 형식으로, 최대 10건."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        _add_table(db, snap.id, 9_100_000, "T_ANCHOR", [("ANCHOR_NO", True)])
+        now = datetime.now(UTC)
+        for i in range(12):  # 상한(10)보다 많은 validated/confirmed
+            db.add(Relation(
+                src_object="dbo.T_ANCHOR", src_column="ANCHOR_NO",
+                tgt_object=f"dbo.T_TGT_{i:02d}", tgt_column="TGT_NO",
+                status="validated" if i % 2 == 0 else "confirmed", origin="ai",
+                confidence=0.9, cardinality="1:N", last_verified_at=now,
+                reason=None, created_at=now,
+            ))
+        # candidate/rejected는 챗 컨텍스트에서 제외되어야 한다
+        db.add(Relation(
+            src_object="dbo.T_ANCHOR", src_column="ANCHOR_NO",
+            tgt_object="dbo.T_NOISE", tgt_column="NOISE_NO",
+            status="candidate", origin="ai", confidence=None, cardinality=None,
+            last_verified_at=None, reason=None, created_at=now,
+        ))
+        db.commit()
+        tables = [TableMeta("dbo.T_ANCHOR", [ColumnMeta("ANCHOR_NO", "int", True)])]
+        context = build_chat_context(db, snap.id, "ANCHOR", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert len(context.tables) == 1
+    relations = context.tables[0].relations
+    assert CHAT_RELATIONS_LIMIT == 10
+    assert len(relations) == 10
+    assert all(r.startswith("dbo.T_ANCHOR.ANCHOR_NO → dbo.T_TGT_") for r in relations)
+    assert all(r.endswith("(validated)") or r.endswith("(confirmed)") for r in relations)
+    assert not any("NOISE" in r for r in relations)  # candidate 상태는 제외
+
+
+def test_build_chat_context_backtracks_base_tables_via_lineage(migrated_engine):
+    """ViewLineageFlat 역추적 — summarize_object/explain_view와 동일한 쿼리 관용."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        snap = _new_snapshot(db)
+        anchor = _add_table(db, snap.id, 9_200_000, "V_ORD_SUMMARY", [("ORD_NO", False)])
+        base = _add_table(db, snap.id, 9_200_001, "T_ORD_BASE", [("ORD_NO", True)])
+        db.add(ViewLineageFlat(
+            snapshot_id=snap.id, view_object_id=anchor.id, view_column="ORD_NO",
+            base_object_id=base.id, base_column="ORD_NO", depth=1,
+            mapping_kind="direct", flag=None,
+        ))
+        db.commit()
+        tables = [TableMeta("dbo.V_ORD_SUMMARY", [ColumnMeta("ORD_NO", "int")])]
+        context = build_chat_context(db, snap.id, "ORD", tables,
+                                     FakeAiClient(), Settings(_env_file=None))
+    assert context.tables[0].base_tables == ["dbo.T_ORD_BASE"]
+
+
+# Task 10 (사이클2): POST /api/ai/chat — Fake 경로·mock 플래그·history 상한
+
+
+def test_chat_endpoint_fake_path_returns_answer_mock_and_matching_tables(client, load_fixture):
+    _seed(client, load_fixture)
+    manifest = load_fixture("manifest.json")
+    trap = manifest["cases"]["low_cardinality"][0]
+    table_name = trap.rsplit(".", 1)[0].split(".", 1)[1]
+
+    res = client.post("/api/ai/chat", json={"question": table_name})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["mock"] is True  # FakeAiClient 경로 (사이클2 §4)
+    assert body["answer"]
+    # tables는 서버가 컨텍스트에서 구성 — search-tables 테스트와 동일하게 최상위 히트만 단언
+    # (Fake는 정규화 부분일치라 HR_EMP_FAMILY 등도 함께 매칭되지만 동점 tie-break로 정확 일치가 1위)
+    assert body["tables"] and body["tables"][0].endswith(table_name)
+
+
+def test_chat_endpoint_no_hits_falls_back_to_empty_context(client, load_fixture):
+    _seed(client, load_fixture)
+    res = client.post("/api/ai/chat", json={"question": "ZZQX_NOPE_ZZ"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["tables"] == []
+    assert "관련 테이블 없음" in body["answer"]  # Fake 목업 응답 경로
+
+
+def test_chat_endpoint_rejects_history_over_six_turns(client, load_fixture):
+    _seed(client, load_fixture)
+    history = [{"role": "user", "content": f"질문 {i}"} for i in range(7)]
+    res = client.post("/api/ai/chat", json={"question": "테스트 질문", "history": history})
+    assert res.status_code == 422

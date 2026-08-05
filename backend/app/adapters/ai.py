@@ -88,6 +88,24 @@ class ViewFacts:
     definition_excerpt: str | None
 
 
+@dataclass(frozen=True)
+class ChatTableContext:
+    """챗 프롬프트에 실리는 테이블 1건 — 검색 히트를 컬럼·요약·관계·lineage로 확장 (사이클2 §4)."""
+
+    qname: str
+    columns: list[ColumnMeta]
+    summary: str | None
+    relations: list[str]
+    base_tables: list[str]
+
+
+@dataclass(frozen=True)
+class ChatContext:
+    """챗 프롬프트에 실리는 전체 컨텍스트 — search_tables_smart top-8 묶음. / full chat context."""
+
+    tables: list[ChatTableContext]
+
+
 class AiClient(Protocol):
     def judge_relations(self, candidates: list[CandidatePair]) -> list[RelationJudgement]: ...
 
@@ -98,6 +116,9 @@ class AiClient(Protocol):
     def explain_validation(self, facts: ValidationFacts) -> str: ...
 
     def explain_view(self, facts: ViewFacts) -> str: ...
+
+    def answer_question(self, question: str, history: list[tuple[str, str]],
+                        context: ChatContext) -> str: ...
 
 
 def _normalize(name: str) -> str:
@@ -180,6 +201,11 @@ class FakeAiClient:
         if facts.definition_excerpt and "GROUP BY" in facts.definition_excerpt.upper():
             parts.append("집계(GROUP BY)를 포함합니다.")
         return " ".join(parts)
+
+    def answer_question(self, question: str, history: list[tuple[str, str]],
+                        context: ChatContext) -> str:
+        names = ", ".join(t.qname for t in context.tables[:5]) or "관련 테이블 없음"
+        return f"[목업] 관련 테이블: {names}. 질문: {question}"
 
 
 def create_ai_client() -> AiClient:

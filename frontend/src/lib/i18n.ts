@@ -190,6 +190,20 @@ export const MESSAGES = {
   "collect.none": { ko: "수집 이력 없음", en: "No collection history" },
   "collect.snapshot": { ko: "스냅샷", en: "snapshot" },
 
+  "admin.embedIndexTitle": { ko: "AI 임베딩 인덱싱", en: "AI embedding index" },
+  "admin.embedIndexHint": {
+    ko: "테이블 임베딩을 상한·배치·대기로 나눠 생성합니다 — 재실행이 남은 분량을 이어갑니다.",
+    en: "Builds table embeddings in capped, throttled batches — reruns continue where it left off.",
+  },
+  "admin.embedIndexButton": { ko: "인덱싱 시작", en: "Start indexing" },
+  "admin.embedIndexRunning": { ko: "인덱싱 중…", en: "Indexing…" },
+  "admin.embedIndexProgress": { ko: "진행", en: "Progress" },
+  "admin.embedIndexDone": {
+    ko: "완료 — 인덱싱 {indexed} · 스킵 {skipped} · 잔여 {remaining}",
+    en: "Done — indexed {indexed} · skipped {skipped} · remaining {remaining}",
+  },
+  "admin.embedIndexFailed": { ko: "인덱싱 실패", en: "Indexing failed" },
+
   "check.title": { ko: "조인 검증", en: "Join validation" },
   "check.fetchingCandidates": { ko: "후보 조회 중…", en: "Finding candidates…" },
   "check.validating": { ko: "실데이터 검증 중", en: "Validating with real data" },
@@ -211,6 +225,16 @@ export const MESSAGES = {
   "ai.explainValidation": { ko: "AI 해석", en: "Explain with AI" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },
   "ai.failed": { ko: "AI 작업 실패", en: "AI job failed" },
+
+  "chat.title": { ko: "스키마 Q&A", en: "Schema Q&A" },
+  "chat.placeholder": { ko: "스키마에 대해 질문…", en: "Ask about the schema…" },
+  "chat.send": { ko: "전송", en: "Send" },
+  "chat.mockBadge": { ko: "AI 미연결 — 목업 응답", en: "AI offline — mock reply" },
+  "chat.emptyHint": {
+    ko: "예: 수주와 출하를 잇는 테이블은?",
+    en: "e.g. which tables link orders to shipping?",
+  },
+  "chat.you": { ko: "나", en: "You" },
 
   "browser.categories": { ko: "카테고리", en: "Categories" },
 

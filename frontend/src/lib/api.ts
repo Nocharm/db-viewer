@@ -366,7 +366,10 @@ export interface AiJobStatus {
   status: "queued" | "running" | "done" | "failed";
   progress_done: number;
   progress_total: number;
-  result: { suggested: number; created: number; rejected: number } | null;
+  // suggest: {suggested, created, rejected} / embed_index: {indexed, skipped, remaining}
+  result: { suggested: number; created: number; rejected: number }
+    | { indexed: number; skipped: number; remaining: number }
+    | null;
   error: string | null;
 }
 
@@ -377,4 +380,17 @@ export function startAiSuggest(): Promise<{ job_id: number; status: string }> {
 
 export function fetchAiJob(jobId: number): Promise<AiJobStatus> {
   return getJson(`/api/ai/jobs/${jobId}`);
+}
+
+/** 임베딩 인덱싱 잡 시작 — 202 + ai_jobs 폴링 (사이클2 Task 8). / start the capped embed-index job. */
+export function startEmbedIndex(): Promise<{ job_id: number; status: string }> {
+  return postJson("/api/ai/embed-index", {});
+}
+
+export interface ChatTurn { role: "user" | "assistant"; content: string }
+export interface ChatResponse { answer: string; tables: string[]; mock: boolean }
+
+/** 스키마 Q&A — 히스토리는 서버가 6턴으로 캡 (사이클2 Task 10). / schema chat; history capped server-side at 6 turns. */
+export function chatAi(question: string, history: ChatTurn[]): Promise<ChatResponse> {
+  return postJson("/api/ai/chat", { question, history });
 }
