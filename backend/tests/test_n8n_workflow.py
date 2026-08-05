@@ -38,10 +38,12 @@ def test_workflow_files_are_exactly_the_generated_set():
 
 
 def test_executors_are_short_and_stateless():
-    """단문 실행기 계약 — webhook → Code → MSSQL 3노드, 동기 응답, 체인 하나."""
+    """단문 실행기 계약 — webhook → Code → MSSQL, 동기 응답, 체인 하나.
+    W2는 실행문을 결과와 묶어 응답하는 Attach query가 하나 더 붙어 4노드다."""
+    expected_node_counts = {W1_PATH: 3, W2_PATH: 4}
     for path in EXECUTORS:
         wf = _load(path)
-        assert len(wf["nodes"]) == 3, path.name
+        assert len(wf["nodes"]) == expected_node_counts[path], path.name
         trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
         # 결과가 곧 HTTP 응답 — 백엔드가 받아서 다음 쿼리를 정한다
         assert trigger["parameters"]["responseMode"] == "lastNode", path.name
@@ -100,6 +102,27 @@ def test_query_executor_contract():
     assert "']]'" in js or "]]" in js      # 식별자 브래킷 이스케이프
     assert "''" in js                       # 리터럴 이스케이프
     assert "unknown kind" in js             # 그 외 kind 거부
+
+
+def test_w2_builds_a_multi_join_preview_from_steps() -> None:
+    """N-웨이 조인 — 첫 스텝의 left가 FROM, 이후 각 스텝이 JOIN 한 줄."""
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    assert "multi_join_preview" in js
+    # join_type은 화이트리스트 매핑 — 임의 문자열이 SQL에 들어가면 안 된다
+    assert "INNER JOIN" in js and "LEFT JOIN" in js
+    assert "b.join_type" not in js.replace("b.join_type === 'left'", "")
+
+
+def test_w2_returns_the_executed_sql_with_the_rows() -> None:
+    """실행문을 응답에 실어 보낸다 — 화면이 진짜 돌아간 SQL을 보여줄 수 있게."""
+    wf = _load(W2_PATH)
+    names = [n["name"] for n in wf["nodes"]]
+    assert names == ["Webhook", "Build query", "Run query", "Attach query"]
+    attach = next(n for n in wf["nodes"] if n["name"] == "Attach query")
+    js = attach["parameters"]["jsCode"]
+    assert "$('Build query')" in js
+    assert "rows" in js and "query" in js
 
 
 def test_recon_workflow_structure():

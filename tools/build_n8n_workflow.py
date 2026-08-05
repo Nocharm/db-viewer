@@ -44,6 +44,53 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   query = `SELECT TOP ${limit} a.${sc} AS ${esc('src.' + b.src_column)}, ` +
     `b.${tc} AS ${esc('tgt.' + b.tgt_column)} ` +
     `FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
+} else if (b.kind === 'multi_join_preview') {
+  // 첫 스텝의 left가 FROM, 이후 각 스텝이 JOIN 한 줄 — 별칭은 t0..tN
+  // first step's left table is FROM; each step adds one JOIN. aliases are t0..tN
+  const steps = Array.isArray(b.steps) ? b.steps : [];
+  if (steps.length === 0) throw new Error('multi_join_preview needs at least one step');
+  if (steps.length > 8) throw new Error('too many join steps');
+  const alias = {};           // qname -> t0..tN
+  const select = [];
+  const from = [];
+  const qn = (s, t) => esc(s) + '.' + esc(t);
+  const key = (s, t) => s + '.' + t;
+  const bind = (schema, table) => {
+    const k = key(schema, table);
+    if (alias[k] === undefined) alias[k] = 't' + Object.keys(alias).length;
+    return alias[k];
+  };
+  const first = steps[0];
+  const a0 = bind(first.left_schema, first.left_table);
+  from.push(qn(first.left_schema, first.left_table) + ' ' + a0);
+  for (const st of steps) {
+    const la = alias[key(st.left_schema, st.left_table)];
+    const ra = alias[key(st.right_schema, st.right_table)];
+    // 왼쪽이 이미 바인딩돼 있어야 한다 — 백엔드가 연결성을 검증하고 보낸다
+    if (la === undefined && ra === undefined) throw new Error('disconnected join step');
+    const joiner = (st.join_type === 'left') ? 'LEFT JOIN' : 'INNER JOIN';
+    if (ra === undefined) {
+      const na = bind(st.right_schema, st.right_table);
+      from.push(joiner + ' ' + qn(st.right_schema, st.right_table) + ' ' + na +
+        ' ON ' + la + '.' + esc(st.left_column) + ' = ' + na + '.' + esc(st.right_column));
+    } else if (la === undefined) {
+      const na = bind(st.left_schema, st.left_table);
+      from.push(joiner + ' ' + qn(st.left_schema, st.left_table) + ' ' + na +
+        ' ON ' + na + '.' + esc(st.left_column) + ' = ' + ra + '.' + esc(st.right_column));
+    } else {
+      // 양쪽 다 이미 들어와 있다 — 새 JOIN이 아니라 마지막 JOIN에 조건을 더한다
+      // both sides already joined: add a condition instead of duplicating the alias
+      from[from.length - 1] += ' AND ' + la + '.' + esc(st.left_column) +
+        ' = ' + ra + '.' + esc(st.right_column);
+    }
+    const lq = alias[key(st.left_schema, st.left_table)];
+    const rq = alias[key(st.right_schema, st.right_table)];
+    select.push(lq + '.' + esc(st.left_column) + ' AS ' +
+      esc(st.left_table + '.' + st.left_column));
+    select.push(rq + '.' + esc(st.right_column) + ' AS ' +
+      esc(st.right_table + '.' + st.right_column));
+  }
+  query = 'SELECT TOP ' + limit + ' ' + select.join(', ') + ' FROM ' + from.join(' ');
 } else if (b.kind === 'table_preview') {
   const tbl = esc(b.schema) + '.' + esc(b.table);
   query = `SELECT TOP ${limit} * FROM ${tbl}`;
@@ -54,6 +101,15 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   throw new Error('unknown kind: ' + b.kind);
 }
 return [{ json: { query } }];
+"""
+
+# 실행문을 결과와 함께 돌려준다 — 화면이 진짜 돌아간 SQL을 보여줄 수 있게 한다.
+# 0행 결과에서도 query가 남도록 단일 아이템 {query, rows}로 감싼다.
+ATTACH_QUERY_JS = """\
+const query = $('Build query').first().json.query;
+// alwaysOutputData가 0건을 빈 아이템 하나로 보낸다 → 빈 객체 제거
+const rows = $input.all().map(i => i.json).filter(r => Object.keys(r).length > 0);
+return [{ json: { query, rows } }];
 """
 
 # (노드 이름, 정찰 SQL 파일) — 연결 단계 정지점 16 / recon queries, connection step 16
@@ -216,6 +272,8 @@ def build_query_executor_workflow() -> dict:
             "operation": "executeQuery",
             "query": "={{ $json.query }}",
         }, credentials=mssql_cred, type_version=1.1),
+        _node("Attach query", "n8n-nodes-base.code", [660, 0],
+              {"jsCode": ATTACH_QUERY_JS}, type_version=2),
     ]
     return {
         "name": "W2 query executor (webhook)",
@@ -224,8 +282,10 @@ def build_query_executor_workflow() -> dict:
         "settings": {"executionOrder": "v1"},
         "meta": {
             "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/join_preview/"
-                     "table_preview)와 식별자 파라미터를 보내면 고정 템플릿 쿼리만 실행한다. "
-                     "동적 SQL 문자열은 받지 않는다. credentials는 읽기 전용 계정 권장. "
+                     "multi_join_preview/table_preview)와 식별자 파라미터를 보내면 고정 템플릿 "
+                     "쿼리만 실행한다. 동적 SQL 문자열은 받지 않는다. 응답은 "
+                     "{query, rows} 단일 객체 — 실행문을 화면에 그대로 보여주기 위함. "
+                     "credentials는 읽기 전용 계정 권장. "
                      "N8N_WEBHOOK_BASE(백엔드)와 webhook 경로(dbv-query)가 일치해야 한다.",
         },
     }

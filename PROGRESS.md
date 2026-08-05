@@ -2,6 +2,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-06
+
+- **W2에 `multi_join_preview` kind + 실행 SQL 반환 (ERD 조인 빌더 Task 12)** — N-웨이 조인은 프론트가 SQL을 그리면 화면과 실제 실행문이 어긋나므로, `Build query` 노드가 스텝 배열(`left/right schema·table·column`, `join_type`)을 받아 별칭 `t0..tN`으로 FROM+JOIN을 조립하게 했다. 조인 체인 3분기(오른쪽 신규/왼쪽 신규/양쪽 기바인딩) 중 세 번째는 새 JOIN을 추가하는 대신 직전 JOIN의 `ON`에 `AND` 조건을 덧붙여 별칭 중복을 막는다. 응답 계약도 바꿨다 — 새 `Attach query` 노드가 `{query, rows}` 단일 객체로 감싸 반환(`Build query`가 만든 실행문 그대로 노출, 0행 결과에서도 `alwaysOutputData`가 만드는 빈 아이템은 필터링). W2가 3→4노드가 되면서 두 실행기 공용이던 `test_executors_are_short_and_stateless`의 "3노드" 단정이 W2에서 깨져, 워크플로별 기대 노드 수를 딕셔너리로 바꿔 고쳤다(기존 계약 테스트 문서에 없던 파생 수정). 백엔드 어댑터(`n8n_query.py`)는 후속 태스크 몫이라 그대로 뒀다 — 지금은 생성기·JSON·테스트만 합의된 상태.
+
 ## 2026-08-05
 
 - **조인 드래그가 브라우저에서 아예 시작되지 않던 회귀 수정** — 정적 검사·유닛 테스트는 전부 통과했지만 실제 브라우저에서 컬럼 행 드래그가 시작조차 안 되는 결함을 헤드리스 크롬으로 단계적 소거해 원인 두 가지를 확인했다: ① `.erd-node__scroll`의 `overflow-y: auto`가 CSS 규칙상 `overflow-x`도 `auto`로 강제해 좌우 클리핑 경계가 생기는데, 기본 `Handle`이 정확히 그 경계 위에(`left:0`/`right:0` + `translate ∓50%`) 앉아 있어 `elementFromPoint`가 핸들 대신 부모 `.erd-node` div를 반환, ② 핸들 히트박스가 1px이라 클리핑이 없어도 잡기 어려움. 스크롤 컨테이너의 `overflow-y: auto`·`position: relative`(오프셋페어런트 보정)는 그대로 두고 `TableNode.tsx`의 컬럼 행 핸들만 클립 경계 안쪽으로 3px 인셋 + 12px 실제 히트박스로 교체해 두 원인을 동시에 해소 — CSS는 무변경. Playwright 실브라우저로 5항목 전부 재현 확인(핸들 히트테스트·연결선 시작·호버 자동펼침+하이라이트·드롭 후 조인 스텝 생성·스크롤 유지), `tsc`/`eslint`/vitest 67건 그대로.

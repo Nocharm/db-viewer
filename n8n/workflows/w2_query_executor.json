@@ -25,7 +25,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// 식별자는 브래킷, 리터럴은 '' 이스케이프 — 템플릿 밖 SQL 조립 금지\n// bracket-escape identifiers, quote-escape literals; no free-form SQL\nconst esc = (s) => '[' + String(s).replace(/\\]/g, ']]') + ']';\nconst lit = (s) => String(s).replace(/'/g, \"''\");\nconst b = $json.body ?? {};\nconst limit = Math.min(Math.max(parseInt(b.limit, 10) || 20, 1), 500);\nlet query;\nif (b.kind === 'containment') {\n  const src = esc(b.src_schema) + '.' + esc(b.src_table);\n  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);\n  const sc = esc(b.src_column), tc = esc(b.tgt_column);\n  query = `SELECT\n  (SELECT COUNT(*) FROM ${src}) AS src_rows,\n  (SELECT COUNT(*) FROM ${tgt}) AS tgt_rows,\n  (SELECT COUNT(DISTINCT ${tc}) FROM ${tgt}) AS tgt_distinct,\n  COUNT(DISTINCT a.${sc}) AS src_distinct,\n  COUNT(DISTINCT CASE WHEN b.${tc} IS NOT NULL THEN a.${sc} END) AS matched\nFROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;\n} else if (b.kind === 'join_preview') {\n  const src = esc(b.src_schema) + '.' + esc(b.src_table);\n  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);\n  const sc = esc(b.src_column), tc = esc(b.tgt_column);\n  query = `SELECT TOP ${limit} a.${sc} AS ${esc('src.' + b.src_column)}, ` +\n    `b.${tc} AS ${esc('tgt.' + b.tgt_column)} ` +\n    `FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;\n} else if (b.kind === 'table_preview') {\n  const tbl = esc(b.schema) + '.' + esc(b.table);\n  query = `SELECT TOP ${limit} * FROM ${tbl}`;\n  if (b.filter_column && b.filter_value) {\n    query += ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;\n  }\n} else {\n  throw new Error('unknown kind: ' + b.kind);\n}\nreturn [{ json: { query } }];\n"
+        "jsCode": "// 식별자는 브래킷, 리터럴은 '' 이스케이프 — 템플릿 밖 SQL 조립 금지\n// bracket-escape identifiers, quote-escape literals; no free-form SQL\nconst esc = (s) => '[' + String(s).replace(/\\]/g, ']]') + ']';\nconst lit = (s) => String(s).replace(/'/g, \"''\");\nconst b = $json.body ?? {};\nconst limit = Math.min(Math.max(parseInt(b.limit, 10) || 20, 1), 500);\nlet query;\nif (b.kind === 'containment') {\n  const src = esc(b.src_schema) + '.' + esc(b.src_table);\n  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);\n  const sc = esc(b.src_column), tc = esc(b.tgt_column);\n  query = `SELECT\n  (SELECT COUNT(*) FROM ${src}) AS src_rows,\n  (SELECT COUNT(*) FROM ${tgt}) AS tgt_rows,\n  (SELECT COUNT(DISTINCT ${tc}) FROM ${tgt}) AS tgt_distinct,\n  COUNT(DISTINCT a.${sc}) AS src_distinct,\n  COUNT(DISTINCT CASE WHEN b.${tc} IS NOT NULL THEN a.${sc} END) AS matched\nFROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;\n} else if (b.kind === 'join_preview') {\n  const src = esc(b.src_schema) + '.' + esc(b.src_table);\n  const tgt = esc(b.tgt_schema) + '.' + esc(b.tgt_table);\n  const sc = esc(b.src_column), tc = esc(b.tgt_column);\n  query = `SELECT TOP ${limit} a.${sc} AS ${esc('src.' + b.src_column)}, ` +\n    `b.${tc} AS ${esc('tgt.' + b.tgt_column)} ` +\n    `FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;\n} else if (b.kind === 'multi_join_preview') {\n  // 첫 스텝의 left가 FROM, 이후 각 스텝이 JOIN 한 줄 — 별칭은 t0..tN\n  // first step's left table is FROM; each step adds one JOIN. aliases are t0..tN\n  const steps = Array.isArray(b.steps) ? b.steps : [];\n  if (steps.length === 0) throw new Error('multi_join_preview needs at least one step');\n  if (steps.length > 8) throw new Error('too many join steps');\n  const alias = {};           // qname -> t0..tN\n  const select = [];\n  const from = [];\n  const qn = (s, t) => esc(s) + '.' + esc(t);\n  const key = (s, t) => s + '.' + t;\n  const bind = (schema, table) => {\n    const k = key(schema, table);\n    if (alias[k] === undefined) alias[k] = 't' + Object.keys(alias).length;\n    return alias[k];\n  };\n  const first = steps[0];\n  const a0 = bind(first.left_schema, first.left_table);\n  from.push(qn(first.left_schema, first.left_table) + ' ' + a0);\n  for (const st of steps) {\n    const la = alias[key(st.left_schema, st.left_table)];\n    const ra = alias[key(st.right_schema, st.right_table)];\n    // 왼쪽이 이미 바인딩돼 있어야 한다 — 백엔드가 연결성을 검증하고 보낸다\n    if (la === undefined && ra === undefined) throw new Error('disconnected join step');\n    const joiner = (st.join_type === 'left') ? 'LEFT JOIN' : 'INNER JOIN';\n    if (ra === undefined) {\n      const na = bind(st.right_schema, st.right_table);\n      from.push(joiner + ' ' + qn(st.right_schema, st.right_table) + ' ' + na +\n        ' ON ' + la + '.' + esc(st.left_column) + ' = ' + na + '.' + esc(st.right_column));\n    } else if (la === undefined) {\n      const na = bind(st.left_schema, st.left_table);\n      from.push(joiner + ' ' + qn(st.left_schema, st.left_table) + ' ' + na +\n        ' ON ' + na + '.' + esc(st.left_column) + ' = ' + ra + '.' + esc(st.right_column));\n    } else {\n      // 양쪽 다 이미 들어와 있다 — 새 JOIN이 아니라 마지막 JOIN에 조건을 더한다\n      // both sides already joined: add a condition instead of duplicating the alias\n      from[from.length - 1] += ' AND ' + la + '.' + esc(st.left_column) +\n        ' = ' + ra + '.' + esc(st.right_column);\n    }\n    const lq = alias[key(st.left_schema, st.left_table)];\n    const rq = alias[key(st.right_schema, st.right_table)];\n    select.push(lq + '.' + esc(st.left_column) + ' AS ' +\n      esc(st.left_table + '.' + st.left_column));\n    select.push(rq + '.' + esc(st.right_column) + ' AS ' +\n      esc(st.right_table + '.' + st.right_column));\n  }\n  query = 'SELECT TOP ' + limit + ' ' + select.join(', ') + ' FROM ' + from.join(' ');\n} else if (b.kind === 'table_preview') {\n  const tbl = esc(b.schema) + '.' + esc(b.table);\n  query = `SELECT TOP ${limit} * FROM ${tbl}`;\n  if (b.filter_column && b.filter_value) {\n    query += ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;\n  }\n} else {\n  throw new Error('unknown kind: ' + b.kind);\n}\nreturn [{ json: { query } }];\n"
       }
     },
     {
@@ -46,6 +46,18 @@
           "id": "REPLACE_ME",
           "name": "MSSQL readonly"
         }
+      }
+    },
+    {
+      "name": "Attach query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const query = $('Build query').first().json.query;\n// alwaysOutputData가 0건을 빈 아이템 하나로 보낸다 → 빈 객체 제거\nconst rows = $input.all().map(i => i.json).filter(r => Object.keys(r).length > 0);\nreturn [{ json: { query, rows } }];\n"
       }
     }
   ],
@@ -71,12 +83,23 @@
           }
         ]
       ]
+    },
+    "Run query": {
+      "main": [
+        [
+          {
+            "node": "Attach query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1"
   },
   "meta": {
-    "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/join_preview/table_preview)와 식별자 파라미터를 보내면 고정 템플릿 쿼리만 실행한다. 동적 SQL 문자열은 받지 않는다. credentials는 읽기 전용 계정 권장. N8N_WEBHOOK_BASE(백엔드)와 webhook 경로(dbv-query)가 일치해야 한다."
+    "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/join_preview/multi_join_preview/table_preview)와 식별자 파라미터를 보내면 고정 템플릿 쿼리만 실행한다. 동적 SQL 문자열은 받지 않는다. 응답은 {query, rows} 단일 객체 — 실행문을 화면에 그대로 보여주기 위함. credentials는 읽기 전용 계정 권장. N8N_WEBHOOK_BASE(백엔드)와 webhook 경로(dbv-query)가 일치해야 한다."
   }
 }
