@@ -33,6 +33,17 @@ def _object_id(engine, qname: str) -> int:
         ).scalar_one()
 
 
+def _column_id(engine, object_qname: str, column: str) -> int:
+    schema, table = object_qname.split(".", 1)
+    obj_t, col_t = Base.metadata.tables["objects"], Base.metadata.tables["columns"]
+    with engine.connect() as conn:
+        return conn.execute(
+            sa.select(col_t.c.id)
+            .join(obj_t, col_t.c.object_id == obj_t.c.id)
+            .where(obj_t.c.schema == schema, obj_t.c.name == table, col_t.c.name == column)
+        ).scalar_one()
+
+
 def _no_fk_relation(load_fixture) -> dict:
     for rel in load_fixture("expected/relations.json")["rows"]:
         if rel["kind"] == "real_no_fk" and rel["orphan_count"] == 0:
@@ -85,9 +96,14 @@ def test_batch_check_caps_targets_and_sorts(vclient, migrated_engine, load_fixtu
 
 
 def test_join_check_items_carry_column_ids_for_deep_links(vclient, load_fixture, migrated_engine):
-    """결과에서 조인 빌더로 넘어가려면 컬럼 id가 필요하다 / deep links need column ids."""
+    """결과에서 조인 빌더로 넘어가려면 컬럼 id가 필요하다 / deep links need column ids.
+
+    isinstance만 확인하면 src/tgt id가 뒤바뀌어도 통과한다 — 실제 DB id와 대조해야
+    빌더 딥링크가 엉뚱한 컬럼을 하이라이트하는 조용한 실패를 잡는다.
+    """
     _seed(vclient, load_fixture)
-    object_id = _object_id(migrated_engine, "dbo.HR_EMP_FAMILY")
+    src_qname = "dbo.HR_EMP_FAMILY"
+    object_id = _object_id(migrated_engine, src_qname)
 
     res = vclient.post(f"/api/objects/{object_id}/join-check", json={})
 
@@ -96,8 +112,10 @@ def test_join_check_items_carry_column_ids_for_deep_links(vclient, load_fixture,
     items = body["checked"] + body["no_data"]
     assert items, "픽스처에 조인 후보가 있어야 한다"
     for item in items:
-        assert isinstance(item["src_column_id"], int)
-        assert isinstance(item["tgt_column_id"], int)
+        assert item["src_column_id"] == _column_id(migrated_engine, src_qname, item["src_column"])
+        assert item["tgt_column_id"] == _column_id(
+            migrated_engine, item["target_object"], item["tgt_column"]
+        )
 
 
 def test_join_check_rejects_views(vclient, migrated_engine, load_fixture):
