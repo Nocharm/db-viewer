@@ -44,6 +44,14 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   query = `SELECT TOP ${limit} a.${sc} AS ${esc('src.' + b.src_column)}, ` +
     `b.${tc} AS ${esc('tgt.' + b.tgt_column)} ` +
     `FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
+} else if (b.kind === 'sample_distinct') {
+  // 게이트 전용 — 서브쿼리 TOP N 표본의 행 수·distinct만 집계, 원본 값은 반환하지 않는다
+  // gate-only aggregate over a TOP-N sample; never returns raw values
+  const top = Math.min(Math.max(parseInt(b.top, 10) || 200, 1), 1000);
+  const tbl = esc(b.schema) + '.' + esc(b.table);
+  const c = esc(b.column);
+  query = `SELECT COUNT(*) AS sample_rows, COUNT(DISTINCT ${c}) AS sample_distinct ` +
+    `FROM (SELECT TOP ${top} ${c} FROM ${tbl}) s`;
 } else if (b.kind === 'multi_join_preview') {
   // 첫 스텝의 left가 FROM, 이후 각 스텝이 JOIN 한 줄 — 별칭은 t0..tN
   // first step's left table is FROM; each step adds one JOIN. aliases are t0..tN
@@ -341,7 +349,7 @@ def build_query_executor_workflow() -> dict:
         "connections": _chain(nodes),
         "settings": {"executionOrder": "v1"},
         "meta": {
-            "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/join_preview/"
+            "notes": "T2 검증·미리보기의 live 실행기 — FastAPI가 kind(containment/sample_distinct/join_preview/"
                      "multi_join_preview/table_preview)와 식별자 파라미터를 보내면 고정 템플릿 "
                      "쿼리만 실행한다. 동적 SQL 문자열은 받지 않는다. 응답은 "
                      "{query, rows} 단일 객체 — 실행문을 화면에 그대로 보여주기 위함. "
