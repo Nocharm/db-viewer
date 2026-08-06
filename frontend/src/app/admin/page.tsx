@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { AdUserList } from "@/components/admin/AdUserList";
 import { CollectPanel } from "@/components/admin/CollectPanel";
+import { PreviewAllowlistPanel } from "@/components/admin/PreviewAllowlistPanel";
 import { useI18n } from "@/components/i18n";
 import { useMe } from "@/components/providers";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
@@ -115,6 +116,8 @@ export default function AdminPage() {
           </h1>
 
       <CollectPanel />
+
+      <PreviewAllowlistPanel />
 
       <section className="mb-6" data-testid="AdminPage-embedIndexSection">
         <div className="mb-1 flex items-center gap-2">

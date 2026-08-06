@@ -83,6 +83,29 @@ def require_sysadmin(login_id: str = Depends(get_current_user)) -> str:
     return login_id
 
 
+def require_preview_admin(
+    x_preview_password: str | None = Header(default=None, alias="X-Preview-Password"),
+) -> None:
+    """미리보기 허용 목록 수정 게이트 — 환경변수 비밀번호 / password gate for allowlist edits.
+
+    관리자 로그인(require_sysadmin) 위에 얹는 두 번째 잠금이다: 이 목록을 바꾸는 건
+    실 데이터가 화면에 나가는 범위를 바꾸는 조작이라, 열린 관리 세션만으로는
+    수정되지 않게 한다. 미설정 배포는 열어두는 대신 수정 자체를 막는다.
+    """
+    settings = get_settings()
+    if not settings.preview_admin_password:
+        raise HTTPException(status_code=503, detail={
+            "message": "PREVIEW_ADMIN_PASSWORD is not configured — set it in .env and "
+                       "restart the backend to edit the preview allowlist",
+        })
+    # 상수 시간 비교 — 타이밍 부채널 방지 / constant-time compare, no timing oracle
+    supplied = (x_preview_password or "").encode()
+    if not secrets.compare_digest(supplied, settings.preview_admin_password.encode()):
+        raise HTTPException(status_code=401, detail={
+            "message": "invalid preview admin password",
+        })
+
+
 def require_ingest_access(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> str:

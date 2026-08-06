@@ -79,6 +79,26 @@ def fixture_dir(tmp_path_factory):
     return out
 
 
+@pytest.fixture()
+def allow_preview(migrated_engine):
+    """미리보기 허용 목록에 객체를 등록 / put objects on the preview allowlist.
+
+    기본 정책이 "전부 차단"이라, 실값을 보는 테스트는 무엇을 열었는지 명시해야 한다.
+    """
+    from datetime import UTC, datetime
+
+    from app.models import PreviewAllowlist
+
+    def allow(*qnames: str) -> None:
+        with sessionmaker(bind=migrated_engine)() as db:
+            for qname in qnames:
+                db.add(PreviewAllowlist(qname=qname, note=None, added_by="test",
+                                        created_at=datetime.now(UTC)))
+            db.commit()
+
+    return allow
+
+
 @pytest.fixture(scope="session")
 def load_fixture(fixture_dir):
     def load(name: str) -> dict:

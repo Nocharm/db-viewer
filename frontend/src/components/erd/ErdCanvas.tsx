@@ -25,6 +25,7 @@ import { getEdgeVisual } from "@/lib/edge-style";
 import { planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph, MAX_VISIBLE_COLUMNS } from "@/lib/layout";
 import type { GraphEdge, GraphResponse } from "@/lib/types";
+import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { TableNode, type TableFlowNode } from "./TableNode";
 import { Legend } from "./Legend";
 
@@ -85,6 +86,8 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
   // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
   const [edgeReason, setEdgeReason] = useState<string | null>(null);
+  // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
+  const previewAllowed = usePreviewAllowlist();
   // 우클릭 미리보기 — 하단 와이드 카드 / preview data for the bottom card
   const [preview, setPreview] = useState<TablePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -228,6 +231,13 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
     () => (graph?.nodes ?? []).filter((n) => hiddenNodes.has(n.id)),
     [graph, hiddenNodes],
   );
+
+  // 노드 id → qname 으로 허용 여부 판정 / allowlist check by the node's qualified name
+  const isPreviewAllowed = useCallback((nodeId: number | null): boolean => {
+    if (nodeId === null) return false;
+    const node = graph?.nodes.find((n) => n.id === nodeId);
+    return node !== undefined && previewAllowed.has(`${node.schema}.${node.name}`);
+  }, [graph, previewAllowed]);
 
   const openPreview = useCallback((nodeId: number, limit?: number) => {
     setPreviewLoading(true);
@@ -486,9 +496,17 @@ function ErdCanvasInner({ anchorId, onSelectColumn, onQuickStart }: Props) {
           {menu.type === "node" && menu.nodeId !== null ? (
             <>
               <button className="pressable erd-menu__item"
+                      disabled={!isPreviewAllowed(menu.nodeId)}
+                      title={isPreviewAllowed(menu.nodeId)
+                        ? undefined : t("preview.notAllowedHint")}
                       onClick={() => { openPreview(menu.nodeId as number); setMenu(null); }}
                       data-testid="ErdCanvas-previewItem">
                 {t("detail.preview")}
+                {!isPreviewAllowed(menu.nodeId) && (
+                  <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>
+                    ({t("preview.notAllowed")})
+                  </span>
+                )}
               </button>
               <button className="pressable erd-menu__item"
                       onClick={() => { hideNode(menu.nodeId as number); setMenu(null); }}
