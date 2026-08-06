@@ -151,7 +151,7 @@ export function PreviewAllowlistPanel() {
                   <td className="text-right">
                     {entry ? (
                       <button
-                        className="icon-button"
+                        className="icon-button row-action"
                         disabled={!canEdit}
                         title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
                         onClick={() => run(() => removePreviewAllow(item.schema, password),
@@ -162,7 +162,7 @@ export function PreviewAllowlistPanel() {
                       </button>
                     ) : (
                       <button
-                        className="btn-primary"
+                        className="btn-primary row-action"
                         disabled={!canEdit}
                         title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
                         onClick={() => run(

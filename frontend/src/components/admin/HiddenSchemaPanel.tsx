@@ -69,10 +69,20 @@ export function HiddenSchemaPanel() {
         이름을 노출할지</b>만 정합니다. 켜도 컬럼은 열리지 않습니다.
       </p>
 
+      {/* 숨김 상태에선 어떤 스키마가 감춰졌는지도 밝히지 않는다 — 목록에서 뺀 이유가 존재를
+          안 드러내는 것인데 관리 화면에 이름이 남으면 앞뒤가 안 맞는다. 개수만 보여준다.
+          / while hidden, the names stay withheld here too: listing them in the console would
+            undo the point of removing them from the rails. Only the count shows. */}
       <p className="mb-3 font-mono text-xs" data-testid="AdminPage-hiddenSchemaList">
-        {schemas.length === 0
-          ? <span style={{ color: "var(--muted)" }}>설정된 스키마가 없습니다 (HIDDEN_SCHEMAS 비어 있음)</span>
-          : schemas.join(", ")}
+        {schemas.length === 0 ? (
+          <span style={{ color: "var(--muted)" }}>설정된 스키마가 없습니다 (HIDDEN_SCHEMAS 비어 있음)</span>
+        ) : render ? (
+          schemas.join(", ")
+        ) : (
+          <span style={{ color: "var(--muted)" }}>
+            {schemas.length}건 숨김 중 — 이름은 「목록에 표시하기」를 켠 뒤에 보입니다
+          </span>
+        )}
       </p>
 
       {!passwordConfigured ? (

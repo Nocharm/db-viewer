@@ -7,7 +7,6 @@ export const LANG_STORAGE_KEY = "dbv.lang";
 // 카테고리 라벨(생산·품질 등)은 도메인 데이터라 사전 대상에서 제외 / domain labels stay Korean
 export const MESSAGES = {
   "nav.tables": { ko: "테이블", en: "Tables" },
-  "nav.erd": { ko: "ERD", en: "ERD" },
   "nav.parsing": { ko: "파싱 지표", en: "Parse Stats" },
   "nav.admin": { ko: "관리", en: "Admin" },
   "header.themeToggle": { ko: "다크/라이트 전환", en: "Toggle dark/light" },

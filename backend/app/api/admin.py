@@ -3,7 +3,7 @@
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -181,6 +181,47 @@ def add_preview_allow(
     db.add(AuditLog(action="preview_allow_add", detail=schema,
                     requested_by=admin, requested_at=now))
     return {"schema": schema, "created": row is None}
+
+
+@router.get("/audit")
+def get_audit_log(
+    action: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_sysadmin),
+) -> dict:
+    """감사 로그 조회 — 최신순. 노출·권한을 바꾼 조작이 언제 누구에 의해 있었는지 본다.
+
+    허용 목록 등록/해제, 감춤 표시 토글, 로그인 화이트리스트 변경, 실값 반출(미리보기·
+    조인 샘플)이 모두 같은 표에 쌓인다. `total`을 함께 주는 건 잘린 목록만 보면 화면이
+    "이게 전부"라고 거짓말하기 때문 (objects 검색과 같은 이유).
+    """
+    filters = [AuditLog.action == action] if action else []
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(*filters)
+    ).scalar_one()
+    rows = db.execute(
+        select(AuditLog).where(*filters)
+        .order_by(AuditLog.requested_at.desc(), AuditLog.id.desc())
+        .limit(limit).offset(offset)
+    ).scalars().all()
+    # 필터 드롭다운을 채우려면 어떤 action이 실제로 쌓였는지 알아야 한다
+    actions = list(db.execute(
+        select(AuditLog.action).distinct().order_by(AuditLog.action)
+    ).scalars())
+    return {
+        "total": total,
+        "actions": actions,
+        "items": [
+            {
+                "id": row.id, "action": row.action, "detail": row.detail,
+                "requested_by": row.requested_by,
+                "requested_at": row.requested_at.isoformat(),
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/hidden-schema-render")

@@ -400,6 +400,32 @@ export function fetchHiddenSchemas(): Promise<{ items: string[]; render: boolean
   return getJson("/api/objects/hidden-schemas");
 }
 
+export interface AuditEntry {
+  id: number;
+  action: string;
+  detail: string;
+  requested_by: string;
+  requested_at: string;
+}
+
+export interface AuditPage {
+  total: number;
+  /** 실제로 쌓인 action 목록 — 필터 드롭다운을 채운다 */
+  actions: string[];
+  items: AuditEntry[];
+}
+
+export function fetchAuditLog(
+  opts: { action?: string; limit?: number; offset?: number } = {},
+): Promise<AuditPage> {
+  const params = new URLSearchParams();
+  if (opts.action) params.set("action", opts.action);
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts.offset !== undefined) params.set("offset", String(opts.offset));
+  const query = params.toString();
+  return getJson(`/api/admin/audit${query ? `?${query}` : ""}`);
+}
+
 export function fetchHiddenSchemaRender(): Promise<{ render: boolean; schemas: string[] }> {
   return getJson("/api/admin/hidden-schema-render");
 }

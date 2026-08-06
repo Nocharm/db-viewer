@@ -239,6 +239,26 @@ h1, h2, h3 {
   color: var(--ink);
   background: var(--surface-elevated);
 }
+
+/* 관리 표의 행 액션 버튼 — 좁은 열에서 라벨("허용 해제")이 줄바꿈되며 버튼과 행 높이를
+   밀어 올렸다. nowrap으로 높이를 고정하고, 평소엔 감췄다가 행 hover에서만 드러낸다.
+   opacity만 0으로 두면 안 보이는 버튼이 눌리므로 pointer-events도 함께 끈다 —
+   tab 이동은 pointer-events의 영향을 받지 않아 :focus-within으로 키보드 접근은 살아 있다.
+   / row-action buttons in the admin tables: the label used to wrap in a narrow column and
+     push the row taller. nowrap pins the height; the button only appears on row hover.
+     pointer-events goes off with the opacity so an invisible button can't be clicked, while
+     tab order is unaffected, so :focus-within keeps keyboard access working. */
+.row-action {
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-in-out;
+}
+tr:hover .row-action,
+tr:focus-within .row-action {
+  opacity: 1;
+  pointer-events: auto;
+}
 .icon-button:active {
   transform: scale(0.96);
 }

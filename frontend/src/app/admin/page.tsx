@@ -3,6 +3,7 @@
 /** 관리 콘솔 — 화이트리스트·AD 동기화 (sysadmin 전용). / whitelist and user-sync console. */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { AppHeader } from "@/components/AppHeader";
 import { AdUserList } from "@/components/admin/AdUserList";
@@ -112,9 +113,16 @@ export default function AdminPage() {
       <AppHeader />
       <div className="scroll-area min-h-0 flex-1">
         <div className="mx-auto max-w-3xl p-6" data-testid="AdminPage-root">
-          <h1 className="mb-5 text-2xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-            관리 콘솔
-          </h1>
+          <div className="mb-5 flex items-baseline gap-3">
+            <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+              관리 콘솔
+            </h1>
+            <Link href="/admin/audit" className="pressable rounded px-2.5 py-1 text-sm"
+                  style={{ color: "var(--action-blue)" }}
+                  data-testid="AdminPage-auditLink">
+              감사 로그
+            </Link>
+          </div>
 
       <CollectPanel />
 
@@ -248,7 +256,7 @@ export default function AdminPage() {
                 <td className="text-xs" style={{ color: "var(--muted)" }}>{item.added_by}</td>
                 <td className="text-right">
                   <button
-                    className="icon-button"
+                    className="icon-button row-action"
                     onClick={() => run(() => removeWhitelist(item.login_id), "삭제 완료")}
                     data-testid={`AdminPage-removeButton-${item.login_id}`}
                   >

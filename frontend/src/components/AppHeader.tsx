@@ -103,9 +103,12 @@ function UserMenu() {
   );
 }
 
+// ERD는 탭에서 뺐다 — 앵커 없이 맨몸으로 들어갈 일이 없고(테이블 상세의 「ERD 열기」나
+// 딥링크로만 의미가 있다), 빈 캔버스로 떨어지는 진입점이었다. /erd 라우트는 그대로다.
+// / no ERD tab: reaching it without an anchor lands on an empty canvas, and every real
+//   entry point is a deep link from a table. The /erd route itself is unchanged.
 const LINKS = [
   { href: "/", key: "nav.tables" as const },
-  { href: "/erd", key: "nav.erd" as const },
   { href: "/parsing", key: "nav.parsing" as const },
 ];
 
