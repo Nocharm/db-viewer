@@ -99,6 +99,11 @@ class CatalogColumn(Base):
     null_ratio: Mapped[float | None] = mapped_column(Float)
     # 미리보기 마스킹 정책 (계획 §3.5 — 스키마에 선포함) / preview masking policy, reserved by plan §3.5
     masking_policy: Mapped[str | None] = mapped_column(String(32))
+    # 게이트용 TOP-N 샘플 통계 — 컬럼 단위 캐시, 전수 distinct_count와 축이 다르다(표본)
+    # / TOP-N sample stats cached per column for the join gate; a sample, not the full count
+    sample_rows: Mapped[int | None] = mapped_column(Integer)
+    sample_distinct: Mapped[int | None] = mapped_column(Integer)
+    sampled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("object_id", "name", name="uq_columns_object_name"),

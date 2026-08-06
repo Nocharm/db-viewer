@@ -4,6 +4,8 @@
 
 ## 2026-08-07
 
+- **검증 분리 브랜치(feature/verify-page-readonly-erd) 진행** — Task 1: 게이트 캐시용 컬럼 샘플 통계 필드(0014).
+
 - **검증 분리 구현 계획 작성** — 스펙을 17개 태스크(백엔드 9 → /verify 2 → ERD 2 → 정리 4)로 분해, 태스크별 실제 코드·테스트 포함. 사전 정찰로 확정한 사실: `get_db`가 요청 성공 시 커밋이라 게이트 캐시는 flush만으로 지속, `runJoinPreview`/`fetchGraph`는 ErdCanvas 전용이라 삭제 안전. 계획: `docs/superpowers/plans/2026-08-07-verify-page-readonly-erd.md`.
 
 - **검증 분리 + 읽기 전용 ERD 설계 확정** — 캔버스 위 검증(JoinBuilder 드래그·AI 제안·스캔)이 버그의 온상이라 역할을 분리하기로. 검증은 신설 `/verify`에서 1:1 흐름(게이트 → containment → 프리뷰 → 확정)으로, ERD는 confirmed+FK만 그리는 읽기 전용 전체 그래프로(앵커·검색·뷰 제거 — 뷰 계보는 TableDetail lineage가 이미 담당). 핵심 결정: 사전 게이트는 값 겹침이 아니라 **타입 패밀리 + TOP 200 유니크니스**로 판정(TOP 200은 인덱스 순서라 겹침 검사는 오차단), 샘플 통계는 컬럼 단위 캐시. 백엔드 3단계 파이프라인은 이미 존재(containment·preview·confirm)해 신규는 gate·pair-candidates·`/api/erd`뿐. 스펙: `docs/superpowers/specs/2026-08-07-verify-page-readonly-erd-design.md`.
