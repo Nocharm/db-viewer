@@ -291,6 +291,9 @@ export interface JoinCheckItem {
   target_object: string;
   src_column: string;
   tgt_column: string;
+  /** 조인 빌더 딥링크용 — 이름만으로는 컬럼을 특정할 수 없다 */
+  src_column_id: number;
+  tgt_column_id: number;
   score: number;
   signals: Record<string, number>;
   status: "checked" | "no_data";

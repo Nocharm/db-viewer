@@ -105,6 +105,8 @@ def run_join_check(
         item = {
             "target_object": cand.target.object_qname,
             "src_column": src_col.name, "tgt_column": cand.target.name,
+            # 조인 빌더 딥링크용 — 이름만으로는 컬럼을 특정할 수 없다
+            "src_column_id": src_col.column_id, "tgt_column_id": cand.target.column_id,
             "score": cand.score, "signals": cand.signals,
         }
         try:

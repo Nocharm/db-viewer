@@ -84,6 +84,22 @@ def test_batch_check_caps_targets_and_sorts(vclient, migrated_engine, load_fixtu
     assert containments == sorted(containments, reverse=True)
 
 
+def test_join_check_items_carry_column_ids_for_deep_links(vclient, load_fixture, migrated_engine):
+    """결과에서 조인 빌더로 넘어가려면 컬럼 id가 필요하다 / deep links need column ids."""
+    _seed(vclient, load_fixture)
+    object_id = _object_id(migrated_engine, "dbo.HR_EMP_FAMILY")
+
+    res = vclient.post(f"/api/objects/{object_id}/join-check", json={})
+
+    assert res.status_code == 200
+    body = res.json()
+    items = body["checked"] + body["no_data"]
+    assert items, "픽스처에 조인 후보가 있어야 한다"
+    for item in items:
+        assert isinstance(item["src_column_id"], int)
+        assert isinstance(item["tgt_column_id"], int)
+
+
 def test_join_check_rejects_views(vclient, migrated_engine, load_fixture):
     _seed(vclient, load_fixture)
     obj_t = Base.metadata.tables["objects"]

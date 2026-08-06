@@ -42,9 +42,10 @@ function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) 
 }
 
 /** 조인 검증 결과 행 / one join-check result row. */
-function JoinCheckRow({ item, onSelectTable }: {
+function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
   item: JoinCheckItem;
   onSelectTable: (qname: string) => void;
+  onOpenColumn: (columnId: number, columnName: string) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -66,6 +67,13 @@ function JoinCheckRow({ item, onSelectTable }: {
       ) : (
         <span className="ml-auto badge badge--muted">{t("joincheck.noData")}</span>
       )}
+      <button
+        className="btn-secondary !py-0.5 text-xs"
+        onClick={() => onOpenColumn(item.src_column_id, item.src_column)}
+        data-testid={`TableDetail-addToBuilder-${item.target_object}`}
+      >
+        {t("joincheck.addToBuilder")}
+      </button>
     </li>
   );
 }
@@ -299,7 +307,7 @@ export function TableDetail({
               <ul className="space-y-1.5" data-testid="TableDetail-joinCheckResults">
                 {checkResults.map((item) => (
                   <JoinCheckRow key={item.target_object} item={item}
-                                onSelectTable={onSelectTable} />
+                                onSelectTable={onSelectTable} onOpenColumn={onOpenColumn} />
                 ))}
               </ul>
             )}

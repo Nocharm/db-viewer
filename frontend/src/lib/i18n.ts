@@ -33,7 +33,6 @@ export const MESSAGES = {
   "detail.loading": { ko: "조회 중…", en: "Loading…" },
   "detail.openErd": { ko: "ERD 보기 →", en: "Open ERD →" },
   "detail.columns": { ko: "컬럼", en: "Columns" },
-  "detail.columnsHint": { ko: "클릭하면 ERD에서 조인 검증", en: "click to validate joins in the ERD" },
   "detail.usingViews": { ko: "이 테이블을 사용하는 뷰", en: "Views using this table" },
   "detail.baseTables": { ko: "구성 테이블 (lineage)", en: "Base tables (lineage)" },
   "detail.similar": { ko: "유사 테이블 (컬럼명 일치율)", en: "Similar tables (column match)" },
@@ -45,21 +44,22 @@ export const MESSAGES = {
   "detail.noFk": { ko: "FK 없음", en: "No FKs" },
   "detail.relations": { ko: "추론·확정 관계", en: "Inferred · confirmed relations" },
   "detail.noRelations": {
-    ko: "검증된 관계 없음 — ERD에서 T2 검증으로 발견",
-    en: "No validated relations — discover via T2 in the ERD",
+    ko: "검증된 관계 없음 — ERD에서 조인을 만들어 발견하세요",
+    en: "No validated relations — build a join in the ERD to discover them",
   },
   "detail.inferred": { ko: "추정", en: "inferred" },
 
-  "joincheck.title": { ko: "조인 가능성 검증", en: "Join-ability check" },
+  "joincheck.title": { ko: "조인 가능성 찾기", en: "Find joinable tables" },
   "joincheck.hint": {
-    ko: "타깃 테이블별 최고 후보 컬럼 페어에 T2 검증 실행",
-    en: "Runs T2 containment on the best pair per target table",
+    ko: "타깃 테이블별 최고 후보 컬럼 페어에 실데이터 포함률 검증을 일괄 실행합니다. 값 데이터가 없는 페어는 배지로만 표시됩니다.",
+    en: "Runs containment on the best candidate pair per target table. Pairs without value data are just badged.",
   },
   "joincheck.checkAll": { ko: "후보 일괄 검증", en: "Check all candidates" },
   "joincheck.check": { ko: "검증", en: "Check" },
   "joincheck.running": { ko: "검증 중…", en: "Checking…" },
   "joincheck.noData": { ko: "값 데이터 없음", en: "no value data" },
   "joincheck.noTargets": { ko: "후보 타깃 없음", en: "No candidate targets" },
+  "joincheck.addToBuilder": { ko: "빌더에 추가", en: "Add to builder" },
 
   "preview.title": { ko: "미리보기", en: "Preview" },
   "preview.masked": { ko: "마스킹", en: "masked" },
@@ -172,7 +172,7 @@ export const MESSAGES = {
     en: "Including views renders {n} nodes. Continue?",
   },
 
-  "panel.verify": { ko: "T2 검증", en: "Verify (T2)" },
+  "panel.verify": { ko: "조인 검증", en: "Check join" },
 
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
   "collect.hint": {
@@ -255,8 +255,8 @@ export const MESSAGES = {
     en: "Columns of this object. Click a chip to open the ERD validation panel and verify join candidates with real data. Green border = key column.",
   },
   "tip.joinCheck": {
-    ko: "타깃 테이블별 최고 후보 컬럼 페어에 실데이터 포함률(T2) 검증을 일괄 실행합니다. 값 데이터가 없는 페어는 배지로만 표시됩니다.",
-    en: "Runs containment (T2) on the best candidate pair per target table. Pairs without value data are just badged.",
+    ko: "타깃 테이블별 최고 후보 컬럼 페어에 실데이터 포함률 검증을 일괄 실행합니다.",
+    en: "Runs containment on the best candidate pair per target table.",
   },
   "tip.usingViews": {
     ko: "lineage 역추적으로 찾은, 이 테이블을 원천으로 쓰는 뷰들입니다. depth는 중첩 단계입니다.",
@@ -303,7 +303,6 @@ export const MESSAGES = {
   "join.clear": { ko: "전부 지우기", en: "Clear all" },
   "join.preview": { ko: "SQL과 20행 보기", en: "Show SQL and 20 rows" },
   "join.verifying": { ko: "검증 중…", en: "Verifying…" },
-  "join.stepFailed": { ko: "검증 실패", en: "Verification failed" },
   "join.levelSafe": { ko: "안전", en: "Safe" },
   "join.levelCaution": { ko: "주의", en: "Caution" },
   "join.levelDanger": { ko: "위험", en: "Danger" },
