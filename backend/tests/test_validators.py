@@ -141,3 +141,18 @@ def test_relative_fixture_dir_anchors_to_repo_root_not_cwd(tmp_path, monkeypatch
     # 절대 경로는 그대로 통과 — 컨테이너 마운트 지점 지정용
     absolute = Settings(fixture_dir=str(tmp_path / "mounted")).resolved_fixture_dir
     assert absolute == tmp_path / "mounted"
+
+
+def test_fake_sample_stats_approximates_top_n(tmp_path):
+    path = tmp_path / "value_sets.json"
+    path.write_text(json.dumps({"columns": [
+        {"object": "dbo.BIG", "column": "EMP_NO",
+         "values": ["a", "b"], "row_count": 5000, "distinct_count": 2},
+        {"object": "dbo.SMALL", "column": "EMP_NO",
+         "values": ["a", "b", "c"], "row_count": 3, "distinct_count": 3},
+    ]}))
+    v = FakeJoinValidator(path)
+
+    # 표본은 TOP N로 절단 — 행 수는 min(top, row_count), distinct는 표본을 못 넘는다
+    assert v.sample_stats(ColumnRef("dbo", "BIG", "EMP_NO"), 200) == (200, 2)
+    assert v.sample_stats(ColumnRef("dbo", "SMALL", "EMP_NO"), 200) == (3, 3)

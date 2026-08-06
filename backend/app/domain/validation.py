@@ -69,6 +69,10 @@ class JoinValidator(Protocol):
 
     def containment(self, src: ColumnRef, tgt: ColumnRef) -> ContainmentResult: ...
 
+    def sample_stats(self, ref: ColumnRef, top: int) -> tuple[int, int]:
+        """TOP-N 샘플의 (행 수, distinct 수) — 게이트 전용, 원본 값 비노출."""
+        ...
+
     def preview(self, src: ColumnRef, tgt: ColumnRef, limit: int) -> list[dict]: ...
 
     def multi_join_preview(

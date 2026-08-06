@@ -206,6 +206,20 @@ class N8nJoinValidator:
             tgt_row_count=int(row["tgt_rows"]),
         )
 
+    def sample_stats(self, ref: ColumnRef, top: int) -> tuple[int, int]:
+        rows, _ = _post_query(self._base, {
+            "kind": "sample_distinct", "top": top,
+            "schema": ref.schema, "table": ref.table, "column": ref.column,
+        }, self._timeout)
+        if not rows:
+            # 집계 쿼리는 항상 1행이다 — 0행이면 실행되지 않았다는 뜻 (containment와 동일)
+            raise N8nQueryError(
+                "n8n returned no rows for the sample_distinct aggregate — the W2 query "
+                f"did not run ({ref.schema}.{ref.table}.{ref.column})"
+            )
+        row = rows[0]
+        return int(row["sample_rows"]), int(row["sample_distinct"])
+
     def preview(self, src: ColumnRef, tgt: ColumnRef, limit: int) -> list[dict]:
         rows, _ = _post_query(self._base, {
             "kind": "join_preview", "limit": limit,

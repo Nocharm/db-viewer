@@ -195,6 +195,26 @@ def test_post_query_wrapped_dict_missing_rows_falls_back_to_legacy_shape(monkeyp
     assert query is None
 
 
+def test_sample_stats_sends_kind_and_parses_counts(captured):
+    captured["response"] = [{"sample_rows": 200, "sample_distinct": 187}]
+    validator = N8nJoinValidator("http://n8n/webhook/", timeout=30)
+
+    rows, distinct = validator.sample_stats(SRC, 200)
+
+    body = captured["bodies"][0]
+    assert body["kind"] == "sample_distinct"
+    assert (body["schema"], body["table"], body["column"]) == ("dbo", "ORD_SO_HDR", "EMP_NO")
+    assert body["top"] == 200
+    assert (rows, distinct) == (200, 187)
+
+
+def test_sample_stats_without_rows_raises(captured):
+    captured["response"] = []
+    validator = N8nJoinValidator("http://n8n/webhook/", timeout=30)
+    with pytest.raises(n8n_query.N8nQueryError):
+        validator.sample_stats(SRC, 200)
+
+
 def test_multi_join_preview_sends_steps_and_returns_the_query(monkeypatch) -> None:
     """N-웨이 미리보기는 스텝 배열을 그대로 보내고 실행문을 함께 받는다."""
     from app.adapters import n8n_query

@@ -47,6 +47,12 @@ class FakeJoinValidator:
             tgt_row_count=tgt_entry["row_count"],
         )
 
+    def sample_stats(self, ref: ColumnRef, top: int) -> tuple[int, int]:
+        """TOP-N 샘플 통계 근사 — 값 집합의 전수 통계를 표본 크기로 절단."""
+        entry = self._entry(ref)
+        rows = min(top, entry["row_count"])
+        return rows, min(entry["distinct_count"], rows)
+
     def preview(self, src: ColumnRef, tgt: ColumnRef, limit: int) -> list[dict]:
         """조인 샘플 행 합성 — 요청 시점 온디맨드만 (캐시 금지, 계획 §3.5)."""
         src_entry, tgt_entry = self._entry(src), self._entry(tgt)
