@@ -60,6 +60,15 @@ def is_type_compatible(src: ScoringColumn, tgt: ScoringColumn) -> bool:
     return src.data_type == tgt.data_type and src.max_length == tgt.max_length
 
 
+def get_type_family(data_type: str) -> str:
+    """게이트용 타입 패밀리 — 다른 패밀리는 조인 후보에서 즉시 차단 (스펙 §게이트)."""
+    if data_type in _INT_FAMILY:
+        return "int"
+    if data_type in _CHAR_FAMILY:
+        return "char"
+    return data_type
+
+
 def normalize_name(name: str) -> str:
     return name.replace("_", "").upper()
 

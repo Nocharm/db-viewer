@@ -1,5 +1,8 @@
 # Progress
 
+## Aug 7, 2026
+- Task 3: 타입 패밀리 판정. TDD로 `get_type_family(data_type: str) -> str` 구현 완료 — 테스트 9/9 통과
+
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
 ## 2026-08-07

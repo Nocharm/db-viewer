@@ -124,3 +124,13 @@ def test_trap_column_is_excluded_with_reason(client, migrated_engine, load_fixtu
     body = client.get(f"/api/columns/{src_id}/candidates").json()
     assert body["excluded"]["reason"] in ("blacklist", "low_distinct")
     assert body["candidates"] == []
+
+
+def test_type_family_groups_int_and_char_variants():
+    from app.domain.scoring import get_type_family
+
+    assert get_type_family("int") == get_type_family("bigint") == "int"
+    assert get_type_family("varchar") == get_type_family("nchar") == "char"
+    # 패밀리 밖은 타입명 그대로 — 같은 타입끼리만 같은 패밀리
+    assert get_type_family("datetime2") == "datetime2"
+    assert get_type_family("int") != get_type_family("varchar")
