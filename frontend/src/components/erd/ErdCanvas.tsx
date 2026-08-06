@@ -579,11 +579,11 @@ function ErdCanvasInner({
     [graph, showViews],
   );
 
-  // 노드 id → qname 으로 허용 여부 판정 / allowlist check by the node's qualified name
+  // 노드의 스키마로 허용 여부 판정 / allowlist check by the node's schema
   const isPreviewAllowed = useCallback((nodeId: number | null): boolean => {
     if (nodeId === null) return false;
     const node = graph?.nodes.find((n) => n.id === nodeId);
-    return node !== undefined && previewAllowed.has(`${node.schema}.${node.name}`);
+    return node !== undefined && previewAllowed.has(node.schema);
   }, [graph, previewAllowed]);
 
   const openPreview = useCallback((nodeId: number, limit?: number) => {

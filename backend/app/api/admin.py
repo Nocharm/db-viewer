@@ -4,7 +4,7 @@ import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -122,14 +122,14 @@ def list_users(
 
 @router.get("/preview-allowlist")
 def list_preview_allowlist(db: Session = Depends(get_db)) -> dict:
-    """허용 목록 + 등록 정보 — 읽기는 관리자 게이트만, 수정만 비밀번호를 요구한다."""
+    """허용 스키마 + 등록 정보 — 읽기는 관리자 게이트만, 수정만 비밀번호를 요구한다."""
     rows = db.execute(
-        select(PreviewAllowlist).order_by(PreviewAllowlist.qname)
+        select(PreviewAllowlist).order_by(PreviewAllowlist.schema)
     ).scalars().all()
     return {
         "password_configured": bool(get_settings().preview_admin_password),
         "items": [
-            {"qname": row.qname, "note": row.note, "added_by": row.added_by,
+            {"schema": row.schema, "note": row.note, "added_by": row.added_by,
              "created_at": row.created_at.isoformat()}
             for row in rows
         ],
@@ -137,7 +137,12 @@ def list_preview_allowlist(db: Session = Depends(get_db)) -> dict:
 
 
 class PreviewAllowRequest(BaseModel):
-    qname: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    # 'schema'는 BaseModel 예약 이름과 충돌해 alias 사용 (RawObject와 같은 관용).
+    # pydantic이 FastAPI 본문 모델에 UnsupportedFieldAttributeWarning을 내지만
+    # alias 자체는 동작한다 (test_preview_allowlist가 {"schema": …}로 검증)
+    schema_name: str = Field(alias="schema")
     note: str | None = None
 
 
@@ -147,49 +152,43 @@ def add_preview_allow(
     db: Session = Depends(get_db),
     admin: str = Depends(require_sysadmin),
 ) -> dict:
-    """객체 하나를 미리보기 허용으로 등록 — 실 데이터 노출 범위가 넓어지는 조작이다."""
-    qname = req.qname.strip()
-    if "." not in qname:
-        raise HTTPException(400, {"message": "qname must be 'schema.name'",
-                                  "context": {"qname": qname}})
-    schema, name = qname.split(".", 1)
+    """스키마 하나를 미리보기 허용으로 등록 — 그 스키마의 모든 객체가 열린다."""
+    schema = req.schema_name.strip()
     # 오타로 유령 허용이 쌓이면 목록만 늘고 아무 테이블도 안 열린다 (schema_categories 동일 관용)
     exists = db.execute(
-        select(CatalogObject.id)
-        .where(CatalogObject.schema == schema, CatalogObject.name == name)
-        .limit(1)
+        select(CatalogObject.id).where(CatalogObject.schema == schema).limit(1)
     ).scalar_one_or_none()
     if exists is None:
-        raise HTTPException(400, {"message": "unknown object in the catalog",
-                                  "context": {"qname": qname}})
+        raise HTTPException(400, {"message": "unknown schema in the catalog",
+                                  "context": {"schema": schema}})
 
     now = datetime.now(UTC)
-    row = db.get(PreviewAllowlist, qname)
+    row = db.get(PreviewAllowlist, schema)
     if row is None:
-        db.add(PreviewAllowlist(qname=qname, note=req.note, added_by=admin,
+        db.add(PreviewAllowlist(schema=schema, note=req.note, added_by=admin,
                                 created_at=now))
     else:
         row.note = req.note
-    db.add(AuditLog(action="preview_allow_add", detail=qname,
+    db.add(AuditLog(action="preview_allow_add", detail=schema,
                     requested_by=admin, requested_at=now))
-    return {"qname": qname, "created": row is None}
+    return {"schema": schema, "created": row is None}
 
 
-@router.delete("/preview-allowlist/{qname}",
+@router.delete("/preview-allowlist/{schema}",
                dependencies=[Depends(require_preview_admin)])
 def remove_preview_allow(
-    qname: str,
+    schema: str,
     db: Session = Depends(get_db),
     admin: str = Depends(require_sysadmin),
 ) -> dict:
-    row = db.get(PreviewAllowlist, qname)
+    row = db.get(PreviewAllowlist, schema)
     if row is None:
         raise HTTPException(404, {"message": "not in the preview allowlist",
-                                  "context": {"qname": qname}})
+                                  "context": {"schema": schema}})
     db.delete(row)
-    db.add(AuditLog(action="preview_allow_remove", detail=qname,
+    db.add(AuditLog(action="preview_allow_remove", detail=schema,
                     requested_by=admin, requested_at=datetime.now(UTC)))
-    return {"qname": qname, "removed": True}
+    return {"schema": schema, "removed": True}
 
 
 @router.post("/users/sync")

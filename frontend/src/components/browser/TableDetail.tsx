@@ -19,7 +19,7 @@ interface Props {
   detail: ObjectDetail | null;
   loading: boolean;
   previewLoading: boolean;
-  /** 미리보기 허용 목록에 있는 테이블인지 — 아니면 버튼을 잠근다 (실제 차단은 서버). */
+  /** 이 테이블의 스키마가 허용 목록에 있는지 — 아니면 버튼을 잠근다 (실제 차단은 서버). */
   previewAllowed: boolean;
   onPreview: () => void;
   onOpenErd: () => void;

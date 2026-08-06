@@ -386,13 +386,13 @@ export interface TablePreview {
   filter: { column: string; value: string | null } | null;
 }
 
-/** 미리보기가 허용된 객체 qname 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
+/** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
 export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
   return getJson("/api/objects/preview-allowlist");
 }
 
 export interface PreviewAllowEntry {
-  qname: string;
+  schema: string;
   note: string | null;
   added_by: string;
   created_at: string;
@@ -410,16 +410,16 @@ export function fetchPreviewAllowlistAdmin(): Promise<PreviewAllowlistAdmin> {
 
 // 비밀번호는 헤더로만 실어 보낸다 — URL·본문에 남기지 않는다 (로그·히스토리 노출 방지)
 export function addPreviewAllow(
-  qname: string, password: string, note?: string,
+  schema: string, password: string, note?: string,
 ): Promise<{ created: boolean }> {
-  return postJson("/api/admin/preview-allowlist", { qname, note },
+  return postJson("/api/admin/preview-allowlist", { schema, note },
                   { "X-Preview-Password": password });
 }
 
 export function removePreviewAllow(
-  qname: string, password: string,
+  schema: string, password: string,
 ): Promise<{ removed: boolean }> {
-  return deleteJson(`/api/admin/preview-allowlist/${encodeURIComponent(qname)}`,
+  return deleteJson(`/api/admin/preview-allowlist/${encodeURIComponent(schema)}`,
                     { "X-Preview-Password": password });
 }
 

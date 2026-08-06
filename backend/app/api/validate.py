@@ -108,11 +108,11 @@ def run_preview(
     # 조인 샘플도 양쪽 테이블의 실값을 내보낸다 — 테이블 미리보기와 같은 허용 목록을 쓴다
     # (여기가 열려 있으면 허용 목록이 우회된다)
     blocked = [ref.object_qname for ref in (src_ref, tgt_ref)
-               if not is_preview_allowed(db, ref.object_qname)]
+               if not is_preview_allowed(db, ref.object_qname.split(".", 1)[0])]
     if blocked:
         raise HTTPException(403, {
             "message": "preview is not allowed for these objects — an admin must add "
-                       "them to the preview allowlist (관리 콘솔 → 미리보기 허용 테이블)",
+                       "their schemas to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
             "context": {"objects": blocked},
         })
 

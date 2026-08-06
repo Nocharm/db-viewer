@@ -297,7 +297,7 @@ function HomeInner() {
               loading={detailLoading}
               previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
               previewAllowed={
-                selected !== null && previewAllowed.has(`${selected.schema}.${selected.name}`)
+                selected !== null && previewAllowed.has(selected.schema)
               }
               onPreview={openPreview}
               onOpenErd={handleOpenErd}

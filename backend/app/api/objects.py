@@ -24,7 +24,7 @@ from app.models import (
     ViewDep,
     ViewLineageFlat,
 )
-from app.services.preview_policy import is_preview_allowed, list_allowed_qnames
+from app.services.preview_policy import is_preview_allowed, list_allowed_schemas
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 
@@ -243,12 +243,12 @@ TABLE_PREVIEW_MAX = 500
 
 @router.get("/preview-allowlist")
 def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
-    """미리보기가 허용된 객체 qname 목록 — 화면이 버튼 활성 여부를 정하는 근거.
+    """미리보기가 허용된 스키마 목록 — 화면이 버튼 활성 여부를 정하는 근거.
 
     목록 자체는 카탈로그 메타(이미 노출되는 이름)라 일반 사용자도 읽을 수 있다.
     수정은 관리 API(비밀번호 게이트)에서만 한다.
     """
-    return {"items": list_allowed_qnames(db)}
+    return {"items": list_allowed_schemas(db)}
 
 
 @router.get("/{object_id}/preview")
@@ -267,12 +267,12 @@ def get_object_preview(
     settings = get_settings()
 
     qname = f"{obj.schema}.{obj.name}"
-    # 값 데이터를 내보내는 유일한 경로 — 허용 목록에 없으면 소스에 질의하지 않는다
-    if not is_preview_allowed(db, qname):
+    # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다
+    if not is_preview_allowed(db, obj.schema):
         raise HTTPException(403, {
-            "message": "preview is not allowed for this object — an admin must add it "
-                       "to the preview allowlist (관리 콘솔 → 미리보기 허용 테이블)",
-            "context": {"object": qname},
+            "message": "preview is not allowed for this schema — an admin must add it "
+                       "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
+            "context": {"object": qname, "schema": obj.schema},
         })
 
     columns = db.execute(

@@ -86,8 +86,8 @@ export const MESSAGES = {
   },
   "preview.notAllowed": { ko: "미리보기 미허용", en: "Preview not allowed" },
   "preview.notAllowedHint": {
-    ko: "관리 콘솔의 미리보기 허용 목록에 없는 테이블입니다 — 관리자에게 요청하세요",
-    en: "Not on the preview allowlist — ask an admin to add it",
+    ko: "이 테이블의 스키마가 미리보기 허용 목록에 없습니다 — 관리자에게 요청하세요",
+    en: "This table's schema is not on the preview allowlist — ask an admin to add it",
   },
   "preview.csv": { ko: "CSV 다운로드", en: "Download CSV" },
   "preview.limitTitle": { ko: "표시 행수", en: "Row limit" },

@@ -1,4 +1,4 @@
-"""Preview allowlist policy and its password gate. / 미리보기 허용 목록·비밀번호 게이트."""
+"""Preview allowlist policy and its password gate. / 미리보기 허용 스키마·비밀번호 게이트."""
 
 import pytest
 
@@ -29,7 +29,7 @@ def preview_password(monkeypatch):
     get_settings.cache_clear()
 
 
-def test_preview_is_denied_until_the_object_is_allowed(client, load_fixture):
+def test_preview_is_denied_until_the_schema_is_allowed(client, load_fixture):
     """기본 정책 — 목록이 비어 있으면 전부 차단 (설정을 잊어도 값이 새지 않는다)."""
     _seed(client, load_fixture)
     obj = _an_object(client)
@@ -40,18 +40,18 @@ def test_preview_is_denied_until_the_object_is_allowed(client, load_fixture):
     assert client.get("/api/objects/preview-allowlist").json()["items"] == []
 
 
-def test_allowed_object_previews_and_appears_in_the_list(client, load_fixture,
+def test_allowed_schema_previews_and_appears_in_the_list(client, load_fixture,
                                                          preview_password):
     _seed(client, load_fixture)
     obj = _an_object(client)
-    qname = f"{obj['schema']}.{obj['name']}"
+    schema = obj["schema"]
 
     added = client.post("/api/admin/preview-allowlist",
                         headers={"X-Preview-Password": preview_password},
-                        json={"qname": qname, "note": "영업 확인용"})
+                        json={"schema": schema, "note": "영업 확인용"})
     assert added.status_code == 200 and added.json()["created"] is True
 
-    assert client.get("/api/objects/preview-allowlist").json()["items"] == [qname]
+    assert client.get("/api/objects/preview-allowlist").json()["items"] == [schema]
     body = client.get(f"/api/objects/{obj['id']}/preview")
     assert body.status_code == 200 and body.json()["rows"]
 
@@ -60,30 +60,46 @@ def test_allowed_object_previews_and_appears_in_the_list(client, load_fixture,
     assert listed["items"][0]["note"] == "영업 확인용"
 
 
+def test_allowing_a_schema_opens_every_object_in_it(client, load_fixture,
+                                                    preview_password):
+    """스키마 단위 정책의 핵심 — 등록 1건이 그 스키마 전체를 연다."""
+    _seed(client, load_fixture)
+    objects = client.get("/api/objects?type=table&limit=5").json()["items"]
+    schema = objects[0]["schema"]
+    assert all(obj["schema"] == schema for obj in objects)  # 픽스처는 단일 스키마
+
+    client.post("/api/admin/preview-allowlist",
+                headers={"X-Preview-Password": preview_password},
+                json={"schema": schema})
+
+    for obj in objects:
+        assert client.get(f"/api/objects/{obj['id']}/preview").status_code == 200
+
+
 def test_removing_the_entry_closes_the_preview_again(client, load_fixture,
                                                      preview_password):
     _seed(client, load_fixture)
     obj = _an_object(client)
-    qname = f"{obj['schema']}.{obj['name']}"
+    schema = obj["schema"]
     headers = {"X-Preview-Password": preview_password}
 
-    client.post("/api/admin/preview-allowlist", headers=headers, json={"qname": qname})
+    client.post("/api/admin/preview-allowlist", headers=headers, json={"schema": schema})
     assert client.get(f"/api/objects/{obj['id']}/preview").status_code == 200
 
-    removed = client.delete(f"/api/admin/preview-allowlist/{qname}", headers=headers)
+    removed = client.delete(f"/api/admin/preview-allowlist/{schema}", headers=headers)
     assert removed.status_code == 200 and removed.json()["removed"] is True
     assert client.get(f"/api/objects/{obj['id']}/preview").status_code == 403
 
 
 def test_edits_require_the_configured_password(client, load_fixture, preview_password):
     _seed(client, load_fixture)
-    qname = "{schema}.{name}".format(**_an_object(client))
+    schema = _an_object(client)["schema"]
 
     assert client.post("/api/admin/preview-allowlist",
-                       json={"qname": qname}).status_code == 401
+                       json={"schema": schema}).status_code == 401
     assert client.post("/api/admin/preview-allowlist",
                        headers={"X-Preview-Password": "wrong"},
-                       json={"qname": qname}).status_code == 401
+                       json={"schema": schema}).status_code == 401
     # 읽기는 관리자 게이트만 — 비밀번호 없이도 목록은 볼 수 있다
     assert client.get("/api/admin/preview-allowlist").status_code == 200
 
@@ -91,23 +107,23 @@ def test_edits_require_the_configured_password(client, load_fixture, preview_pas
 def test_edits_are_impossible_without_the_env_password(client, load_fixture):
     """비밀번호 미설정 배포는 열어두는 대신 수정을 막는다 / unset means no edits, not open."""
     _seed(client, load_fixture)
-    qname = "{schema}.{name}".format(**_an_object(client))
+    schema = _an_object(client)["schema"]
 
-    res = client.post("/api/admin/preview-allowlist", json={"qname": qname})
+    res = client.post("/api/admin/preview-allowlist", json={"schema": schema})
     assert res.status_code == 503
     assert "PREVIEW_ADMIN_PASSWORD" in res.json()["error"]["message"]
     assert client.get("/api/admin/preview-allowlist").json()["password_configured"] is False
 
 
-def test_unknown_objects_are_refused(client, load_fixture, preview_password):
+def test_unknown_schemas_are_refused(client, load_fixture, preview_password):
     """오타로 유령 허용이 쌓이면 목록만 늘고 아무것도 안 열린다."""
     _seed(client, load_fixture)
-    headers = {"X-Preview-Password": preview_password}
 
-    assert client.post("/api/admin/preview-allowlist", headers=headers,
-                       json={"qname": "dbo.NO_SUCH_TABLE"}).status_code == 400
-    assert client.post("/api/admin/preview-allowlist", headers=headers,
-                       json={"qname": "no-dot"}).status_code == 400
+    refused = client.post("/api/admin/preview-allowlist",
+                          headers={"X-Preview-Password": preview_password},
+                          json={"schema": "NO_SUCH_SCHEMA"})
+    assert refused.status_code == 400
+    assert client.get("/api/objects/preview-allowlist").json()["items"] == []
 
 
 def test_join_preview_uses_the_same_allowlist(client, load_fixture, migrated_engine,
@@ -139,17 +155,14 @@ def test_join_preview_uses_the_same_allowlist(client, load_fixture, migrated_eng
 
     ids = {"src_column_id": column_id(rel["src_object"], rel["src_column"]),
            "tgt_column_id": column_id(rel["tgt_object"], rel["tgt_column"])}
-    headers = {"X-Preview-Password": preview_password}
 
-    assert client.post("/api/validate/preview", json=ids).status_code == 403
-
-    # 한쪽만 열어도 여전히 막힌다 / one side is not enough
-    client.post("/api/admin/preview-allowlist", headers=headers,
-                json={"qname": rel["src_object"]})
     blocked = client.post("/api/validate/preview", json=ids)
     assert blocked.status_code == 403
-    assert blocked.json()["error"]["context"]["objects"] == [rel["tgt_object"]]
+    # 양쪽 다 검사한다 — 한쪽만 보면 닫힌 쪽 값이 샌다 / both sides are checked
+    assert blocked.json()["error"]["context"]["objects"] == [rel["src_object"],
+                                                             rel["tgt_object"]]
 
-    client.post("/api/admin/preview-allowlist", headers=headers,
-                json={"qname": rel["tgt_object"]})
+    client.post("/api/admin/preview-allowlist",
+                headers={"X-Preview-Password": preview_password},
+                json={"schema": rel["src_object"].split(".", 1)[0]})
     assert client.post("/api/validate/preview", json=ids).status_code == 200
