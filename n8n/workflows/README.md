@@ -49,7 +49,7 @@ n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 �
 | **502 + `status=404`** | webhook 경로 불일치 또는 워크플로 **비활성** | 우상단 Activate 토글, `path=dbv-query`와 `.env`의 `N8N_WEBHOOK_BASE` 확인 |
 | **502 + `status=500`** | MSSQL 노드 실패 (credential 미연결·권한) | 노드의 ⚠ 표시 → 읽기 전용 credential 재선택. W1은 `sys.*`만 읽어서 통과해도, W2는 **사용자 테이블 SELECT 권한**이 따로 필요하다 |
 | **502 + `status envelope`** | Respond 설정이 `lastNode`/`allEntries`가 아님 | 임포트본을 그대로 쓸 것 (손으로 고치지 말 것) |
-| 미리보기 버튼이 아예 잠김 | n8n 문제가 아니다 | 관리 콘솔 → *미리보기 허용 테이블*에 등록 (기본 전부 차단) |
+| 미리보기 버튼이 아예 잠김 | n8n 문제가 아니다 | 관리 콘솔 → *미리보기 허용 스키마*에 그 객체의 스키마를 등록 (기본 전부 차단). `HIDDEN_SCHEMAS`에 잡힌 스키마라면 등록해도 열리지 않는다 |
 
 - 재임포트할 때 **옛 W2를 먼저 비활성/삭제**할 것 — 같은 `dbv-query` 경로를 두 워크플로가
   들고 있으면 어느 쪽이 응답할지 보장되지 않는다.
