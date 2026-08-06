@@ -2,6 +2,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-07
+
+- **검증 분리 + 읽기 전용 ERD 설계 확정** — 캔버스 위 검증(JoinBuilder 드래그·AI 제안·스캔)이 버그의 온상이라 역할을 분리하기로. 검증은 신설 `/verify`에서 1:1 흐름(게이트 → containment → 프리뷰 → 확정)으로, ERD는 confirmed+FK만 그리는 읽기 전용 전체 그래프로(앵커·검색·뷰 제거 — 뷰 계보는 TableDetail lineage가 이미 담당). 핵심 결정: 사전 게이트는 값 겹침이 아니라 **타입 패밀리 + TOP 200 유니크니스**로 판정(TOP 200은 인덱스 순서라 겹침 검사는 오차단), 샘플 통계는 컬럼 단위 캐시. 백엔드 3단계 파이프라인은 이미 존재(containment·preview·confirm)해 신규는 gate·pair-candidates·`/api/erd`뿐. 스펙: `docs/superpowers/specs/2026-08-07-verify-page-readonly-erd-design.md`.
+
 ## 2026-08-06
 
 - **로컬에서 실제로 띄워 보고 잡은 두 건** — 화면을 띄우지 않았으면 못 봤을 것들. (1) 직전 커밋의 행 액션 숨김이 **비활성 버튼에는 안 먹고 있었다** — `.btn-primary:disabled`(0,2,0)가 `.row-action`(0,1,0)을 이겨, 비밀번호를 넣기 전 「허용 추가」가 hover 없이도 계속 보였다. 스크린샷에서 "왜 보이지?"로 시작해 CDP로 계산값을 재니 opacity가 0이 아니라 정확히 `0.35`(= `.btn-primary:disabled` 값)여서 특이도 문제로 확정됐다. `:disabled` 변형을 추가하고 규칙을 `.btn-primary:disabled` **뒤로** 옮겨 해결(같은 특이도는 순서가 결정) — hover 시엔 흐리게 드러나 왜 못 누르는지가 보인다. 교훈은 CSS 유틸을 새로 만들 때 기존 상태 규칙(`:disabled`·`:hover`)과의 특이도를 같이 봐야 한다는 것. (2) `tools/seed_ui_states.py`가 `/api/ai/suggest-relations`의 202+job_id 전환을 못 따라가 `KeyError: 'created'`로 죽어 있었고, **그 뒤의 AI 요약·화이트리스트 시딩까지 통째로 건너뛰고 있었다** — 완료까지 폴링하도록 고쳐 `docs/ui-review.md`의 리허설이 끝까지 돌게 했다.
