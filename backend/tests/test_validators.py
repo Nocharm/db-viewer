@@ -31,7 +31,7 @@ def test_full_containment_and_cardinality(tiny_validator):
     )
     assert result.containment == 1.0
     assert result.orphan_count == 0
-    assert result.cardinality == "1:N"  # 타깃 유니크 / unique target
+    assert result.cardinality == "N:1"  # 타깃 유니크 / unique target
 
 
 def test_orphans_reduce_containment(tiny_validator):

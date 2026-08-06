@@ -73,14 +73,29 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
     const ra = alias[key(st.right_schema, st.right_table)];
     // 왼쪽이 이미 바인딩돼 있어야 한다 — 백엔드가 연결성을 검증하고 보낸다
     if (la === undefined && ra === undefined) throw new Error('disconnected join step');
-    const joiner = (st.join_type === 'left') ? 'LEFT JOIN' : 'INNER JOIN';
+    // join_type과 SQL 키워드를 잇는 문자열 비교는 여기 한 곳뿐 — 아래 분기들은 이
+    // 불리언만 참조한다(SQL에 임의 문자열이 직접 들어가는 경로를 막는다).
+    // the only place join_type is string-compared; every branch below reads this
+    // boolean only, so no arbitrary string can reach the generated SQL.
+    const wantsLeft = st.join_type === 'left';
     if (ra === undefined) {
       const na = bind(st.right_schema, st.right_table);
+      const joiner = wantsLeft ? 'LEFT JOIN' : 'INNER JOIN';
       from.push(joiner + ' ' + qn(st.right_schema, st.right_table) + ' ' + na +
         ' ON ' + la + '.' + esc(st.left_column) + ' = ' + na + '.' + esc(st.right_column));
       fromIndex[na] = from.length - 1;
     } else if (la === undefined) {
       const na = bind(st.left_schema, st.left_table);
+      // 새로 들어오는 쪽은 스텝의 left(=검증에서 orphan을 센 src)인데, 기존 체인은
+      // 스텝의 right(tgt) 쪽에 있다. 평범한 LEFT JOIN을 쓰면 SQL의 "왼쪽"(보존되는
+      // 쪽)이 기존 체인(tgt)이 되어 정작 verdict가 보존을 약속한 src(신규 테이블)가
+      // 널-확장되어 사라진다 — RIGHT JOIN으로 뒤집어야 새 테이블(src)이 보존된다.
+      // the newly-bound side here is the step's left (src, whose orphans the verdict
+      // counted), but the running chain sits on the step's right (tgt). A plain LEFT
+      // JOIN would preserve the chain (tgt) and null-extend the new table (src) —
+      // exactly backwards from what the verdict promised. RIGHT JOIN flips it so the
+      // new table (src) is the preserved side.
+      const joiner = wantsLeft ? 'RIGHT JOIN' : 'INNER JOIN';
       from.push(joiner + ' ' + qn(st.left_schema, st.left_table) + ' ' + na +
         ' ON ' + na + '.' + esc(st.left_column) + ' = ' + ra + '.' + esc(st.right_column));
       fromIndex[na] = from.length - 1;
@@ -95,6 +110,18 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
       // last clause instead is wrong whenever another JOIN (esp. LEFT) sits between;
       // it then only changes that unrelated table's null-extension, silently, with
       // no exception.
+      //
+      // 이 지점은 새 JOIN이 아니라 AND라 독립된 LEFT/RIGHT 방향이 없다 — join_type=
+      // left를 조용히 무시하면 UI는 LEFT 배지를 계속 보여주는데 SQL은 그걸 반영하지
+      // 않는 거짓 상태가 된다. 백엔드가 먼저 막지만(_check_connectivity) 여기서도
+      // 방어적으로 거부한다.
+      // this point is an AND, not a new JOIN, so there is no independent LEFT/RIGHT
+      // direction to honour — silently dropping join_type=left would leave the UI's
+      // LEFT badge lying about what the SQL does. The backend rejects this first
+      // (_check_connectivity); this is a defensive backstop.
+      if (wantsLeft) {
+        throw new Error('left join is not supported between two already-joined tables');
+      }
       const target = Math.max(fromIndex[la], fromIndex[ra]);
       from[target] += ' AND ' + la + '.' + esc(st.left_column) +
         ' = ' + ra + '.' + esc(st.right_column);
@@ -285,8 +312,19 @@ def build_query_executor_workflow() -> dict:
             "httpMethod": "POST", "path": "dbv-query",
             # 동기 응답 — 쿼리 결과가 HTTP 응답이 된다 / last node's output is the response
             "responseMode": "lastNode",
-            # ★ 기본값 "첫 항목만"이면 미리보기·조인 프리뷰가 1행으로 잘린다
-            "responseData": "allEntries",
+            # Attach query(마지막 노드)가 이미 모든 행을 단일 아이템 {query, rows}로
+            # 묶어 낸다 — n8n 기본값 firstEntryJson이 정확히 그 아이템을 그대로 돌려준다.
+            # W1처럼 allEntries를 쓰면 "마지막 노드의 아이템 배열"이 응답이 되어, 이미
+            # 하나뿐인 그 아이템이 [{query, rows}]로 한 번 더 감싸진다 — _post_query가
+            # dict를 기대하는데 list를 받아 모든 kind가 500이 된다(재수집 요망 버그).
+            # 기본값과 같은 값이라도 계약을 명시하기 위해 그대로 적는다.
+            # Attach query (the last node) already bundles every row into one item,
+            # {query, rows} — n8n's default firstEntryJson returns exactly that item.
+            # Using allEntries (as W1 does) would return "the last node's item array"
+            # instead, double-wrapping that single item as [{query, rows}] and breaking
+            # every kind's response shape. Same as the default; spelled out to make the
+            # contract explicit rather than incidental.
+            "responseData": "firstEntryJson",
         }, type_version=2),
         _node("Build query", "n8n-nodes-base.code", [220, 0],
               {"jsCode": BUILD_QUERY_JS}, type_version=2),

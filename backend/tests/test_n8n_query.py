@@ -52,7 +52,7 @@ def test_containment_sends_identifiers_and_computes_result(captured):
 
     assert result.containment == pytest.approx(194 / 200)
     assert result.orphan_count == 6
-    assert result.cardinality == "1:N"  # tgt_distinct == tgt_rows → 유니크 타깃
+    assert result.cardinality == "N:1"  # tgt_distinct == tgt_rows → 유니크 타깃(1), src는 N
 
 
 def test_containment_empty_source_guards_division(captured):
@@ -115,6 +115,33 @@ def test_post_query_accepts_both_legacy_and_wrapped_shapes(monkeypatch) -> None:
 
     rows, query = n8n_query._post_query("http://x", {"kind": "containment"}, 5)
     assert rows == [{"a": 1}] and query == "SELECT 1"
+
+
+def test_post_query_unwraps_a_single_element_list_envelope(monkeypatch) -> None:
+    """반쯤 배포된 상태 — 코드는 신 W2 계약을 기대하는데 워크플로가 아직 재임포트되지
+    않아 webhook이 allEntries로 남아 있으면, Attach query의 단일 아이템 {query, rows}가
+    HTTP 응답에서 [{query, rows}] 배열로 한 번 더 감싸진다. 이걸 구형 응답으로 오인해
+    래퍼 객체를 행 하나로 돌려주는 대신(Finding 1의 증상) 벗겨내 정상 처리해야 한다."""
+    from app.adapters import n8n_query
+
+    monkeypatch.setattr(
+        n8n_query, "_read_payload",
+        lambda *a, **k: [{"query": "SELECT TOP 20 ...", "rows": [{"a": 1}, {"a": 2}]}],
+    )
+    rows, query = n8n_query._post_query("http://x", {"kind": "multi_join_preview"}, 5)
+    assert rows == [{"a": 1}, {"a": 2}]
+    assert query == "SELECT TOP 20 ..."
+
+
+def test_post_query_wrapped_dict_missing_rows_falls_back_to_legacy_shape(monkeypatch) -> None:
+    """rows 키가 아예 없는 dict는 신 W2 포맷으로 오인하지 않고 구형 단일-행 응답으로
+    받는다 — KeyError로 죽는 대신 안전하게 처리된다는 걸 고정한다."""
+    from app.adapters import n8n_query
+
+    monkeypatch.setattr(n8n_query, "_read_payload", lambda *a, **k: {"query": "SELECT 1"})
+    rows, query = n8n_query._post_query("http://x", {"kind": "containment"}, 5)
+    assert rows == [{"query": "SELECT 1"}]
+    assert query is None
 
 
 def test_multi_join_preview_sends_steps_and_returns_the_query(monkeypatch) -> None:

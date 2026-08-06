@@ -74,18 +74,40 @@ def test_executors_are_short_and_stateless():
     """단문 실행기 계약 — webhook → Code → MSSQL, 동기 응답, 체인 하나.
     W2는 실행문을 결과와 묶어 응답하는 Attach query가 하나 더 붙어 4노드다."""
     expected_node_counts = {W1_PATH: 3, W2_PATH: 4}
+    # n8n 기본값은 "첫 항목만"(firstEntryJson) — W1의 Run query는 행마다 아이템 하나씩
+    # 내므로 지정하지 않으면 결과가 1행으로 잘린다(실서버에서 테이블 11개·컬럼 1개만
+    # 적재된 사고의 원인) → allEntries로 override해 전 행을 배열로 받는다.
+    # W2는 다르다 — 마지막 노드(Attach query)가 이미 모든 행을 단일 아이템
+    # {query, rows}로 묶어 낸다. 여기에 allEntries를 쓰면 n8n이 "마지막 노드의
+    # 아이템 배열"을 그대로 반환해 그 단일 아이템이 [{query, rows}]로 한 번 더
+    # 감싸진다 — _post_query가 dict를 기대하는데 list가 와서 실패한다(Finding 1).
+    # firstEntryJson(기본값과 동일 — 명시로 고정)이 정확히 {query, rows}를 돌려준다.
+    # W1 returns one item per row, so it needs allEntries to avoid 1-row truncation.
+    # W2's last node already bundles every row into one item; allEntries there would
+    # wrap that single item in an array instead of returning it directly.
+    expected_response_data = {W1_PATH: "allEntries", W2_PATH: "firstEntryJson"}
     for path in EXECUTORS:
         wf = _load(path)
         assert len(wf["nodes"]) == expected_node_counts[path], path.name
         trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
         # 결과가 곧 HTTP 응답 — 백엔드가 받아서 다음 쿼리를 정한다
         assert trigger["parameters"]["responseMode"] == "lastNode", path.name
-        # n8n 기본값은 "첫 항목만" — 지정하지 않으면 결과가 1행으로 잘린다(실서버에서
-        # 테이블 11개·컬럼 1개만 적재된 사고의 원인). 전 행 반환을 계약으로 고정한다.
-        assert trigger["parameters"]["responseData"] == "allEntries", path.name
+        assert trigger["parameters"]["responseData"] == expected_response_data[path], path.name
         mssql = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.microsoftSql")
         # SQL은 Code 노드 산출물만 — 외부 문자열을 직접 실행하지 않는다
         assert mssql["parameters"]["query"] == "={{ $json.query }}", path.name
+
+
+def test_w2_response_data_matches_attach_query_shape() -> None:
+    """W2 전용 회귀 고정 — Attach query가 이미 단일 아이템으로 묶으므로 W1과 같은
+    allEntries를 쓰면 그 아이템이 배열에 한 번 더 감싸여 {query, rows} 계약이
+    깨진다(Finding 1: 재임포트 시 모든 kind가 500이 되는 원인). W1과 W2가 서로
+    다른 responseData를 쓰는 이유를 한 곳에 못박는다.
+    W2-only pin: allEntries would double-wrap Attach query's single bundled item and
+    break the {query, rows} contract every kind depends on."""
+    wf = _load(W2_PATH)
+    trigger = next(n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook")
+    assert trigger["parameters"]["responseData"] == "firstEntryJson"
 
 
 def test_executors_need_no_env_or_secrets():
@@ -142,14 +164,15 @@ def test_w2_builds_a_multi_join_preview_from_steps() -> None:
     wf = _load(W2_PATH)
     js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
     assert "multi_join_preview" in js
-    # join_type은 화이트리스트 매핑 — 임의 문자열이 SQL에 들어가면 안 된다.
-    # "b.join_type" 부재를 확인하는 이전 버전은 실제 코드가 st.join_type을 쓰므로
-    # 항상(수정 여부와 무관하게) 통과하는 무의미한 조건이었다 — join_type을 참조하는
-    # 곳이 이 삼항 연산자 한 곳뿐이고, 산출되는 키워드가 두 고정 리터럴뿐임을 직접 검사한다.
-    assert "INNER JOIN" in js and "LEFT JOIN" in js
-    whitelist_expr = "(st.join_type === 'left') ? 'LEFT JOIN' : 'INNER JOIN'"
-    assert whitelist_expr in js
-    assert js.count("join_type") == 1  # 화이트리스트 비교 외 경로로 새면 카운트가 늘어난다
+    # join_type 문자열 비교는 한 곳(wantsLeft 산출)뿐 — 그 불리언 결과를 여러 분기가
+    # 참조해 INNER/LEFT/RIGHT 중 하나를 고른다(방향은 어느 쪽이 새로 바인딩되는지에
+    # 따라 갈린다 — Finding 2). 임의 문자열이 SQL에 직접 들어가지 않는다는 걸
+    # "st.join_type" 등장 횟수로 고정한다(비교 외 경로로 새면 카운트가 늘어난다).
+    # join_type is string-compared exactly once; every branch picks its JOIN keyword
+    # from that boolean, not the raw string, so no arbitrary text can reach the SQL.
+    assert "INNER JOIN" in js and "LEFT JOIN" in js and "RIGHT JOIN" in js
+    assert "st.join_type === 'left'" in js
+    assert js.count("st.join_type") == 1
 
 
 def test_multi_join_preview_predicate_lands_on_the_owning_clause() -> None:
@@ -216,6 +239,79 @@ def test_multi_join_preview_aliases_stay_distinct_across_schemas() -> None:
     aliases = re.findall(r"AS \[([^\]]+)\]", select_clause)
     assert aliases == ["ATM.PI_X.ID", "SAP.PI_X.ID"]
     assert len(set(aliases)) == len(aliases)
+
+
+def test_multi_join_preview_left_join_preserves_the_newly_bound_left_table() -> None:
+    """Finding 2 — 새 테이블이 스텝의 left(=검증에서 orphan을 센 src)로 들어오고
+    join_type=left인 경우. 기존 체인은 스텝의 right(tgt) 쪽에 이미 있다. 순진하게
+    LEFT JOIN을 쓰면 SQL의 "왼쪽"(보존되는 쪽)이 기존 체인(tgt)이 되어, verdict가
+    보존을 약속한 src(신규 테이블)가 오히려 널-확장되어 사라진다 — RIGHT JOIN으로
+    뒤집어야 새로 들어온 src가 보존된다."""
+    if NODE_BIN is None:
+        pytest.fail(
+            "node runtime is required to execute the generated Build query JS — "
+            "join direction depends on which side of the step is newly bound and "
+            "cannot be verified by string inspection of jsCode alone"
+        )
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    steps = [
+        {"left_schema": "s", "left_table": "A", "left_column": "a1",
+         "right_schema": "s", "right_table": "B", "right_column": "b1", "join_type": "inner"},
+        # C가 새로 들어오는 쪽이자 스텝의 left(=검증된 src) — B(t1)는 이미 바인딩됨
+        {"left_schema": "s", "left_table": "C", "left_column": "c1",
+         "right_schema": "s", "right_table": "B", "right_column": "b2", "join_type": "left"},
+    ]
+    query = _run_build_query_js(js, {"kind": "multi_join_preview", "steps": steps})
+    from_clause = query.split(" FROM ", 1)[1]
+    expected_from = (
+        "[s].[A] t0 INNER JOIN [s].[B] t1 ON t0.[a1] = t1.[b1] "
+        "RIGHT JOIN [s].[C] t2 ON t2.[c1] = t1.[b2]"
+    )
+    assert from_clause == expected_from, from_clause
+
+
+def test_multi_join_preview_left_join_preserves_the_newly_bound_right_table() -> None:
+    """미러 케이스 — 새 테이블이 스텝의 right로 들어오면 기존 코드가 이미 정확하다
+    (verdict의 src가 항상 기존 체인 쪽에 있으므로 평범한 LEFT JOIN이 그 src를 보존한다).
+    Finding 2가 고친 왼쪽 케이스와 짝을 이루는 회귀 방지 고정."""
+    if NODE_BIN is None:
+        pytest.fail(
+            "node runtime is required to execute the generated Build query JS — "
+            "join direction depends on which side of the step is newly bound and "
+            "cannot be verified by string inspection of jsCode alone"
+        )
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    steps = [{
+        "left_schema": "s", "left_table": "A", "left_column": "a1",
+        "right_schema": "s", "right_table": "B", "right_column": "b1", "join_type": "left",
+    }]
+    query = _run_build_query_js(js, {"kind": "multi_join_preview", "steps": steps})
+    from_clause = query.split(" FROM ", 1)[1]
+    assert from_clause == "[s].[A] t0 LEFT JOIN [s].[B] t1 ON t0.[a1] = t1.[b1]", from_clause
+
+
+def test_multi_join_preview_rejects_left_join_between_already_bound_tables() -> None:
+    """Finding 2 두 번째 증상 — 양쪽 다 이미 바인딩된 닫는 스텝은 새 JOIN이 아니라
+    기존 clause에 AND로 붙는다. 그 지점엔 독립된 LEFT 방향이 없어 join_type=left를
+    조용히 무시하는 대신 예외를 던진다 — 백엔드의 _check_connectivity가 같은 규칙을
+    먼저 걸러내지만, 워크플로가 단독으로 재생되는 경로에도 방어선을 남긴다."""
+    if NODE_BIN is None:
+        pytest.fail(
+            "node runtime is required to execute the generated Build query JS — "
+            "this rejection is control-flow-dependent on step data"
+        )
+    wf = _load(W2_PATH)
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    steps = [
+        {"left_schema": "s", "left_table": "A", "left_column": "a1",
+         "right_schema": "s", "right_table": "B", "right_column": "b1", "join_type": "inner"},
+        {"left_schema": "s", "left_table": "A", "left_column": "a2",
+         "right_schema": "s", "right_table": "B", "right_column": "b2", "join_type": "left"},
+    ]
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_build_query_js(js, {"kind": "multi_join_preview", "steps": steps})
 
 
 def test_w2_returns_the_executed_sql_with_the_rows() -> None:

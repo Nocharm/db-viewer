@@ -298,7 +298,9 @@ class _Gen:
                 "tgt_object": self.qname(parent), "tgt_column": pk,
                 "src_object_id": child["object_id"], "tgt_object_id": parent["object_id"],
                 "kind": "fk" if is_fk else "real_no_fk",
-                "cardinality": "1:N", "naming_variant": variant,
+                # child(src)가 N, parent(tgt, pk)가 1 — src:tgt 표기라 N:1
+                # (validation.py의 ContainmentResult.cardinality와 표기를 맞춘다)
+                "cardinality": "N:1", "naming_variant": variant,
                 "orphan_count": rng.randint(1, 25) if has_orphans else 0,
                 "containment": 1.0, "in_view_join": False,
             }

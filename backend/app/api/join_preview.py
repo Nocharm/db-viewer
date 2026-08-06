@@ -33,7 +33,16 @@ class JoinPreviewRequest(BaseModel):
 
 
 def _check_connectivity(steps: list[JoinStepRef]) -> None:
-    """끊긴 조인은 곱집합이 된다 — 각 스텝은 이미 들어온 테이블과 이어져야 한다."""
+    """끊긴 조인은 곱집합이 된다 — 각 스텝은 이미 들어온 테이블과 이어져야 한다.
+
+    양쪽이 이미 다 들어온 스텝(닫는 edge)은 SQL에서 새 JOIN이 아니라 기존 clause에
+    AND로 붙는다 — 그 지점엔 독립된 LEFT/RIGHT 방향이 없어(주변 JOIN이 이미 그 테이블의
+    보존 여부를 결정했다) join_type=left를 만족시킬 방법이 없다. 조용히 무시하는 대신
+    여기서 막는다 — UI는 그 스텝에 계속 LEFT 배지를 보여주므로 무시하면 배지가 거짓말이 된다.
+    A closing edge (both sides already bound) becomes an AND on an existing clause, not a
+    new JOIN — there is no independent LEFT/RIGHT direction left to honour there. Reject
+    instead of silently dropping join_type=left, since the UI still shows a LEFT badge.
+    """
     seen: set[str] = set()
     for index, step in enumerate(steps):
         left = f"{step.left_schema}.{step.left_table}"
@@ -46,11 +55,17 @@ def _check_connectivity(steps: list[JoinStepRef]) -> None:
         if index == 0:
             seen.update({left, right})
             continue
-        if left not in seen and right not in seen:
+        left_seen, right_seen = left in seen, right in seen
+        if not left_seen and not right_seen:
             raise HTTPException(400, {
                 "message": "disconnected join step",
                 "context": {"step": index, "left": left, "right": right,
                             "joined": sorted(seen)},
+            })
+        if left_seen and right_seen and step.join_type == "left":
+            raise HTTPException(400, {
+                "message": "left join is not supported between two already-joined tables",
+                "context": {"step": index, "left": left, "right": right},
             })
         seen.update({left, right})
 
@@ -135,6 +150,20 @@ def run_join_preview(
         raise HTTPException(
             503,
             {"message": "join preview is unavailable without a live source",
+             "context": {"reason": str(e)}},
+        ) from e
+    except RuntimeError as e:
+        # n8n_query._post_query가 여기서 올리는 두 경우 — 재시도 후에도 n8n 호출 실패,
+        # 또는 W2가 실행문을 안 돌려줌(재배포 필요) — 잡지 않으면 프론트에 맨 "500"만
+        # 보이고 이 메시지의 원인 설명이 전달되지 않는다 (NotImplementedError는 이미
+        # RuntimeError의 하위클래스라 이 except보다 먼저 걸려야 한다)
+        # both RuntimeErrors n8n_query._post_query can raise here — retries exhausted, or
+        # W2 didn't return the executed SQL — must be caught or the frontend only sees a
+        # bare 500 and this message's explanation never reaches anyone. NotImplementedError
+        # is a RuntimeError subclass, so its except clause must stay above this one.
+        raise HTTPException(
+            502,
+            {"message": "join preview failed against the source database",
              "context": {"reason": str(e)}},
         ) from e
 

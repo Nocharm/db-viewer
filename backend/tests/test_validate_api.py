@@ -52,7 +52,7 @@ def test_containment_records_history_and_relation(vclient, migrated_engine, load
     }).json()
 
     assert body["containment"] == 1.0
-    assert body["cardinality"] == "1:N"
+    assert body["cardinality"] == "N:1"
     assert body["observations"] == 1
     assert body["observed_at"]
 

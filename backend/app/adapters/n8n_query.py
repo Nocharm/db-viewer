@@ -37,10 +37,14 @@ def _post_query(
 ) -> tuple[list[dict], str | None]:
     """행과 실행 SQL을 함께 돌려준다.
 
-    신 W2는 {query, rows}, 구 W2는 행 리스트를 보낸다 — 둘 다 받아 배포 순서 결합을
-    없앤다. 구 W2에서는 query가 None이다.
+    신 W2는 {query, rows} 단일 객체(webhook responseData=firstEntryJson), 구 W2는
+    행 리스트를 보낸다 — 둘 다 받아 배포 순서 결합을 없앤다. 구 W2에서는 query가 None이다.
+    Attach query가 배열의 원소 하나([{query, rows}])로 오는 경우(예: 코드는 최신인데
+    워크플로 재임포트가 늦어 webhook이 아직 allEntries인 반쯤 배포된 상태)도 벗겨내
+    구형 응답으로 오인해 래퍼 객체를 행 하나로 돌려주는 대신 정상 처리한다.
     Accepts both the wrapped and the legacy shape so backend and n8n can deploy
-    independently.
+    independently; also unwraps a single-element list (a half-updated deploy where the
+    workflow JSON hasn't been re-imported yet) instead of misreading the wrapper as a row.
     """
     url = f"{webhook_base.rstrip('/')}/dbv-query"
     last_error: Exception | None = None
@@ -52,9 +56,10 @@ def _post_query(
             logger.warning("n8n query attempt failed",
                            extra={"url": url, "kind": body.get("kind"), "attempt": attempt})
             continue
-        if isinstance(payload, dict) and "rows" in payload:
-            rows = payload["rows"] or []
-            return [r for r in rows if r], payload.get("query")
+        envelope = payload[0] if isinstance(payload, list) and len(payload) == 1 else payload
+        if isinstance(envelope, dict) and "rows" in envelope:
+            rows = envelope["rows"] or []
+            return [r for r in rows if r], envelope.get("query")
         rows = payload if isinstance(payload, list) else [payload]
         # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 빈 리스트로 정규화
         return [r for r in rows if r], None

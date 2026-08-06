@@ -85,7 +85,18 @@ function StepRow({
         </p>
       )}
 
-      {step.verdict && (
+      {/* 검증 자체가 실패한 경우 — "값 데이터 없음"(no_data)과 별도 렌더링으로 실제
+          오류를 보여준다. 아래 verdict 블록(레벨 배지·수치 토글)은 정상 판정 UI라
+          여기선 쓰지 않는다 / a failed validation gets its own block, distinct from
+          "no data"; the verdict block below is for successful judgments only */}
+      {step.status === "failed" && (
+        <p className="mt-0.5 text-xs" style={{ color: "var(--error)" }}
+           data-testid={`JoinBuilder-stepFailed-${stepKey}`}>
+          {step.verdict?.symptom ?? t("join.stepFailed").replace("{error}", "")}
+        </p>
+      )}
+
+      {step.status !== "failed" && step.verdict && (
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold" style={{ color: LEVEL_COLOR[level] }}
                 data-testid={`JoinBuilder-stepLevel-${stepKey}`}>

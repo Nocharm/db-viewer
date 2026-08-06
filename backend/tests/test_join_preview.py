@@ -98,6 +98,51 @@ def test_rejects_a_disconnected_second_step(jclient, migrated_engine, load_fixtu
     assert "disconnected join step" in str(res.json())
 
 
+def test_check_connectivity_rejects_left_join_between_already_bound_tables() -> None:
+    """Finding 2 두 번째 증상 — 양쪽 다 이미 바인딩된 닫는 스텝은 새 JOIN이 아니라
+    기존 clause에 AND로 붙어, 독립된 LEFT 방향이 없다. join_type=left를 조용히
+    무시하면 UI는 LEFT 배지를 계속 보여주는데 SQL은 그걸 반영하지 않는 거짓 상태가
+    된다 — 순수 함수라 DB 없이 바로 검증한다."""
+    from app.api.join_preview import _check_connectivity
+
+    steps = [
+        JoinStepRef(left_schema="dbo", left_table="A", left_column="a1",
+                    right_schema="dbo", right_table="B", right_column="b1",
+                    join_type="inner"),
+        JoinStepRef(left_schema="dbo", left_table="A", left_column="a2",
+                    right_schema="dbo", right_table="B", right_column="b2",
+                    join_type="left"),
+    ]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        _check_connectivity(steps)
+    assert exc.value.status_code == 400
+    assert "left join" in str(exc.value.detail).lower()
+
+
+def test_maps_n8n_runtime_error_to_a_502_with_context(jclient, migrated_engine, load_fixture):
+    """n8n_query._post_query가 재시도 후에도 실패하거나 W2가 실행문을 안 돌려주면
+    RuntimeError를 올린다 — 잡지 않으면 프론트에 맨 500만 보이고 원인 설명이
+    전달되지 않는다(Finding 5)."""
+    _seed(jclient, load_fixture)
+
+    class FailingValidator:
+        def containment(self, src, tgt):  # pragma: no cover - 미사용
+            raise NotImplementedError
+
+        def preview(self, src, tgt, limit):  # pragma: no cover - 미사용
+            raise NotImplementedError
+
+        def multi_join_preview(self, steps, limit):
+            raise RuntimeError("n8n query failed after retries: kind=multi_join_preview url=x")
+
+    jclient.app.dependency_overrides[get_join_validator] = lambda: FailingValidator()
+    res = jclient.post("/api/join/preview", json={"steps": [_step(migrated_engine)]})
+    assert res.status_code == 502
+    body = res.json()
+    assert "n8n query failed after retries" in body["error"]["context"]["reason"]
+
+
 def test_returns_rows_and_the_executed_sql(jclient, stub, migrated_engine, load_fixture):
     _seed(jclient, load_fixture)
     res = jclient.post("/api/join/preview",

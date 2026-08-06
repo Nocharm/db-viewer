@@ -67,11 +67,18 @@ describe("confidenceOpacity", () => {
 });
 
 describe("getCardinalityEnds", () => {
-  it("maps cardinality strings to crow's-foot ends in src:tgt order", () => {
-    // 문자열은 항상 src:tgt 순서 — ErdCanvas가 source=src_object_id로 엣지를 만든다
-    expect(getCardinalityEnds("1:N")).toEqual({ source: "one", target: "many" });
+  it("maps the backend's actual output to crow's-foot ends in src:tgt order", () => {
+    // backend/app/domain/validation.py::ContainmentResult.cardinality only ever emits
+    // these two strings — src(child) is the "many" side, tgt(unique target) is "one".
+    // Pinning the real producer's output here (not an assumed "1:N") is what would
+    // have caught the direction bug: "1:N" reads the same as "N:1" to a human skimming
+    // a test, but src:tgt order makes them opposite crow's-foot placements.
     expect(getCardinalityEnds("N:1")).toEqual({ source: "many", target: "one" });
     expect(getCardinalityEnds("N:M")).toEqual({ source: "many", target: "many" });
+  });
+
+  it("parses src:tgt strings generically, independent of what the backend emits today", () => {
+    expect(getCardinalityEnds("1:N")).toEqual({ source: "one", target: "many" });
     expect(getCardinalityEnds("1:1")).toEqual({ source: "one", target: "one" });
   });
 

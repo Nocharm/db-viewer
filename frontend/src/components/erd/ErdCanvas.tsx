@@ -31,7 +31,7 @@ import {
   addStep, canAddStep, EMPTY_DRAFT, removeStep, setStepJoinType, setStepResult,
   type CanAddFailureReason, type JoinColumnRef, type JoinDraft, type JoinType,
 } from "@/lib/join-draft";
-import { getJoinVerdict } from "@/lib/join-verdict";
+import { getJoinVerdict, type JoinVerdict } from "@/lib/join-verdict";
 import type { MessageKey } from "@/lib/i18n";
 import type { GraphEdge, GraphResponse, JoinPreviewResponse } from "@/lib/types";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
@@ -342,9 +342,21 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
       .then((result) => setDraft((latest) =>
         setStepResult(latest, stepKey, "ready", result, getJoinVerdict(result, null))))
       .catch((e: Error) => {
-        const noData = e.message.includes("no value data");
-        setDraft((latest) => setStepResult(
-          latest, stepKey, noData ? "no_data" : "failed", null, getJoinVerdict(null, null)));
+        // "no value data"(404)만 데이터 부재 — 그 외(500·401·네트워크 오류 등)는 검증
+        // 자체가 실패한 것이라 같은 "값 없음" 문구로 뭉개면 실제 오류가 안 보인다
+        // only a 404 means "no data"; every other failure (500, 401, network) is a
+        // validation failure and must not be folded into the same "no data" copy
+        if (e.message.includes("no value data")) {
+          setDraft((latest) => setStepResult(
+            latest, stepKey, "no_data", null, getJoinVerdict(null, null)));
+          return;
+        }
+        const failedVerdict: JoinVerdict = {
+          level: "danger",
+          symptom: t("join.stepFailed").replace("{error}", e.message),
+          remedy: null,
+        };
+        setDraft((latest) => setStepResult(latest, stepKey, "failed", null, failedVerdict));
       });
   }, [draft, resolveHandle, t]);
 

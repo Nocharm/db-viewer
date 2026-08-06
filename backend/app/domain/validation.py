@@ -34,8 +34,13 @@ class ContainmentResult:
 
     @property
     def cardinality(self) -> str:
-        # 타깃 유니크 여부로 판정 — N:M은 FK가 아니라 교차 관계 (계획 §3.2)
-        return "1:N" if self.tgt_distinct >= self.tgt_row_count else "N:M"
+        # 타깃 유니크 여부로 판정 — 타깃이 유니크하면 src 쪽 값은 얼마든지 중복될 수
+        # 있고 tgt 쪽은 최대 1건만 매치되므로 src:tgt 표기로는 N:1이다("1:N"이 아님 —
+        # 그 반대는 src가 유니크할 때다). N:M은 FK가 아니라 교차 관계 (계획 §3.2)
+        # target-unique means src can repeat but each src value matches at most one
+        # tgt row — that is N:1 in src:tgt order, not 1:N (which would require src
+        # to be the unique side). N:M means a cross/bridge relation, not an FK.
+        return "N:1" if self.tgt_distinct >= self.tgt_row_count else "N:M"
 
 
 class ValidationDataMissing(LookupError):

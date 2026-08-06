@@ -303,6 +303,7 @@ export const MESSAGES = {
   "join.clear": { ko: "전부 지우기", en: "Clear all" },
   "join.preview": { ko: "SQL과 20행 보기", en: "Show SQL and 20 rows" },
   "join.verifying": { ko: "검증 중…", en: "Verifying…" },
+  "join.stepFailed": { ko: "검증 실패 — {error}", en: "Validation failed — {error}" },
   "join.levelSafe": { ko: "안전", en: "Safe" },
   "join.levelCaution": { ko: "주의", en: "Caution" },
   "join.levelDanger": { ko: "위험", en: "Danger" },
