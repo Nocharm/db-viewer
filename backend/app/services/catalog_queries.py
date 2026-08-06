@@ -5,10 +5,19 @@ from sqlalchemy.orm import Session
 
 from app.domain import scoring
 from app.models import CatalogColumn, CatalogConstraint, CatalogObject, FkColumn, ViewJoin
+from app.services.schema_visibility import get_hidden_schemas
 
 
 def load_scoring_columns(db: Session, snapshot_id: int) -> dict[int, scoring.ScoringColumn]:
-    """스냅샷 전체 컬럼을 스코어링 입력으로 적재 / all columns as scoring inputs."""
+    """스냅샷 전체 컬럼을 스코어링 입력으로 적재 / all columns as scoring inputs.
+
+    감춘 스키마는 여기서 빠진다 — 후보 추천(columns.py)·배치 조인 체크(join_check.py)·
+    T3 스캔(scan.py)·AI 제안(ai_jobs.py)이 모두 이 로더를 공유하므로, 한 곳에서 걸러야
+    네 경로가 갈라지지 않는다.
+    / hidden schemas drop out here: candidate scoring, the batch join check, the T3 scan
+      and the AI suggester all share this loader, so filtering once keeps them in step.
+    """
+    hidden = get_hidden_schemas()
     rows = db.execute(
         select(CatalogColumn, CatalogObject.schema, CatalogObject.name, CatalogObject.type)
         .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
@@ -21,6 +30,7 @@ def load_scoring_columns(db: Session, snapshot_id: int) -> dict[int, scoring.Sco
             is_pk=col.is_pk, is_computed=col.is_computed, distinct_count=col.distinct_count,
         )
         for col, schema, name, obj_type in rows
+        if schema.lower() not in hidden
     }
 
 

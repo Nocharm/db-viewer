@@ -14,6 +14,7 @@ import {
   type ObjectDetail,
 } from "@/lib/api";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
+import { isQnameHidden, useHiddenSchemas } from "@/lib/use-hidden-schemas";
 
 interface Props {
   detail: ObjectDetail | null;
@@ -39,6 +40,27 @@ const COLLAPSED_COLUMNS_HEIGHT = 60;
 
 /** 클릭 가능한 테이블명 / clickable table reference. */
 function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) => void }) {
+  const { t } = useI18n();
+  const hidden = useHiddenSchemas();
+
+  // 감춘 스키마는 이름만 남긴다 — 관계가 어디로 이어지는지는 보이되 타고 넘어갈 수 없다.
+  // 모든 관계 목록(FK·lineage·유사·관계·조인체크)이 이 컴포넌트를 지나므로 여기 한 곳에서
+  // 막으면 진입점이 갈라지지 않는다.
+  // / a hidden schema keeps its name but loses the link: every relation list on this panel
+  //   renders through TableRef, so blocking here covers all of them at once.
+  if (isQnameHidden(name, hidden)) {
+    return (
+      <span
+        className="-mx-1 truncate px-1 text-left font-mono"
+        style={{ color: "var(--muted)" }}
+        title={t("hidden.notNavigable")}
+        data-testid={`TableDetail-refHidden-${name}`}
+      >
+        {name} <span className="badge badge--muted">{t("hidden.badge")}</span>
+      </span>
+    );
+  }
+
   return (
     <button
       className="pressable -mx-1 truncate rounded px-1 text-left font-mono underline-offset-2 hover:underline"
@@ -285,6 +307,13 @@ export function TableDetail({
             {t("detail.columns")} ({detail.column_count})
             <InfoTip text={t("tip.columns")} />
           </div>
+          {/* 감춘 스키마는 columns가 빈 배열로 온다 — 빈 상자만 두면 로딩 실패처럼 보인다 */}
+          {detail.hidden && (
+            <p className="text-xs" style={{ color: "var(--muted)" }}
+               data-testid="TableDetail-columnsHidden">
+              {t("hidden.columns")}
+            </p>
+          )}
           <div
             className="collapsible"
             style={{

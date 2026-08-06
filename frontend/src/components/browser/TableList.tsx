@@ -8,6 +8,7 @@ import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
 import type { SearchMatch } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
+import { useHiddenSchemas } from "@/lib/use-hidden-schemas";
 
 export interface TableListItem {
   table: ObjectSummary;
@@ -49,6 +50,7 @@ export function TableList({
   items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect,
 }: Props) {
   const { t } = useI18n();
+  const hiddenSchemas = useHiddenSchemas();
   // 검색·필터로 목록이 바뀌면 처음 청크부터 다시 그린다 / restart chunking on a new result set
   const [visibleCount, setVisibleCount] = useState(RENDER_CHUNK);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -107,10 +109,17 @@ export function TableList({
         </p>
       </div>
       <div className="scroll-area min-h-0 flex-1 pb-3">
-        {shown.map(({ table, match }) => (
+        {shown.map(({ table, match }) => {
+          // 감춘 스키마는 목록에 남지만 열 수는 없다 — 이름으로 존재는 확인하되 컬럼·상세로는
+          // 못 들어간다 / listed but not openable: the name confirms it exists, nothing more
+          const hidden = hiddenSchemas.has(table.schema.toLowerCase());
+          return (
           <button
             key={table.id}
             className={`pressable list-row ${selectedId === table.id ? "list-row--selected" : ""}`}
+            disabled={hidden}
+            title={hidden ? t("hidden.notNavigable") : undefined}
+            style={hidden ? { cursor: "not-allowed", opacity: 0.55 } : undefined}
             onClick={() => onSelect(table)}
             data-testid={`TableList-item-${table.id}`}
           >
@@ -131,10 +140,11 @@ export function TableList({
               )}
             </span>
             <span className="text-xs" style={{ color: "var(--muted)" }}>
-              {table.column_count}c
+              {hidden ? t("hidden.badge") : `${table.column_count}c`}
             </span>
           </button>
-        ))}
+          );
+        })}
         {items.length === 0 && (
           <p className="px-4 py-3 text-sm" style={{ color: "var(--muted)" }}
              data-testid="TableList-emptyState">

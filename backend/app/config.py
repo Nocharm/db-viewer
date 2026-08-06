@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     # 관리자 로그인과 별도로 한 번 더 막는다. 비어 있으면 수정 자체가 불가(503).
     preview_admin_password: str = ""
 
+    # Environment: 컬럼을 감출 스키마 — 쉼표로 구분 (예: "MAP,STG"). 이름은 계속 조회되지만
+    # 컬럼·조인 검증·ERD 노드가 전부 빠진다. 매핑 테이블처럼 구조는 알려도 되지만 컬럼 단위로
+    # 파고들 필요가 없는 스키마용. 대소문자 무시 — 운영자가 케이스를 틀려도 열리면 안 된다.
+    # / schemas whose columns are never exposed, comma-separated. Names stay searchable;
+    # columns, join validation and ERD nodes are all withheld. Case-insensitive on purpose:
+    # a casing typo must not silently fail open.
+    hidden_schemas: str = ""
+
     # LDAP (AD 동기화) — 4개가 모두 있어야 켜진다 / all four required to enable
     ldap_url: str = ""
     ldap_bind_dn: str = ""

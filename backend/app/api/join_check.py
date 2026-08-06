@@ -13,6 +13,7 @@ from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import CatalogColumn, CatalogObject
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
+from app.services.schema_visibility import is_schema_hidden
 from app.services.observations import record_observation
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
@@ -87,6 +88,19 @@ def run_join_check(
             raise HTTPException(404, {"message": "target table not found",
                                       "context": {"target_object_id": req.target_object_id}})
         target_qname = f"{target.schema}.{target.name}"
+
+    # load_scoring_columns가 감춘 스키마를 이미 떨구므로 그냥 두면 "후보 0건"으로 조용히
+    # 끝난다 — 왜 비었는지 알 수 없어 명시적으로 거부한다 (columns.py의 후보 조회도 동일)
+    # / the loader already drops hidden schemas, so this would otherwise return an empty
+    #   result with no explanation; reject it outright instead
+    hidden_qnames = sorted({q for q in (src_qname, target_qname)
+                            if q is not None and is_schema_hidden(q.split(".", 1)[0])})
+    if hidden_qnames:
+        raise HTTPException(403, {
+            "message": "these objects are in a hidden schema — their columns are not "
+                       "served and cannot be validated (HIDDEN_SCHEMAS)",
+            "context": {"objects": hidden_qnames},
+        })
 
     settings = get_settings()
     blacklist = {name.upper() for name in settings.low_cardinality_blacklist}

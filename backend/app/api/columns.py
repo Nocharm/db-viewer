@@ -9,6 +9,7 @@ from app.db import get_db
 from app.domain import scoring
 from app.models import CatalogColumn, CatalogObject
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
+from app.services.schema_visibility import is_schema_hidden
 
 router = APIRouter(prefix="/api/columns", tags=["columns"])
 
@@ -28,6 +29,16 @@ def get_relation_candidates(
         raise HTTPException(404, {"message": "column not found",
                                   "context": {"column_id": column_id}})
     col, obj = row
+
+    # 감춘 스키마의 컬럼은 load_scoring_columns에서 빠져 있어 아래 columns[col.id]가
+    # KeyError로 터진다 — 그 전에 의도된 거부로 바꾼다
+    # / hidden-schema columns are absent from the loader below, so guard before the lookup
+    #   turns into a KeyError
+    if is_schema_hidden(obj.schema):
+        raise HTTPException(403, {
+            "message": "this schema is hidden — its columns are not served (HIDDEN_SCHEMAS)",
+            "context": {"object": f"{obj.schema}.{obj.name}", "schema": obj.schema},
+        })
 
     settings = get_settings()
     blacklist = {name.upper() for name in settings.low_cardinality_blacklist}

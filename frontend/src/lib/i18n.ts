@@ -84,6 +84,16 @@ export const MESSAGES = {
     ko: "원본 소스가 0행을 반환했습니다 (쿼리는 실행됨)",
     en: "The source returned 0 rows (the query did run)",
   },
+  // HIDDEN_SCHEMAS — 이름은 남고 컬럼·진입만 막히는 스키마 / hidden-schema surface
+  "hidden.badge": { ko: "컬럼 비공개", en: "Columns hidden" },
+  "hidden.notNavigable": {
+    ko: "컬럼을 공개하지 않는 스키마입니다 — 이 테이블로는 이동할 수 없습니다",
+    en: "This schema does not expose its columns — you cannot navigate into this table",
+  },
+  "hidden.columns": {
+    ko: "이 스키마는 컬럼을 공개하지 않습니다 (서버 설정)",
+    en: "This schema does not expose its columns (server configuration)",
+  },
   "preview.notAllowed": { ko: "미리보기 미허용", en: "Preview not allowed" },
   "preview.notAllowedHint": {
     ko: "이 테이블의 스키마가 미리보기 허용 목록에 없습니다 — 관리자에게 요청하세요",

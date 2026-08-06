@@ -14,6 +14,7 @@ from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissin
 from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
 from app.services.observations import record_observation
 from app.services.preview_policy import is_preview_allowed
+from app.services.schema_visibility import is_schema_hidden
 
 router = APIRouter(prefix="/api/validate", tags=["validate"])
 
@@ -52,6 +53,24 @@ def _pair_filter(src: ColumnRef, tgt: ColumnRef):
     )
 
 
+def ensure_not_hidden(*refs: ColumnRef) -> None:
+    """감춘 스키마의 컬럼은 어떤 검증 경로에도 들어올 수 없다.
+
+    컬럼 목록을 감춰도 column_id만 알면 판정·미리보기가 되면 감춘 의미가 없다 —
+    id는 카탈로그에 그대로 있으므로(이름은 계속 노출된다) 여기서 명시적으로 막는다.
+    미리보기 허용 목록과 독립이다: 허용돼 있어도 감춘 스키마면 막힌다.
+    / hiding the column list means nothing if a known column_id still validates or
+      previews. Ids remain resolvable by design, so the block has to be explicit here.
+    """
+    blocked = sorted({ref.object_qname for ref in refs if is_schema_hidden(ref.schema)})
+    if blocked:
+        raise HTTPException(403, {
+            "message": "these objects are in a hidden schema — their columns are not "
+                       "served and cannot be validated (HIDDEN_SCHEMAS)",
+            "context": {"objects": blocked},
+        })
+
+
 @router.post("/containment")
 def run_containment(
     req: ContainmentRequest,
@@ -61,6 +80,7 @@ def run_containment(
     """T2 — 지정 컬럼 페어 containment 검증, 결과는 영구 기록 (계획 §3.2·§3.4)."""
     src_ref, src_col = resolve_column_ref(db, req.src_column_id)
     tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
+    ensure_not_hidden(src_ref, tgt_ref)
 
     try:
         result = validator.containment(src_ref, tgt_ref)
@@ -105,6 +125,7 @@ def run_preview(
     """조인 샘플 미리보기 — 원본 값이 나가는 유일한 지점: 무캐시·마스킹·감사 (계획 §3.5)."""
     src_ref, src_col = resolve_column_ref(db, req.src_column_id)
     tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
+    ensure_not_hidden(src_ref, tgt_ref)
     # 조인 샘플도 양쪽 테이블의 실값을 내보낸다 — 테이블 미리보기와 같은 허용 목록을 쓴다
     # (여기가 열려 있으면 허용 목록이 우회된다)
     blocked = [ref.object_qname for ref in (src_ref, tgt_ref)

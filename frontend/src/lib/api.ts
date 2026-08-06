@@ -259,6 +259,8 @@ export interface ObjectDetail {
   row_count: number | null;
   column_count: number;
   ai_summary: string | null;
+  /** HIDDEN_SCHEMAS 스키마 — columns가 항상 빈 배열로 내려온다 / columns are withheld */
+  hidden: boolean;
   columns: { id: number; name: string; data_type: string; is_pk: boolean; is_join_key: boolean }[];
   using_views: { id: number; name: string; min_depth: number }[];
   base_tables: { id: number; name: string; min_depth: number }[];
@@ -389,6 +391,11 @@ export interface TablePreview {
 /** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
 export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
   return getJson("/api/objects/preview-allowlist");
+}
+
+/** 컬럼을 감춘 스키마 (HIDDEN_SCHEMAS) — 소문자로 내려온다. */
+export function fetchHiddenSchemas(): Promise<{ items: string[] }> {
+  return getJson("/api/objects/hidden-schemas");
 }
 
 export interface PreviewAllowEntry {

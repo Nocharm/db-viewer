@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String
 from sqlalchemy.orm import Session
 
-from app.api.validate import get_join_validator, resolve_column_ref
+from app.api.validate import ensure_not_hidden, get_join_validator, resolve_column_ref
 from app.db import get_db
 from app.domain.validation import JoinStepRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog
@@ -126,6 +126,7 @@ def run_join_preview(
     for step in req.steps:
         left_ref, left_col = resolve_column_ref(db, step.left_column_id)
         right_ref, right_col = resolve_column_ref(db, step.right_column_id)
+        ensure_not_hidden(left_ref, right_ref)
         for ref in (left_ref, right_ref):
             involved.setdefault(f"{ref.schema}.{ref.table}", ref.schema)
         refs.append(JoinStepRef(

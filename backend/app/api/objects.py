@@ -25,6 +25,7 @@ from app.models import (
     ViewLineageFlat,
 )
 from app.services.preview_policy import is_preview_allowed, list_allowed_schemas
+from app.services.schema_visibility import get_hidden_schemas, is_schema_hidden
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 
@@ -218,11 +219,20 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
             )
         ]
 
+    # 감춘 스키마는 컬럼 배열만 비운다 — 이름·규모·관계는 그대로 둔다(다른 테이블에서
+    # 이어지는 관계를 읽으려면 필요하고, 그건 요청상 허용된다). column_count는 목록·검색이
+    # 이미 내보내는 값이라 여기서만 감추면 화면끼리 어긋난다.
+    # / a hidden schema only loses the column array; name, size and relations stay, since
+    # relations from other tables must remain readable. column_count is already in the
+    # search payload — withholding it only here would make the two screens disagree.
+    hidden = is_schema_hidden(obj.schema)
+
     return {
         "id": obj.id, "name": qname, "type": obj.type, "row_count": obj.row_count,
         "column_count": len(columns),
         "ai_summary": summary,
-        "columns": [
+        "hidden": hidden,
+        "columns": [] if hidden else [
             {"id": c.id, "name": c.name, "data_type": c.data_type, "is_pk": c.is_pk,
              "is_join_key": c.is_pk or c.id in fk_column_ids}
             for c in columns
@@ -251,6 +261,16 @@ def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
     return {"items": list_allowed_schemas(db)}
 
 
+@router.get("/hidden-schemas")
+def get_hidden_schema_list() -> dict:
+    """컬럼을 감춘 스키마 목록 — 화면이 진입 차단·컬럼 숨김을 미리 적용하는 근거.
+
+    설정(`HIDDEN_SCHEMAS`)이 원본이고 런타임 변경은 없다. 목록을 내보내는 것 자체는
+    노출이 아니다 — 그 스키마의 테이블 이름은 어차피 목록·검색에 계속 나온다.
+    """
+    return {"items": sorted(get_hidden_schemas())}
+
+
 @router.get("/{object_id}/preview")
 def get_object_preview(
     object_id: int,
@@ -267,6 +287,15 @@ def get_object_preview(
     settings = get_settings()
 
     qname = f"{obj.schema}.{obj.name}"
+    # 감춘 스키마는 컬럼조차 안 나가므로 값 미리보기는 당연히 막힌다 — 허용 목록에 잘못
+    # 올라와 있어도 이쪽이 먼저 이긴다 / a hidden schema loses its columns, so values are
+    # out of the question; this wins even if the schema was mistakenly allowlisted
+    if is_schema_hidden(obj.schema):
+        raise HTTPException(403, {
+            "message": "this schema is hidden — its columns and values are not served "
+                       "(HIDDEN_SCHEMAS)",
+            "context": {"object": qname, "schema": obj.schema},
+        })
     # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다
     if not is_preview_allowed(db, obj.schema):
         raise HTTPException(403, {
@@ -330,13 +359,17 @@ def get_columns_index(
 ) -> dict:
     """테이블별 컬럼명 인덱스 — 브라우저 컬럼 검색용 / column-name index for client search."""
     snapshot = resolve_snapshot(db, snapshot_id)
+    hidden = get_hidden_schemas()
     index: dict[int, list[str]] = {}
-    for object_id, name in db.execute(
-        select(CatalogColumn.object_id, CatalogColumn.name)
+    for object_id, schema, name in db.execute(
+        select(CatalogColumn.object_id, CatalogObject.schema, CatalogColumn.name)
         .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
         .where(CatalogObject.snapshot_id == snapshot.id, CatalogObject.type == "table")
         .order_by(CatalogColumn.object_id, CatalogColumn.ordinal)
     ):
+        # 컬럼 검색 인덱스라 감춘 스키마가 남으면 이름으로 컬럼을 되찾을 수 있다
+        if schema.lower() in hidden:
+            continue
         index.setdefault(object_id, []).append(name)
     return {
         "snapshot_id": snapshot.id,
@@ -434,15 +467,36 @@ def get_object_graph(
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     sid = anchor.snapshot_id
 
+    if is_schema_hidden(anchor.schema):
+        raise HTTPException(403, {
+            "message": "this schema is hidden — its columns and ERD node are not served "
+                       "(HIDDEN_SCHEMAS)",
+            "context": {"object": f"{anchor.schema}.{anchor.name}", "schema": anchor.schema},
+        })
+
+    # 감춘 스키마는 ERD에서 노드째 빠진다 — 노드가 없으면 인접 계산·엣지에서 자동으로
+    # 사라지므로, 여기서 한 번 거르면 확장·엣지 필터를 따로 손댈 필요가 없다
+    # / hidden schemas lose their ERD node entirely; dropping them from the id map removes
+    #   them from adjacency and every edge list downstream, so nothing else needs a filter
+    hidden = get_hidden_schemas()
     qname_to_id = {
         f"{schema}.{name}": oid
         for oid, schema, name in db.execute(
             select(CatalogObject.id, CatalogObject.schema, CatalogObject.name)
             .where(CatalogObject.snapshot_id == sid)
         )
+        if schema.lower() not in hidden
     }
-    fk_edges = _load_fk_edges(db, sid)
+    visible_ids = set(qname_to_id.values())
+    # FK·lineage 로더는 객체 id로 직접 조회해 qname_to_id를 거치지 않는다 — 감춘 쪽에 닿는
+    # 엣지는 여기서 떨군다. 관계(relation) 엣지는 qname_to_id를 쓰므로 이미 빠져 있다.
+    def _visible(edges: list[dict]) -> list[dict]:
+        return [e for e in edges
+                if e["src_object_id"] in visible_ids and e["tgt_object_id"] in visible_ids]
+
+    fk_edges = _visible(_load_fk_edges(db, sid))
     lineage_edges, lineage_flags = _load_lineage_edges(db, sid)
+    lineage_edges = _visible(lineage_edges)
     relation_edges = _load_relation_edges(db, qname_to_id)
 
     adjacency: dict[int, set[int]] = {}
