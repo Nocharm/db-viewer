@@ -24,6 +24,7 @@ from app.models import (
     ViewDep,
     ViewLineageFlat,
 )
+from app.services.preview_policy import is_preview_allowed, list_allowed_qnames
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 
@@ -240,6 +241,16 @@ TABLE_PREVIEW_LIMIT = 20
 TABLE_PREVIEW_MAX = 500
 
 
+@router.get("/preview-allowlist")
+def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
+    """미리보기가 허용된 객체 qname 목록 — 화면이 버튼 활성 여부를 정하는 근거.
+
+    목록 자체는 카탈로그 메타(이미 노출되는 이름)라 일반 사용자도 읽을 수 있다.
+    수정은 관리 API(비밀번호 게이트)에서만 한다.
+    """
+    return {"items": list_allowed_qnames(db)}
+
+
 @router.get("/{object_id}/preview")
 def get_object_preview(
     object_id: int,
@@ -256,6 +267,14 @@ def get_object_preview(
     settings = get_settings()
 
     qname = f"{obj.schema}.{obj.name}"
+    # 값 데이터를 내보내는 유일한 경로 — 허용 목록에 없으면 소스에 질의하지 않는다
+    if not is_preview_allowed(db, qname):
+        raise HTTPException(403, {
+            "message": "preview is not allowed for this object — an admin must add it "
+                       "to the preview allowlist (관리 콘솔 → 미리보기 허용 테이블)",
+            "context": {"object": qname},
+        })
+
     columns = db.execute(
         select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
         .order_by(CatalogColumn.ordinal)
@@ -295,6 +314,8 @@ def get_object_preview(
         "columns": [c.name for c in columns],
         "rows": rows,
         "masked_columns": masked,
+        # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값
+        "source": "live" if settings.source_mode == "live" else "fixture",
         "limit": limit,
         "filter": (
             {"column": filter_column, "value": filter_value} if filter_column else None

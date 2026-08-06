@@ -8,10 +8,10 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.auth import require_sysadmin
+from app.auth import require_preview_admin, require_sysadmin
 from app.config import get_settings
 from app.db import get_db
-from app.models import AppUser, AuditLog, LoginWhitelist
+from app.models import AppUser, AuditLog, CatalogObject, LoginWhitelist, PreviewAllowlist
 
 router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_sysadmin)]
@@ -118,6 +118,78 @@ def list_users(
         "total": total,
         "has_more": offset + len(users) < total,
     }
+
+
+@router.get("/preview-allowlist")
+def list_preview_allowlist(db: Session = Depends(get_db)) -> dict:
+    """허용 목록 + 등록 정보 — 읽기는 관리자 게이트만, 수정만 비밀번호를 요구한다."""
+    rows = db.execute(
+        select(PreviewAllowlist).order_by(PreviewAllowlist.qname)
+    ).scalars().all()
+    return {
+        "password_configured": bool(get_settings().preview_admin_password),
+        "items": [
+            {"qname": row.qname, "note": row.note, "added_by": row.added_by,
+             "created_at": row.created_at.isoformat()}
+            for row in rows
+        ],
+    }
+
+
+class PreviewAllowRequest(BaseModel):
+    qname: str
+    note: str | None = None
+
+
+@router.post("/preview-allowlist", dependencies=[Depends(require_preview_admin)])
+def add_preview_allow(
+    req: PreviewAllowRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_sysadmin),
+) -> dict:
+    """객체 하나를 미리보기 허용으로 등록 — 실 데이터 노출 범위가 넓어지는 조작이다."""
+    qname = req.qname.strip()
+    if "." not in qname:
+        raise HTTPException(400, {"message": "qname must be 'schema.name'",
+                                  "context": {"qname": qname}})
+    schema, name = qname.split(".", 1)
+    # 오타로 유령 허용이 쌓이면 목록만 늘고 아무 테이블도 안 열린다 (schema_categories 동일 관용)
+    exists = db.execute(
+        select(CatalogObject.id)
+        .where(CatalogObject.schema == schema, CatalogObject.name == name)
+        .limit(1)
+    ).scalar_one_or_none()
+    if exists is None:
+        raise HTTPException(400, {"message": "unknown object in the catalog",
+                                  "context": {"qname": qname}})
+
+    now = datetime.now(UTC)
+    row = db.get(PreviewAllowlist, qname)
+    if row is None:
+        db.add(PreviewAllowlist(qname=qname, note=req.note, added_by=admin,
+                                created_at=now))
+    else:
+        row.note = req.note
+    db.add(AuditLog(action="preview_allow_add", detail=qname,
+                    requested_by=admin, requested_at=now))
+    return {"qname": qname, "created": row is None}
+
+
+@router.delete("/preview-allowlist/{qname}",
+               dependencies=[Depends(require_preview_admin)])
+def remove_preview_allow(
+    qname: str,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_sysadmin),
+) -> dict:
+    row = db.get(PreviewAllowlist, qname)
+    if row is None:
+        raise HTTPException(404, {"message": "not in the preview allowlist",
+                                  "context": {"qname": qname}})
+    db.delete(row)
+    db.add(AuditLog(action="preview_allow_remove", detail=qname,
+                    requested_by=admin, requested_at=datetime.now(UTC)))
+    return {"qname": qname, "removed": True}
 
 
 @router.post("/users/sync")

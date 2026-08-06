@@ -33,6 +33,7 @@ import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
+import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 
 export default function Home() {
   return (
@@ -67,6 +68,8 @@ function HomeInner() {
   // 컬럼 클릭 → 진행/요약 모달 (ERD 즉시 이동 대신) / column click opens the check modal
   const [checkColumn, setCheckColumn] = useState<CheckColumn | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
+  const previewAllowed = usePreviewAllowlist();
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -275,6 +278,9 @@ function HomeInner() {
               detail={detail}
               loading={detailLoading}
               previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
+              previewAllowed={
+                selected !== null && previewAllowed.has(`${selected.schema}.${selected.name}`)
+              }
               onPreview={openPreview}
               onOpenErd={handleOpenErd}
               onSelectTable={selectByQname}

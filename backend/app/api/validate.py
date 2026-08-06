@@ -13,6 +13,7 @@ from app.db import get_db
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
 from app.services.observations import record_observation
+from app.services.preview_policy import is_preview_allowed
 
 router = APIRouter(prefix="/api/validate", tags=["validate"])
 
@@ -104,6 +105,16 @@ def run_preview(
     """조인 샘플 미리보기 — 원본 값이 나가는 유일한 지점: 무캐시·마스킹·감사 (계획 §3.5)."""
     src_ref, src_col = resolve_column_ref(db, req.src_column_id)
     tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
+    # 조인 샘플도 양쪽 테이블의 실값을 내보낸다 — 테이블 미리보기와 같은 허용 목록을 쓴다
+    # (여기가 열려 있으면 허용 목록이 우회된다)
+    blocked = [ref.object_qname for ref in (src_ref, tgt_ref)
+               if not is_preview_allowed(db, ref.object_qname)]
+    if blocked:
+        raise HTTPException(403, {
+            "message": "preview is not allowed for these objects — an admin must add "
+                       "them to the preview allowlist (관리 콘솔 → 미리보기 허용 테이블)",
+            "context": {"objects": blocked},
+        })
 
     try:
         rows = validator.preview(src_ref, tgt_ref, PREVIEW_LIMIT)

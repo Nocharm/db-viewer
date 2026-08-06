@@ -68,9 +68,10 @@ def test_detail_similar_tables_have_rates(client, load_fixture):
         assert s["common_columns"] >= 1
 
 
-def test_preview_filter_by_column_value(client, load_fixture):
+def test_preview_filter_by_column_value(client, load_fixture, allow_preview):
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]
+    allow_preview(rel["src_object"])
     object_id = _object_id(client, rel["src_object"])
 
     plain = client.get(f"/api/objects/{object_id}/preview").json()
@@ -96,9 +97,11 @@ def test_columns_index_covers_tables(client, load_fixture):
     assert total >= 9000
 
 
-def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture):
+def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture,
+                                       allow_preview):
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]
+    allow_preview(rel["src_object"])
     object_id = _object_id(client, rel["src_object"])
 
     with migrated_engine.begin() as conn:
@@ -129,7 +132,7 @@ def test_preview_caps_masks_and_audits(client, migrated_engine, load_fixture):
 
 
 def test_preview_returns_actionable_error_instead_of_synthetic_rows(
-    client, load_fixture, monkeypatch,
+    client, load_fixture, monkeypatch, allow_preview,
 ):
     """실배포(N8N_WEBHOOK_BASE 있음)에서 live가 아니면 합성 행 대신 조치 가능한 503.
 
@@ -139,6 +142,7 @@ def test_preview_returns_actionable_error_instead_of_synthetic_rows(
 
     _seed(client, load_fixture)
     obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+    allow_preview(f"{obj['schema']}.{obj['name']}")
 
     monkeypatch.setenv("N8N_WEBHOOK_BASE", "http://n8n/webhook")
     monkeypatch.setenv("SOURCE_MODE", "fixture")
@@ -153,9 +157,10 @@ def test_preview_returns_actionable_error_instead_of_synthetic_rows(
         get_settings.cache_clear()
 
 
-def test_preview_limit_is_adjustable_with_hard_cap(client, load_fixture):
+def test_preview_limit_is_adjustable_with_hard_cap(client, load_fixture, allow_preview):
     _seed(client, load_fixture)
     obj = client.get("/api/objects?q=HR_EMP&type=table&limit=1").json()["items"][0]
+    allow_preview(f"{obj['schema']}.{obj['name']}")
 
     default = client.get(f"/api/objects/{obj['id']}/preview").json()
     assert default["limit"] == 20 and len(default["rows"]) <= 20

@@ -85,6 +85,55 @@ def test_table_preview_drops_empty_rows(captured):
     assert rows == []
 
 
+def test_table_preview_flattens_a_nested_recordset(captured):
+    # 한 겹 더 감싸져 오는 응답 — 평탄화하지 않으면 20행이 통째로 유실된다
+    captured["response"] = [[{"EMP_NO": 1}, {"EMP_NO": 2}]]
+    rows = N8nTablePreview("http://n8n/webhook", timeout=5).rows("dbo.HR_EMP", [], 20)
+    assert rows == [{"EMP_NO": 1}, {"EMP_NO": 2}]
+
+
+def test_status_envelope_raises_instead_of_looking_like_no_data(captured):
+    """Respond 설정이 어긋나면 n8n은 상태 봉투를 준다 — 빈 표가 아니라 원인을 올린다."""
+    captured["response"] = {"message": "Workflow was started"}
+    with pytest.raises(n8n_query.N8nQueryError, match="responseData=allEntries"):
+        N8nTablePreview("http://n8n/webhook", timeout=5).rows("dbo.HR_EMP", [], 20)
+
+
+def test_containment_without_rows_raises(captured):
+    # 집계는 항상 1행 — 0행은 쿼리가 실행되지 않았다는 신호다
+    captured["response"] = [{}]
+    with pytest.raises(n8n_query.N8nQueryError, match="did not run"):
+        N8nJoinValidator("http://n8n/webhook", timeout=5).containment(SRC, TGT)
+
+
+def test_client_error_reports_status_and_body_without_retrying(monkeypatch):
+    """워크플로 비활성·경로 오타(4xx)는 재시도해도 같다 — 본문을 인용해 즉시 알린다."""
+    from urllib.error import HTTPError
+
+    attempts = []
+
+    def failing_urlopen(request, timeout=None):
+        attempts.append(1)
+        raise HTTPError(request.full_url, 404, "Not Found", {},
+                        io.BytesIO(b'{"message":"webhook not registered"}'))
+
+    monkeypatch.setattr(n8n_query.urllib.request, "urlopen", failing_urlopen)
+    with pytest.raises(n8n_query.N8nQueryError) as exc:
+        N8nTablePreview("http://n8n/webhook", timeout=1).rows("dbo.HR_EMP", [], 20)
+    assert "status=404" in str(exc.value)
+    assert "webhook not registered" in str(exc.value)
+    assert len(attempts) == 1
+
+
+def test_non_json_body_is_quoted_in_the_error(monkeypatch):
+    def html_urlopen(request, timeout=None):
+        return _FakeResponse(b"<html>502 Bad Gateway</html>")
+
+    monkeypatch.setattr(n8n_query.urllib.request, "urlopen", html_urlopen)
+    with pytest.raises(n8n_query.N8nQueryError, match="502 Bad Gateway"):
+        N8nTablePreview("http://n8n/webhook", timeout=1).rows("dbo.HR_EMP", [], 20)
+
+
 def test_failure_raises_after_retry(monkeypatch):
     from urllib.error import URLError
 

@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi import Depends
 
 from app.adapters.llm_ai import AiUnavailableError
+from app.adapters.n8n_query import N8nQueryError
 from app.api import (
     admin,
     ai,
@@ -73,6 +74,16 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=502,
             content={"error": {"code": 502, "message": str(exc), "context": exc.context}},
+        )
+
+    # W2(n8n) 실행 실패도 게이트웨이 오류로 — 원인 문자열이 화면까지 가야 진단이 된다
+    # (조용히 빈 표로 보이면 워크플로 비활성·자격증명 미연결을 구분할 수 없다)
+    @app.exception_handler(N8nQueryError)
+    async def handle_n8n_query_error(request: Request, exc: N8nQueryError) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"code": 502, "message": str(exc),
+                               "context": {"executor": "n8n W2"}}},
         )
 
     @app.exception_handler(RequestValidationError)

@@ -19,6 +19,8 @@ interface Props {
   detail: ObjectDetail | null;
   loading: boolean;
   previewLoading: boolean;
+  /** 미리보기 허용 목록에 있는 테이블인지 — 아니면 버튼을 잠근다 (실제 차단은 서버). */
+  previewAllowed: boolean;
   onPreview: () => void;
   onOpenErd: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
@@ -71,7 +73,8 @@ function JoinCheckRow({ item, onSelectTable }: {
 }
 
 export function TableDetail({
-  detail, loading, previewLoading, onPreview, onOpenErd, onSelectTable, onOpenColumn,
+  detail, loading, previewLoading, previewAllowed, onPreview, onOpenErd, onSelectTable,
+  onOpenColumn,
 }: Props) {
   const { t } = useI18n();
   const [checkResults, setCheckResults] = useState<JoinCheckItem[] | null>(null);
@@ -222,11 +225,18 @@ export function TableDetail({
         <button
           className="btn-primary"
           onClick={onPreview}
-          disabled={previewLoading}
+          disabled={previewLoading || !previewAllowed}
+          title={previewAllowed ? undefined : t("preview.notAllowedHint")}
           data-testid="TableDetail-previewButton"
         >
           {previewLoading ? t("detail.loading") : t("detail.preview")}
         </button>
+        {!previewAllowed && (
+          <span className="self-center text-xs" style={{ color: "var(--muted)" }}
+                data-testid="TableDetail-previewNotAllowed">
+            {t("preview.notAllowed")}
+          </span>
+        )}
         <button
           className="btn-secondary"
           onClick={onOpenErd}

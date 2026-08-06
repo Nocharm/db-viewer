@@ -42,10 +42,12 @@ async function getJson<T>(url: string): Promise<T> {
   return handle(await fetch(url, { headers: authHeaders() }));
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+async function postJson<T>(
+  url: string, body: unknown, extraHeaders?: Record<string, string>,
+): Promise<T> {
   return handle(await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
     body: JSON.stringify(body),
   }));
 }
@@ -58,8 +60,13 @@ async function putJson<T>(url: string, body: unknown): Promise<T> {
   }));
 }
 
-async function deleteJson<T>(url: string): Promise<T> {
-  return handle(await fetch(url, { method: "DELETE", headers: authHeaders() }));
+async function deleteJson<T>(
+  url: string, extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return handle(await fetch(url, {
+    method: "DELETE",
+    headers: { ...authHeaders(), ...extraHeaders },
+  }));
 }
 
 export interface Me {
@@ -387,8 +394,47 @@ export interface TablePreview {
   columns: string[];
   rows: Record<string, unknown>[];
   masked_columns: string[];
+  /** 행이 어디서 왔는지 — 0행일 때 "원본이 비었다"와 "실행기 미연결"을 가른다 */
+  source: "live" | "fixture";
   limit: number;
   filter: { column: string; value: string | null } | null;
+}
+
+/** 미리보기가 허용된 객체 qname 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
+export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
+  return getJson("/api/objects/preview-allowlist");
+}
+
+export interface PreviewAllowEntry {
+  qname: string;
+  note: string | null;
+  added_by: string;
+  created_at: string;
+}
+
+export interface PreviewAllowlistAdmin {
+  /** PREVIEW_ADMIN_PASSWORD 설정 여부 — 미설정이면 수정 자체가 불가하다 */
+  password_configured: boolean;
+  items: PreviewAllowEntry[];
+}
+
+export function fetchPreviewAllowlistAdmin(): Promise<PreviewAllowlistAdmin> {
+  return getJson("/api/admin/preview-allowlist");
+}
+
+// 비밀번호는 헤더로만 실어 보낸다 — URL·본문에 남기지 않는다 (로그·히스토리 노출 방지)
+export function addPreviewAllow(
+  qname: string, password: string, note?: string,
+): Promise<{ created: boolean }> {
+  return postJson("/api/admin/preview-allowlist", { qname, note },
+                  { "X-Preview-Password": password });
+}
+
+export function removePreviewAllow(
+  qname: string, password: string,
+): Promise<{ removed: boolean }> {
+  return deleteJson(`/api/admin/preview-allowlist/${encodeURIComponent(qname)}`,
+                    { "X-Preview-Password": password });
 }
 
 export function fetchObjectPreview(
