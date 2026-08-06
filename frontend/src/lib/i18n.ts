@@ -77,6 +77,16 @@ export const MESSAGES = {
     ko: "조건에 맞는 행 없음 — 필터를 완화해 보세요",
     en: "No rows match — try relaxing the filter",
   },
+  // 0행일 때 "원본이 실제로 비었다"임을 밝힌다 — 실행기 미연결과 헷갈리지 않게
+  "preview.emptyLive": {
+    ko: "원본 소스가 0행을 반환했습니다 (쿼리는 실행됨)",
+    en: "The source returned 0 rows (the query did run)",
+  },
+  "preview.notAllowed": { ko: "미리보기 미허용", en: "Preview not allowed" },
+  "preview.notAllowedHint": {
+    ko: "관리 콘솔의 미리보기 허용 목록에 없는 테이블입니다 — 관리자에게 요청하세요",
+    en: "Not on the preview allowlist — ask an admin to add it",
+  },
   "preview.csv": { ko: "CSV 다운로드", en: "Download CSV" },
   "preview.limitTitle": { ko: "표시 행수", en: "Row limit" },
   "preview.columnsMenu": { ko: "컬럼", en: "Columns" },

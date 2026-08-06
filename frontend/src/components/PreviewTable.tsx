@@ -145,7 +145,10 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
             <tr>
               <td className="px-3 py-4" style={{ color: "var(--muted)" }}
                   colSpan={Math.max(columns.length, 1)} data-testid="PreviewTable-emptyState">
-                {t("preview.empty")}
+                {/* 필터가 없는데도 0행이면 원본이 비었다는 뜻 — 실행기 문제와 구분해 말한다 */}
+                {data.filter || data.source !== "live"
+                  ? t("preview.empty")
+                  : t("preview.emptyLive")}
               </td>
             </tr>
           )}

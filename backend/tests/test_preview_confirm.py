@@ -43,9 +43,11 @@ def _relation_pair(migrated_engine, load_fixture) -> tuple[dict, dict]:
     return rel, ids
 
 
-def test_preview_caps_rows_and_writes_audit(vclient, migrated_engine, load_fixture):
+def test_preview_caps_rows_and_writes_audit(vclient, migrated_engine, load_fixture,
+                                            allow_preview):
     _seed(vclient, load_fixture)
     rel, ids = _relation_pair(migrated_engine, load_fixture)
+    allow_preview(rel["src_object"], rel["tgt_object"])
 
     body = vclient.post("/api/validate/preview",
                         json={**ids, "requested_by": "tester"}).json()
@@ -60,9 +62,11 @@ def test_preview_caps_rows_and_writes_audit(vclient, migrated_engine, load_fixtu
     assert rel["src_object"] in audit[0].detail
 
 
-def test_preview_applies_masking_policy(vclient, migrated_engine, load_fixture):
+def test_preview_applies_masking_policy(vclient, migrated_engine, load_fixture,
+                                       allow_preview):
     _seed(vclient, load_fixture)
     rel, ids = _relation_pair(migrated_engine, load_fixture)
+    allow_preview(rel["src_object"], rel["tgt_object"])
 
     with migrated_engine.begin() as conn:  # 마스킹 정책 지정 (계획 §3.5)
         col_t = Base.metadata.tables["columns"]

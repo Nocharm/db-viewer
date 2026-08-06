@@ -39,6 +39,8 @@ services:
       KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
       DBV_SYSADMINS: ${DBV_SYSADMINS}
       INGEST_API_KEY: ${INGEST_API_KEY}
+      # 미리보기 허용 목록 수정 비밀번호 — 비우면 목록 수정 자체가 막힌다(503)
+      PREVIEW_ADMIN_PASSWORD: ${PREVIEW_ADMIN_PASSWORD}
       # 수집(W1a/b)·live 질의(W2) 경로 — 없으면 수집이 픽스처 리플레이로 falls back
       N8N_WEBHOOK_BASE: ${N8N_WEBHOOK_BASE}
       N8N_QUERY_TIMEOUT: ${N8N_QUERY_TIMEOUT:-120}

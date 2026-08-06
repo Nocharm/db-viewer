@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.request
 from dataclasses import asdict
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 from app.domain.validation import ColumnRef, ContainmentResult, JoinStepRef
 
@@ -18,10 +18,75 @@ logger = logging.getLogger(__name__)
 
 # 일시 오류 1회 재시도 — 로깅 후 마지막 오류를 올린다 / one retry with logging, then raise
 RETRY_COUNT = 1
+# 오류 본문 인용 길이(자) — 원인 파악엔 앞부분이면 충분하고, 로그가 SQL 덤프로 부풀지 않는다
+ERROR_BODY_LIMIT = 400
 
 
-def _read_payload(url: str, body: dict, timeout: int) -> list | dict:
-    """단일 HTTP 왕복 — 테스트가 이 경계를 대체한다 / one round trip; tests patch here."""
+class N8nQueryError(RuntimeError):
+    """W2 호출·응답 실패 — 상태코드·응답 본문을 담아 화면까지 원인을 전달한다.
+
+    RuntimeError를 유지하는 이유: 기존 호출부가 RuntimeError로 잡는다.
+    """
+
+
+def _quote_body(raw: str) -> str:
+    return raw[:ERROR_BODY_LIMIT].replace("\n", " ")
+
+
+def _is_status_envelope(payload: dict) -> bool:
+    """행이 아니라 n8n의 상태·오류 봉투인지 / n8n status envelope, not a result row.
+
+    W2의 정상 응답은 `{query, rows}` 봉투이고, 그건 `_unwrap_query_envelope`가
+    이 함수보다 먼저 벗겨낸다. 그러고도 남은 최상위 dict가 `message`를 가지면
+    Respond 설정이 lastNode가 아니거나 워크플로가 오류로 끝났다는 뜻이다
+    (`{"message": "Workflow was started"}` / `{"message": "Error in workflow"}`).
+    """
+    return "message" in payload
+
+
+def _normalize_rows(payload: object, kind: str) -> list[dict]:
+    """W2 응답을 행 목록으로 정규화 — 행이 아닌 응답이 조용히 0행이 되지 않게 막는다.
+
+    n8n은 설정·경로에 따라 세 가지 모양을 돌려준다: 행 배열(정상), 한 겹 더 감싼
+    recordset 배열, 그리고 상태 봉투. 뒤 둘을 그대로 통과시키면 미리보기가 빈 표나
+    가짜 1행으로 보여 원인을 화면에서 알 수 없다 — 여기서 형태를 확정한다.
+    """
+    if isinstance(payload, dict):
+        if _is_status_envelope(payload):
+            raise N8nQueryError(
+                f"n8n returned a status envelope instead of rows: kind={kind} "
+                f"message={payload.get('message')!r} — check the W2 webhook Respond "
+                "settings (responseMode=lastNode, responseData=allEntries)"
+            )
+        return [payload]
+    if not isinstance(payload, list):
+        raise N8nQueryError(
+            f"n8n returned {type(payload).__name__}, expected rows: kind={kind}"
+        )
+
+    rows: list[dict] = []
+    for item in payload:
+        # recordset가 한 겹 더 감싸져 오는 응답 — 평탄화하지 않으면 행 전체가 유실된다
+        if isinstance(item, list):
+            rows.extend(row for row in item if isinstance(row, dict) and row)
+            continue
+        if not isinstance(item, dict):
+            raise N8nQueryError(
+                f"n8n returned a non-object row ({type(item).__name__}): kind={kind}"
+            )
+        # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 제거
+        if item:
+            rows.append(item)
+    return rows
+
+
+def _read_payload(url: str, body: dict, timeout: int) -> str:
+    """단일 HTTP 왕복 — 본문을 문자열 그대로 돌려준다.
+
+    JSON 파싱을 호출부에 남기는 이유: 비-JSON 본문(프록시 오류 페이지 등)을 인용해
+    어디서 가로챘는지 알려야 하기 때문. 테스트는 이 경계를 대체한다.
+    Returns the raw body; the caller parses so a non-JSON response can be quoted.
+    """
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
@@ -29,7 +94,23 @@ def _read_payload(url: str, body: dict, timeout: int) -> list | dict:
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode())
+        return response.read().decode()
+
+
+def _unwrap_query_envelope(payload: object) -> tuple[object, str | None]:
+    """`{query, rows}` 봉투를 벗겨 (행 페이로드, 실행 SQL)로 가른다.
+
+    반드시 `_normalize_rows`보다 **먼저** 돌아야 한다 — 봉투를 그대로 넘기면
+    `message` 키가 없어 정상 dict로 취급되어 래퍼가 행 하나로 둔갑한다.
+    한 겹 배열(`[{query, rows}]`)도 벗긴다: 코드는 최신인데 워크플로 재임포트가
+    늦어 webhook이 아직 allEntries인 반쯤 배포된 상태에서 그렇게 온다.
+    봉투가 아니면 페이로드를 그대로 흘려보내 구 W2 응답 처리를 건드리지 않는다.
+    Must run BEFORE _normalize_rows, or the wrapper is mistaken for a single row.
+    """
+    envelope = payload[0] if isinstance(payload, list) and len(payload) == 1 else payload
+    if isinstance(envelope, dict) and "rows" in envelope:
+        return envelope["rows"] or [], envelope.get("query")
+    return payload, None
 
 
 def _post_query(
@@ -47,24 +128,48 @@ def _post_query(
     workflow JSON hasn't been re-imported yet) instead of misreading the wrapper as a row.
     """
     url = f"{webhook_base.rstrip('/')}/dbv-query"
+    kind = body.get("kind", "")
     last_error: Exception | None = None
     for attempt in range(RETRY_COUNT + 1):
         try:
-            payload = _read_payload(url, body, timeout)
+            raw = _read_payload(url, body, timeout)
+        except HTTPError as e:
+            detail = _quote_body(e.read().decode(errors="replace"))
+            message = (
+                f"n8n rejected the query: kind={kind} url={url} "
+                f"status={e.code} body={detail}"
+            )
+            # 4xx는 재시도해도 같다 — 워크플로 비활성·webhook 경로 오타가 대부분이다
+            if e.code < 500:
+                raise N8nQueryError(message) from e
+            last_error = N8nQueryError(message)
+            logger.warning("n8n query returned a server error",
+                           extra={"url": url, "kind": kind, "status": e.code,
+                                  "attempt": attempt})
+            continue
         except URLError as e:
             last_error = e
             logger.warning("n8n query attempt failed",
-                           extra={"url": url, "kind": body.get("kind"), "attempt": attempt})
+                           extra={"url": url, "kind": kind, "attempt": attempt})
             continue
-        envelope = payload[0] if isinstance(payload, list) and len(payload) == 1 else payload
-        if isinstance(envelope, dict) and "rows" in envelope:
-            rows = envelope["rows"] or []
-            return [r for r in rows if r], envelope.get("query")
-        rows = payload if isinstance(payload, list) else [payload]
-        # W2의 alwaysOutputData가 0건 결과를 빈 아이템({}) 1개로 보낸다 → 빈 리스트로 정규화
-        return [r for r in rows if r], None
-    raise RuntimeError(
-        f"n8n query failed after retries: kind={body.get('kind')} url={url}"
+
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as e:
+            # 프록시 오류 페이지 등 — 본문을 인용해야 어디서 가로챘는지 알 수 있다
+            raise N8nQueryError(
+                f"n8n returned a non-JSON body: kind={kind} url={url} "
+                f"body={_quote_body(raw)}"
+            ) from e
+        rows_payload, query = _unwrap_query_envelope(payload)
+        rows = _normalize_rows(rows_payload, kind)
+        logger.info("n8n query returned rows",
+                    extra={"url": url, "kind": kind, "rows": len(rows),
+                           "has_query": query is not None})
+        return rows, query
+
+    raise N8nQueryError(
+        f"n8n query failed after retries: kind={kind} url={url} ({last_error})"
     ) from last_error
 
 
@@ -81,6 +186,12 @@ class N8nJoinValidator:
             "src_schema": src.schema, "src_table": src.table, "src_column": src.column,
             "tgt_schema": tgt.schema, "tgt_table": tgt.table, "tgt_column": tgt.column,
         }, self._timeout)
+        if not rows:
+            # 집계 쿼리는 항상 1행이다 — 0행이면 실행되지 않았다는 뜻
+            raise N8nQueryError(
+                "n8n returned no rows for the containment aggregate — the W2 query "
+                f"did not run ({src.schema}.{src.table} → {tgt.schema}.{tgt.table})"
+            )
         row = rows[0]
         src_distinct = int(row["src_distinct"])
         matched = int(row["matched"])

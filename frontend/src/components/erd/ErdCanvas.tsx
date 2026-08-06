@@ -26,6 +26,7 @@ import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
 import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-merge";
+// MAX_VISIBLE_COLUMNS는 컬럼 절단 폐기와 함께 사라졌다 — 노드는 전량 렌더 + 내부 스크롤
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import {
   addStep, canAddStep, EMPTY_DRAFT, getStepKey, removeStep, setStepConfirmed, setStepJoinType,
@@ -34,6 +35,7 @@ import {
 import { getJoinVerdict, type JoinVerdict } from "@/lib/join-verdict";
 import type { MessageKey } from "@/lib/i18n";
 import type { GraphEdge, GraphResponse, JoinPreviewResponse } from "@/lib/types";
+import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { JoinBuilder } from "@/components/erd/JoinBuilder";
 import { JoinPreviewPanel } from "@/components/erd/JoinPreviewPanel";
@@ -166,6 +168,8 @@ function ErdCanvasInner({
   const [emphasis, setEmphasis] = useState<EmphasisState | null>(null);
   // ai_suggested 엣지 hover 시 판정 근거 부유 카드 / floating reason card on ai_suggested edge hover
   const [edgeReason, setEdgeReason] = useState<string | null>(null);
+  // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
+  const previewAllowed = usePreviewAllowlist();
   // 우클릭 미리보기 — 하단 와이드 카드 / preview data for the bottom card
   const [preview, setPreview] = useState<TablePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -574,6 +578,13 @@ function ErdCanvasInner({
     () => (showViews ? 0 : (graph?.nodes ?? []).filter((n) => n.type === "view").length),
     [graph, showViews],
   );
+
+  // 노드 id → qname 으로 허용 여부 판정 / allowlist check by the node's qualified name
+  const isPreviewAllowed = useCallback((nodeId: number | null): boolean => {
+    if (nodeId === null) return false;
+    const node = graph?.nodes.find((n) => n.id === nodeId);
+    return node !== undefined && previewAllowed.has(`${node.schema}.${node.name}`);
+  }, [graph, previewAllowed]);
 
   const openPreview = useCallback((nodeId: number, limit?: number) => {
     setPreviewLoading(true);
@@ -1032,9 +1043,17 @@ function ErdCanvasInner({
           {menu.type === "node" && menu.nodeId !== null ? (
             <>
               <button className="pressable erd-menu__item"
+                      disabled={!isPreviewAllowed(menu.nodeId)}
+                      title={isPreviewAllowed(menu.nodeId)
+                        ? undefined : t("preview.notAllowedHint")}
                       onClick={() => { openPreview(menu.nodeId as number); setMenu(null); }}
                       data-testid="ErdCanvas-previewItem">
                 {t("detail.preview")}
+                {!isPreviewAllowed(menu.nodeId) && (
+                  <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>
+                    ({t("preview.notAllowed")})
+                  </span>
+                )}
               </button>
               <button className="pressable erd-menu__item"
                       onClick={() => { hideNode(menu.nodeId as number); setMenu(null); }}

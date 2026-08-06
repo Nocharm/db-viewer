@@ -39,6 +39,22 @@ n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 �
 - **재임포트**: 이미 임포트된 워크플로에 새 JSON을 다시 Import from File 하면 credential
   연결과 Activate 상태가 풀린다 — 매번 credential 재선택 + 재활성화가 필요하다.
 
+## 재임포트 후 미리보기가 안 나올 때
+
+임포트 자체는 성공해도 실행 결과가 화면에 안 붙는 경우가 있다. 위에서부터 확인:
+
+| 화면 증상 | 원인 | 조치 |
+|---|---|---|
+| **빈 표 + "원본 소스가 0행을 반환했습니다"** | W2는 정상 실행됐고 쿼리 결과가 실제로 0행 | 그 테이블이 비었거나(카탈로그 `row_count` 확인), MSSQL credential이 **다른 DB**를 보고 있다 — 노드의 credential이 W1과 같은지 확인 |
+| **502 + `status=404`** | webhook 경로 불일치 또는 워크플로 **비활성** | 우상단 Activate 토글, `path=dbv-query`와 `.env`의 `N8N_WEBHOOK_BASE` 확인 |
+| **502 + `status=500`** | MSSQL 노드 실패 (credential 미연결·권한) | 노드의 ⚠ 표시 → 읽기 전용 credential 재선택. W1은 `sys.*`만 읽어서 통과해도, W2는 **사용자 테이블 SELECT 권한**이 따로 필요하다 |
+| **502 + `status envelope`** | Respond 설정이 `lastNode`/`allEntries`가 아님 | 임포트본을 그대로 쓸 것 (손으로 고치지 말 것) |
+| 미리보기 버튼이 아예 잠김 | n8n 문제가 아니다 | 관리 콘솔 → *미리보기 허용 테이블*에 등록 (기본 전부 차단) |
+
+- 재임포트할 때 **옛 W2를 먼저 비활성/삭제**할 것 — 같은 `dbv-query` 경로를 두 워크플로가
+  들고 있으면 어느 쪽이 응답할지 보장되지 않는다.
+- 오류 본문(상태코드·n8n 메시지)은 백엔드가 502 응답에 그대로 실어 화면까지 보낸다.
+
 ## 워크플로별 계약
 
 - **W1 `dbv-catalog`** — body `{kind, offset/limit 또는 object_ids}`. kind는 `totals`,

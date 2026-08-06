@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     dbv_sysadmins: str = ""
     # n8n 등 머신 호출용 ingest 키 / machine-caller key for /api/ingest/*
     ingest_api_key: str = ""
+    # 미리보기 허용 목록 수정용 비밀번호 — 값 데이터 노출 범위를 바꾸는 조작이라
+    # 관리자 로그인과 별도로 한 번 더 막는다. 비어 있으면 수정 자체가 불가(503).
+    preview_admin_password: str = ""
 
     # LDAP (AD 동기화) — 4개가 모두 있어야 켜진다 / all four required to enable
     ldap_url: str = ""
