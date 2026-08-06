@@ -51,10 +51,12 @@ async function postJson<T>(
   }));
 }
 
-async function putJson<T>(url: string, body: unknown): Promise<T> {
+async function putJson<T>(
+  url: string, body: unknown, extraHeaders?: Record<string, string>,
+): Promise<T> {
   return handle(await fetch(url, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
     body: JSON.stringify(body),
   }));
 }
@@ -393,9 +395,22 @@ export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
   return getJson("/api/objects/preview-allowlist");
 }
 
-/** 컬럼을 감춘 스키마 (HIDDEN_SCHEMAS) — 소문자로 내려온다. */
-export function fetchHiddenSchemas(): Promise<{ items: string[] }> {
+/** 컬럼을 감춘 스키마(HIDDEN_SCHEMAS, 소문자) + 좌측 목록 렌더 토글. */
+export function fetchHiddenSchemas(): Promise<{ items: string[]; render: boolean }> {
   return getJson("/api/objects/hidden-schemas");
+}
+
+export function fetchHiddenSchemaRender(): Promise<{ render: boolean; schemas: string[] }> {
+  return getJson("/api/admin/hidden-schema-render");
+}
+
+/** 렌더 토글 변경 — 미리보기 허용 목록과 같은 비밀번호 게이트. */
+export function setHiddenSchemaRender(
+  render: boolean, password: string,
+): Promise<{ render: boolean }> {
+  return putJson("/api/admin/hidden-schema-render", { render }, {
+    "X-Preview-Password": password,
+  });
 }
 
 export interface PreviewAllowEntry {

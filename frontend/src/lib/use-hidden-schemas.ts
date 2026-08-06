@@ -16,14 +16,24 @@ import { fetchHiddenSchemas } from "@/lib/api";
 // (TableDetail.TableRef) 캐시가 없으면 같은 응답을 수십 번 받아온다.
 // / a config value that never changes at runtime, cached per module: the relation lists call
 //   this once per link, and without the cache that is dozens of identical requests.
-let cached: Set<string> | null = null;
-let inFlight: Promise<Set<string>> | null = null;
+export interface HiddenSchemaPolicy {
+  /** 컬럼을 감춘 스키마 (소문자) — `HIDDEN_SCHEMAS` 환경변수가 원본 */
+  schemas: Set<string>;
+  /** 좌측 스키마·카테고리 목록과 테이블 목록에 그릴지 — 관리 콘솔 토글 */
+  render: boolean;
+}
 
-function loadHiddenSchemas(): Promise<Set<string>> {
+// 토글은 관리 콘솔에서 바뀌지만 한 세션 안에서는 사실상 고정이라 캐시해도 된다.
+// 캐시가 없으면 관계 목록의 링크마다(TableDetail.TableRef) 같은 응답을 수십 번 받는다.
+const EMPTY: HiddenSchemaPolicy = { schemas: new Set(), render: true };
+let cached: HiddenSchemaPolicy | null = null;
+let inFlight: Promise<HiddenSchemaPolicy> | null = null;
+
+function loadHiddenSchemas(): Promise<HiddenSchemaPolicy> {
   if (cached) return Promise.resolve(cached);
   inFlight ??= fetchHiddenSchemas()
     .then((res) => {
-      cached = new Set(res.items);
+      cached = { schemas: new Set(res.items), render: res.render };
       return cached;
     })
     .catch((e: Error) => {
@@ -34,20 +44,24 @@ function loadHiddenSchemas(): Promise<Set<string>> {
   return inFlight;
 }
 
-export function useHiddenSchemas(): Set<string> {
-  const [hidden, setHidden] = useState<Set<string>>(() => cached ?? new Set());
+export function useHiddenSchemaPolicy(): HiddenSchemaPolicy {
+  const [policy, setPolicy] = useState<HiddenSchemaPolicy>(() => cached ?? EMPTY);
 
   useEffect(() => {
     if (cached) return;
     loadHiddenSchemas()
-      .then(setHidden)
+      .then(setPolicy)
       .catch((e: Error) => {
         // 조용히 넘기면 왜 링크가 살아 있는지 알 수 없다 — 콘솔에 남긴다
         console.error("hidden schemas fetch failed", e);
       });
   }, []);
 
-  return hidden;
+  return policy;
+}
+
+export function useHiddenSchemas(): Set<string> {
+  return useHiddenSchemaPolicy().schemas;
 }
 
 /** qname("schema.table")의 스키마가 감춰졌는가 — 백엔드가 소문자로 내려주므로 맞춰 비교. */

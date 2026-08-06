@@ -11,6 +11,7 @@ from app.models.catalog import (
     ViewJoin,
     ViewLineageFlat,
 )
+from app.models.app_flags import FLAG_RENDER_HIDDEN_SCHEMAS, AppFlag
 from app.models.categories import SchemaCategory
 from app.models.jobs import AiJob, CollectJob, ScanJob, ScanResult
 from app.models.preview_policy import PreviewAllowlist
@@ -21,8 +22,10 @@ __all__ = [
     "AiEmbedding",
     "AiJob",
     "AiSummary",
+    "AppFlag",
     "AppUser",
     "AuditLog",
+    "FLAG_RENDER_HIDDEN_SCHEMAS",
     "LoginWhitelist",
     "CollectJob",
     "ScanJob",

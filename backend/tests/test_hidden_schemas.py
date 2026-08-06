@@ -36,6 +36,17 @@ def _column_id(migrated_engine, qname: str, column: str) -> int:
 
 
 @pytest.fixture()
+def preview_password(monkeypatch):
+    """토글 게이트는 미리보기 허용 목록과 같은 비밀번호를 쓴다 (test_preview_allowlist와 동일)."""
+    password = "s3cret-preview"
+    monkeypatch.setenv("PREVIEW_ADMIN_PASSWORD", password)
+    get_settings.cache_clear()
+    yield password
+    monkeypatch.delenv("PREVIEW_ADMIN_PASSWORD", raising=False)
+    get_settings.cache_clear()
+
+
+@pytest.fixture()
 def hide_schemas(monkeypatch):
     """테스트 도중 정책을 켠다 — 켜기 전에 id를 미리 확보해야 하는 검사들 때문에 필요하다.
     / flips the policy mid-test: several checks must resolve ids while still visible."""
@@ -52,6 +63,55 @@ def test_the_list_endpoint_reports_the_configured_schemas(client, hide_schemas):
     assert client.get("/api/objects/hidden-schemas").json()["items"] == []
     hide_schemas("MAP, STG")
     assert client.get("/api/objects/hidden-schemas").json()["items"] == ["map", "stg"]
+
+
+def test_the_render_toggle_defaults_to_hidden(client, hide_schemas):
+    """행이 없으면 안 그린다 — 감추라고 설정했는데 목록에 보이면 설정이 안 먹은 것처럼 읽힌다."""
+    hide_schemas(SCHEMA)
+    assert client.get("/api/objects/hidden-schemas").json()["render"] is False
+
+
+def test_the_render_toggle_is_password_gated(client, hide_schemas, preview_password):
+    hide_schemas(SCHEMA)
+    assert client.put("/api/admin/hidden-schema-render",
+                      json={"render": True}).status_code == 401
+    assert client.put("/api/admin/hidden-schema-render",
+                      headers={"X-Preview-Password": "wrong"},
+                      json={"render": True}).status_code == 401
+
+    ok = client.put("/api/admin/hidden-schema-render",
+                    headers={"X-Preview-Password": preview_password},
+                    json={"render": True})
+    assert ok.status_code == 200
+    assert client.get("/api/objects/hidden-schemas").json()["render"] is True
+
+    client.put("/api/admin/hidden-schema-render",
+               headers={"X-Preview-Password": preview_password},
+               json={"render": False})
+    assert client.get("/api/objects/hidden-schemas").json()["render"] is False
+
+
+def test_the_toggle_never_opens_the_columns(client, load_fixture, hide_schemas,
+                                            preview_password):
+    """표시 토글은 노출 정책이 아니다 — 켜도 컬럼은 계속 막혀 있어야 한다."""
+    _seed(client, load_fixture)
+    obj = _an_object(client)
+    hide_schemas(SCHEMA)
+    client.put("/api/admin/hidden-schema-render",
+               headers={"X-Preview-Password": preview_password},
+               json={"render": True})
+
+    body = client.get(f"/api/objects/{obj['id']}/detail").json()
+    assert body["hidden"] is True
+    assert body["columns"] == []
+    assert client.get(f"/api/objects/{obj['id']}/graph").status_code == 403
+
+
+def test_the_admin_view_exposes_the_schemas_read_only(client, hide_schemas):
+    """무엇을 감출지는 환경변수 영역 — 관리 API는 읽기만 준다."""
+    hide_schemas("MAP")
+    body = client.get("/api/admin/hidden-schema-render").json()
+    assert body == {"render": False, "schemas": ["map"]}
 
 
 def test_the_table_name_stays_searchable(client, load_fixture, hide_schemas):

@@ -11,7 +11,16 @@ from sqlalchemy.orm import Session
 from app.auth import require_preview_admin, require_sysadmin
 from app.config import get_settings
 from app.db import get_db
-from app.models import AppUser, AuditLog, CatalogObject, LoginWhitelist, PreviewAllowlist
+from app.models import (
+    FLAG_RENDER_HIDDEN_SCHEMAS,
+    AppFlag,
+    AppUser,
+    AuditLog,
+    CatalogObject,
+    LoginWhitelist,
+    PreviewAllowlist,
+)
+from app.services.schema_visibility import get_hidden_schemas, should_render_hidden_schemas
 
 router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_sysadmin)]
@@ -172,6 +181,48 @@ def add_preview_allow(
     db.add(AuditLog(action="preview_allow_add", detail=schema,
                     requested_by=admin, requested_at=now))
     return {"schema": schema, "created": row is None}
+
+
+@router.get("/hidden-schema-render")
+def get_hidden_schema_render(db: Session = Depends(get_db)) -> dict:
+    """감춘 스키마의 목록 렌더 토글 상태 + 대상 스키마(읽기 전용).
+
+    `schemas`는 `HIDDEN_SCHEMAS` 환경변수가 원본이라 이 API로는 못 바꾼다 — 무엇을
+    감출지는 배포 권한의 영역이고, 여기서는 목록에 보일지만 켜고 끈다.
+    """
+    return {
+        "render": should_render_hidden_schemas(db),
+        "schemas": sorted(get_hidden_schemas()),
+    }
+
+
+class HiddenSchemaRenderRequest(BaseModel):
+    render: bool
+
+
+@router.put("/hidden-schema-render", dependencies=[Depends(require_preview_admin)])
+def set_hidden_schema_render(
+    req: HiddenSchemaRenderRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_sysadmin),
+) -> dict:
+    """토글 변경 — 미리보기 허용 목록과 같은 비밀번호 게이트를 쓴다.
+
+    켜는 쪽이 노출을 넓히는 방향이라(감춘 스키마 이름이 좌측 목록에 다시 나타난다)
+    허용 목록 수정과 같은 부류로 본다.
+    """
+    now = datetime.now(UTC)
+    row = db.get(AppFlag, FLAG_RENDER_HIDDEN_SCHEMAS)
+    if row is None:
+        db.add(AppFlag(key=FLAG_RENDER_HIDDEN_SCHEMAS, value=req.render,
+                       updated_by=admin, updated_at=now))
+    else:
+        row.value = req.render
+        row.updated_by = admin
+        row.updated_at = now
+    db.add(AuditLog(action="hidden_schema_render_set", detail=str(req.render).lower(),
+                    requested_by=admin, requested_at=now))
+    return {"render": req.render}
 
 
 @router.delete("/preview-allowlist/{schema}",

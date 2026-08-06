@@ -25,7 +25,11 @@ from app.models import (
     ViewLineageFlat,
 )
 from app.services.preview_policy import is_preview_allowed, list_allowed_schemas
-from app.services.schema_visibility import get_hidden_schemas, is_schema_hidden
+from app.services.schema_visibility import (
+    get_hidden_schemas,
+    is_schema_hidden,
+    should_render_hidden_schemas,
+)
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 
@@ -262,13 +266,17 @@ def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/hidden-schemas")
-def get_hidden_schema_list() -> dict:
-    """컬럼을 감춘 스키마 목록 — 화면이 진입 차단·컬럼 숨김을 미리 적용하는 근거.
+def get_hidden_schema_list(db: Session = Depends(get_db)) -> dict:
+    """컬럼을 감춘 스키마 목록 + 목록 렌더 여부 — 화면이 그대로 적용한다.
 
-    설정(`HIDDEN_SCHEMAS`)이 원본이고 런타임 변경은 없다. 목록을 내보내는 것 자체는
-    노출이 아니다 — 그 스키마의 테이블 이름은 어차피 목록·검색에 계속 나온다.
+    `items`는 설정(`HIDDEN_SCHEMAS`)이 원본이라 런타임에 바뀌지 않는다. `render`만
+    관리 콘솔 토글이며, 꺼져 있으면 화면이 좌측 스키마·카테고리 목록과 테이블 목록에서
+    해당 스키마를 통째로 뺀다.
     """
-    return {"items": sorted(get_hidden_schemas())}
+    return {
+        "items": sorted(get_hidden_schemas()),
+        "render": should_render_hidden_schemas(db),
+    }
 
 
 @router.get("/{object_id}/preview")

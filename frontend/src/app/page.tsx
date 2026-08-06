@@ -32,6 +32,7 @@ import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
+import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 
 export default function Home() {
@@ -145,12 +146,30 @@ function HomeInner() {
   }, [tables, selectTable]);
 
   // 타입 필터 + DB 필터가 카테고리 집계에도 반영된다 / both filters feed the counts
+  // 감춘 스키마도 여기서 함께 떨군다 — 좌측 스키마·카테고리 목록(categories)과 테이블
+  // 목록(listItems)이 둘 다 이 배열에서 나오므로 한 곳만 걸러도 양쪽이 같이 사라진다.
+  // 관리 콘솔 토글이 켜져 있으면 종전대로 목록에 남되 열 수는 없다(TableList의 비활성 행).
+  // / hidden schemas drop out here too: both the schema/category rail and the table list
+  //   derive from this array, so one filter covers both. With the admin toggle on they stay
+  //   listed but remain unopenable.
+  const hiddenPolicy = useHiddenSchemaPolicy();
   const typedObjects = useMemo(() => {
     const allowed = dbFilter.length > 0 ? new Set(dbFilter) : null;
     return tables.filter((t) =>
       (typeFilter === "all" || t.type === typeFilter)
-      && (allowed === null || allowed.has(t.schema)));
-  }, [tables, typeFilter, dbFilter]);
+      && (allowed === null || allowed.has(t.schema))
+      && (hiddenPolicy.render || !hiddenPolicy.schemas.has(t.schema.toLowerCase())));
+  }, [tables, typeFilter, dbFilter, hiddenPolicy]);
+
+  // 좌측 DB(스키마) 목록은 카탈로그가 아니라 /api/schema-categories에서 오므로 typedObjects
+  // 필터를 안 탄다 — 같은 규칙을 여기에도 건다 / the schema rail comes from a separate
+  // endpoint, so it needs the same rule applied independently
+  const visibleSchemas = useMemo(
+    () => (hiddenPolicy.render
+      ? schemas
+      : schemas.filter((s) => !hiddenPolicy.schemas.has(s.schema.toLowerCase()))),
+    [schemas, hiddenPolicy],
+  );
 
   const categories = useMemo<CategoryEntry[]>(() => {
     const counts = new Map<string, number>();
@@ -277,7 +296,7 @@ function HomeInner() {
             selected={category}
             totalCount={typedObjects.length}
             onSelect={changeCategory}
-            schemas={schemas}
+            schemas={visibleSchemas}
             dbFilter={dbFilter}
             onDbFilter={changeDbFilter}
             onAssignCategory={assignCategory}
