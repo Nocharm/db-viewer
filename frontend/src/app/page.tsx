@@ -221,16 +221,25 @@ function HomeInner() {
     router.push(`/erd?anchor=${selected.id}&label=${selected.schema}.${selected.name}`);
   }, [router, selected]);
 
-  // 컬럼 클릭 → ERD 조인 빌더로 직행 (검증은 거기서 드래그로 한다)
-  // column click goes straight to the ERD join builder — validation happens there via drag
+  // 컬럼 클릭 → ERD 조인 빌더로 직행 (검증은 거기서 드래그로 한다). target이 실려 오면
+  // (조인 검증 결과의 「빌더에 추가」) 하이라이트 대신 그 스텝을 바로 얹는다
+  // column click goes straight to the ERD join builder — validation happens there via drag.
+  // When a target rides along (join-check result's "add to builder"), the ERD seeds that
+  // step directly instead of just highlighting
   const handleOpenColumn = useCallback(
-    (columnId: number, columnName: string) => {
+    (
+      columnId: number, columnName: string,
+      target?: { qname: string; columnId: number; column: string },
+    ) => {
       if (!selected) return;
       const label = `${selected.schema}.${selected.name}`;
-      router.push(
-        `/erd?anchor=${selected.id}&label=${encodeURIComponent(label)}`
-        + `&col=${columnId}&colName=${encodeURIComponent(columnName)}`,
-      );
+      let url = `/erd?anchor=${selected.id}&label=${encodeURIComponent(label)}`
+        + `&col=${columnId}&colName=${encodeURIComponent(columnName)}`;
+      if (target) {
+        url += `&tgtObject=${encodeURIComponent(target.qname)}`
+          + `&tgtCol=${target.columnId}&tgtColName=${encodeURIComponent(target.column)}`;
+      }
+      router.push(url);
     },
     [router, selected],
   );

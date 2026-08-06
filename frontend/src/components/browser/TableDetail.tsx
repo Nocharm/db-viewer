@@ -23,8 +23,13 @@ interface Props {
   onOpenErd: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
   onSelectTable: (qname: string) => void;
-  /** 컬럼 칩 클릭 → ERD 조인 검증 패널로 이동 / open the join-validation panel in the ERD */
-  onOpenColumn: (columnId: number, columnName: string) => void;
+  /** 컬럼 칩 클릭 → ERD 조인 검증 패널로 이동. target이 있으면(조인 검증 결과 행) 하이라이트
+   * 대신 그 스텝을 빌더에 바로 얹는다 / opens the ERD join panel; when target is given (a
+   * join-check result row) the ERD seeds that step in the builder instead of just highlighting */
+  onOpenColumn: (
+    columnId: number, columnName: string,
+    target?: { qname: string; columnId: number; column: string },
+  ) => void;
 }
 
 /** 클릭 가능한 테이블명 / clickable table reference. */
@@ -45,7 +50,7 @@ function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) 
 function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
   item: JoinCheckItem;
   onSelectTable: (qname: string) => void;
-  onOpenColumn: (columnId: number, columnName: string) => void;
+  onOpenColumn: Props["onOpenColumn"];
 }) {
   const { t } = useI18n();
   return (
@@ -69,7 +74,9 @@ function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
       )}
       <button
         className="btn-secondary !py-0.5 text-xs"
-        onClick={() => onOpenColumn(item.src_column_id, item.src_column)}
+        onClick={() => onOpenColumn(item.src_column_id, item.src_column, {
+          qname: item.target_object, columnId: item.tgt_column_id, column: item.tgt_column,
+        })}
         data-testid={`TableDetail-addToBuilder-${item.target_object}`}
       >
         {t("joincheck.addToBuilder")}

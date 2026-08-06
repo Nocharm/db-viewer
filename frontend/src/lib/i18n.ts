@@ -336,6 +336,14 @@ export const MESSAGES = {
   "join.previewMasked": { ko: "마스킹된 컬럼: {cols}", en: "Masked columns: {cols}" },
   "join.previewEmpty": { ko: "조인 결과가 0행입니다", en: "The join returned no rows" },
   "join.copySql": { ko: "SQL 복사", en: "Copy SQL" },
+  "join.confirm": { ko: "확정", en: "Confirm" },
+  "join.confirming": { ko: "확정 중…", en: "Confirming…" },
+  "join.confirmed": { ko: "확정됨", en: "Confirmed" },
+  "join.confirmFailed": { ko: "확정 실패 — {error}", en: "Confirm failed — {error}" },
+  "join.cascadeRemoved": {
+    ko: "연결이 끊겨 스텝 {n}개도 함께 제거됐습니다",
+    en: "{n} more step(s) were removed because they became disconnected",
+  },
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;

@@ -11,16 +11,22 @@ import {
   getWorstVerdictIndex, PATTERN_LABELS,
   type JoinVerdict, type VerdictLevel,
 } from "@/lib/join-verdict";
-import type { JoinDraft, JoinStep, JoinType } from "@/lib/join-draft";
+import { getStepKey, isClosingStep, type JoinDraft, type JoinStep, type JoinType } from "@/lib/join-draft";
 import type { MessageKey } from "@/lib/i18n";
 
 interface Props {
   draft: JoinDraft;
   onRemoveStep: (index: number) => void;
   onSetJoinType: (index: number, joinType: JoinType) => void;
+  /** 확정 API 호출 — 버튼은 검증된(status==="ready") 스텝에서만 노출된다.
+   * calls the confirm API; the button only ever renders for a validated step. */
+  onConfirmStep: (index: number) => Promise<void>;
   onClear: () => void;
   onPreview: () => void;
   previewBusy: boolean;
+  /** 하단 테이블 미리보기 카드가 열려 있을 때 그 위로 띄우는 오프셋(px) — 없으면 기본 12px(bottom-3)
+   * pushes the dock above the table preview card when it's open; defaults to 12px (bottom-3) */
+  offsetBottom?: number;
 }
 
 const LEVEL_LABEL: Record<VerdictLevel, MessageKey> = {
@@ -38,19 +44,25 @@ const LEVEL_COLOR: Record<VerdictLevel, string> = {
 };
 
 function StepRow({
-  step, index, onRemoveStep, onSetJoinType,
+  step, index, closing, onRemoveStep, onSetJoinType, onConfirmStep,
 }: {
   step: JoinStep;
   index: number;
+  /** 양쪽 테이블이 이미 다 들어와 있는 "닫는" 스텝인가 — join-draft.isClosingStep 참조 */
+  closing: boolean;
   onRemoveStep: (index: number) => void;
   onSetJoinType: (index: number, joinType: JoinType) => void;
+  onConfirmStep: (index: number) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [showNumbers, setShowNumbers] = useState(false);
+  // 요청 중 중복 클릭 방지 — 확정 여부 자체는 draft(step.confirmed)에 산다, 이건 진행 중 표시일 뿐
+  // guards against a double-click while in flight; the persisted state lives on step.confirmed
+  const [confirming, setConfirming] = useState(false);
   const level = step.verdict?.level ?? "unknown";
   // React key와 동일한 안정 식별자 — 인덱스는 제거 후 다른 행을 가리킬 수 있다
   // same stable identity as the React key — index shifts after a removal
-  const stepKey = `${step.left.columnId}-${step.right.columnId}`;
+  const stepKey = getStepKey(step);
 
   return (
     <li className="py-1.5" data-testid={`JoinBuilder-step-${stepKey}`}>
@@ -106,8 +118,12 @@ function StepRow({
           {step.verdict.remedy && (
             <span style={{ color: "var(--slate)" }}>→ {step.verdict.remedy}</span>
           )}
-          {/* 처방을 한 번에 적용 / apply the prescription in one click */}
-          {step.verdict.remedy?.includes("LEFT JOIN") && step.joinType !== "left" && (
+          {/* 처방을 한 번에 적용 — 닫는 엣지는 제외: backend가 그 자리의 join_type=left를
+              400으로 거부한다(독립된 방향이 없다), 여기서 미리 걸러 그 왕복을 없앤다
+              apply the prescription in one click — not on a closing edge: the backend
+              rejects join_type=left there with a 400 (no independent direction exists),
+              filtered here so the user never hits that round trip */}
+          {step.verdict.remedy?.includes("LEFT JOIN") && step.joinType !== "left" && !closing && (
             <button
               className="btn-secondary !py-0.5 text-xs"
               onClick={() => onSetJoinType(index, "left")}
@@ -124,6 +140,29 @@ function StepRow({
             >
               {showNumbers ? t("join.hideNumbers") : t("join.showNumbers")}
             </button>
+          )}
+          {/* 확정 — 검증된(status==="ready") 스텝에서만, 즉 실제 판정이 있을 때만 노출.
+              backend POST /api/relations/confirm이 candidate 상태를 거부하는 것과 같은 조건
+              confirm — only once the step has a real verdict (status==="ready"), mirroring
+              the backend guard that rejects confirming a still-candidate relation */}
+          {step.status === "ready" && (
+            step.confirmed ? (
+              <span className="badge badge--confirmed" data-testid={`JoinBuilder-stepConfirmed-${stepKey}`}>
+                ✓ {t("join.confirmed")}
+              </span>
+            ) : (
+              <button
+                className="btn-secondary !py-0.5 text-xs"
+                disabled={confirming}
+                onClick={() => {
+                  setConfirming(true);
+                  onConfirmStep(index).finally(() => setConfirming(false));
+                }}
+                data-testid={`JoinBuilder-confirmStep-${stepKey}`}
+              >
+                {confirming ? t("join.confirming") : t("join.confirm")}
+              </button>
+            )
           )}
         </div>
       )}
@@ -152,7 +191,8 @@ function StepRow({
 }
 
 export function JoinBuilder({
-  draft, onRemoveStep, onSetJoinType, onClear, onPreview, previewBusy,
+  draft, onRemoveStep, onSetJoinType, onConfirmStep, onClear, onPreview, previewBusy,
+  offsetBottom,
 }: Props) {
   const { t } = useI18n();
   // 타입 가드 없이 filter하면 (JoinVerdict|null)[]로 남는다 / narrow with a type predicate
@@ -167,9 +207,12 @@ export function JoinBuilder({
 
   return (
     <div
-      className="scroll-area absolute bottom-3 left-1/2 z-20 max-h-[38%] w-[46rem] max-w-[92vw]
+      className="scroll-area absolute left-1/2 z-20 max-h-[38%] w-[46rem] max-w-[92vw]
                  -translate-x-1/2 overflow-y-auto rounded-xl border p-3"
-      style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)" }}
+      style={{
+        borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+        bottom: offsetBottom ?? 12, // 12px === bottom-3 fallback
+      }}
       data-testid="JoinBuilder-root"
     >
       <div className="mb-1 flex items-center gap-2">
@@ -196,11 +239,13 @@ export function JoinBuilder({
           <ul data-testid="JoinBuilder-stepList">
             {draft.steps.map((step, index) => (
               <StepRow
-                key={`${step.left.columnId}-${step.right.columnId}`}
+                key={getStepKey(step)}
                 step={step}
                 index={index}
+                closing={isClosingStep(draft, index)}
                 onRemoveStep={onRemoveStep}
                 onSetJoinType={onSetJoinType}
+                onConfirmStep={onConfirmStep}
               />
             ))}
           </ul>

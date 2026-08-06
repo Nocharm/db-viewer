@@ -19,8 +19,8 @@ import { useI18n } from "@/components/i18n";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import {
-  fetchCandidates, fetchGraph, fetchObjectPreview, fetchScanJob, runContainment, runJoinPreview,
-  startScan, type TablePreview,
+  confirmRelation, fetchCandidates, fetchGraph, fetchObjectPreview, fetchScanJob, runContainment,
+  runJoinPreview, searchObjects, startScan, type TablePreview,
 } from "@/lib/api";
 import { PAIR_KINDS, resolveEdgeHandles, type NodeAnchorInfo } from "@/lib/edge-anchors";
 import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
@@ -28,8 +28,8 @@ import { getCardinalityEnds, getEdgeVisual, MARKER_ID } from "@/lib/edge-style";
 import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-merge";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import {
-  addStep, canAddStep, EMPTY_DRAFT, removeStep, setStepJoinType, setStepResult,
-  type CanAddFailureReason, type JoinColumnRef, type JoinDraft, type JoinType,
+  addStep, canAddStep, EMPTY_DRAFT, getStepKey, removeStep, setStepConfirmed, setStepJoinType,
+  setStepResult, type CanAddFailureReason, type JoinColumnRef, type JoinDraft, type JoinType,
 } from "@/lib/join-draft";
 import { getJoinVerdict, type JoinVerdict } from "@/lib/join-verdict";
 import type { MessageKey } from "@/lib/i18n";
@@ -42,10 +42,21 @@ import { Legend } from "./Legend";
 
 const nodeTypes = { tableNode: TableNode };
 
+/** 딥링크가 함께 실어온 타깃 — 있으면 하이라이트가 아니라 검증된 스텝으로 바로 얹는다
+ * (「빌더에 추가」 버튼 경로). target_object는 "schema.name" 형태 / carried by the deep
+ * link when it names a concrete target, not just a source column to highlight from. */
+export interface InitialJoinTarget {
+  qname: string;
+  columnId: number;
+  column: string;
+}
+
 interface Props {
   anchorId: number | null;
   /** 딥링크로 들어온 컬럼 — 추천 하이라이트를 켠 채로 드래그를 기다린다 */
   initialColumnId?: number | null;
+  /** 딥링크가 타깃까지 지정했을 때만 — initialColumnId와 짝으로 온다 */
+  initialTarget?: InitialJoinTarget | null;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
   onQuickStart: (name: string) => void;
 }
@@ -96,7 +107,9 @@ export function ErdCanvas(props: Props) {
   );
 }
 
-function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStart }: Props) {
+function ErdCanvasInner({
+  anchorId, initialColumnId, initialTarget, onSelectColumn, onQuickStart,
+}: Props) {
   const { t } = useI18n();
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   // 모든 노드 기본 접힘 — 앵커만 자동 펼침 / everything folded; only the anchor auto-expands
@@ -170,6 +183,13 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const centeredAnchorRef = useRef<number | null>(null);
+  // 딥링크가 후보 노드를 자동으로 펼치면 ELK가 앵커 좌표를 다시 계산한다 — centeredAnchorRef의
+  // "앵커당 1회" 가드로는 이 재중심을 못 잡는다(이미 그 앵커로 한 번 센터링했으므로). 다음
+  // 레이아웃이 정착하면 한 번 더 센터링하라는 신호 / a deep link's auto-expand (Finding A)
+  // shifts the anchor's ELK coordinates, but centeredAnchorRef's once-per-anchor guard won't
+  // re-fire for it (already centred once on this anchor). Flags the next settled layout to
+  // centre again.
+  const pendingDeepLinkRecenterRef = useRef(false);
   // 헤더 드래그로 옮긴 노드는 재레이아웃에도 그 자리를 유지한다 / manual drags survive relayout
   const manualPosRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   // fresh 마운트에선 ReactFlow 초기화 전 setCenter가 무시된다 — init까지 보류
@@ -234,16 +254,117 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
     // dragHint·scanOrigin은 유지 — 드래그를 놓은 뒤에도 추천·제안이 남는다
   }, []);
 
+  // 부작용은 updater 밖에서 실행한다 — StrictMode가 updater를 두 번 호출해,
+  // 안에 두면 runContainment(실 DB 질의)가 드롭마다 두 번 나간다.
+  // side effects stay out of the setDraft updater — StrictMode double-invokes updaters,
+  // and this one fires a live query against the source database.
+  //
+  // 드래그 드롭과 딥링크(빌더에 추가)가 공유하는 유일한 스텝 추가 경로 — canAddStep →
+  // addStep → runContainment → setStepResult. 연결성 규칙·stepKey·판정 렌더가 두 경로에서
+  // 어긋나지 않는 게 이 함수 하나로 보장된다.
+  // the single step-adding path shared by drag-drop and the deep link ("add to builder") —
+  // canAddStep → addStep → runContainment → setStepResult. Keeping this in one function is
+  // what guarantees the connectivity rule, stepKey and verdict rendering can't drift
+  // between the two entry points.
+  const addJoinStep = useCallback((left: JoinColumnRef, right: JoinColumnRef) => {
+    const check = canAddStep(draft, left, right);
+    if (!check.ok) {
+      const reasonText = t(REJECT_REASON_KEY[check.reason]).replace("{max}", String(check.max));
+      setDropError(t("join.dropRejected").replace("{reason}", reasonText));
+      // 거절 배너와 스캔 제안이 같은 자리를 다툰다 — 방금 액션에 대한 응답인 거절이 이긴다
+      // (다음 드래그에서 다시 뜰 수 있어 제안 쪽을 접는다)
+      // both banners compete for the same slot; the rejection — about the action just taken —
+      // wins over the scan offer, which can reappear on the next drag
+      setScanOrigin(null);
+      return;
+    }
+    setDropError(null);
+    // 스텝이 추가됐다 — 드래그 하이라이트·스캔 제안은 이번 드롭의 몫을 다했다
+    setDragHint(null);
+    setScanOrigin(null);
+    // 위치가 아니라 컬럼 페어 키로 결과를 채운다 — 스텝이 배열 안에서 옮겨져도(제거로 인한
+    // 인덱스 이동) 비동기 결과가 엉뚱한 스텝을 덮어쓰지 않는다
+    // resolve by column-pair key, not position — a removal-induced index shift can't make this
+    // async result land on the wrong step
+    const stepKey = getStepKey({ left, right });
+    setDraft((current) => addStep(current, left, right));
+    // 드롭 즉시 T2 자동 실행 — 단일 페어라 기존 검증과 같은 비용
+    void runContainment(left.columnId, right.columnId)
+      .then((result) => setDraft((latest) =>
+        setStepResult(latest, stepKey, "ready", result, getJoinVerdict(result, null))))
+      .catch((e: Error) => {
+        // "no value data"(404)만 데이터 부재 — 그 외(500·401·네트워크 오류 등)는 검증
+        // 자체가 실패한 것이라 같은 "값 없음" 문구로 뭉개면 실제 오류가 안 보인다
+        // only a 404 means "no data"; every other failure (500, 401, network) is a
+        // validation failure and must not be folded into the same "no data" copy
+        if (e.message.includes("no value data")) {
+          setDraft((latest) => setStepResult(
+            latest, stepKey, "no_data", null, getJoinVerdict(null, null)));
+          return;
+        }
+        const failedVerdict: JoinVerdict = {
+          level: "danger",
+          symptom: t("join.stepFailed").replace("{error}", e.message),
+          remedy: null,
+        };
+        setDraft((latest) => setStepResult(latest, stepKey, "failed", null, failedVerdict));
+      });
+  }, [draft, t]);
+
+  const handleConnect = useCallback((connection: Connection) => {
+    const left = resolveHandle(connection.source, connection.sourceHandle);
+    const right = resolveHandle(connection.target, connection.targetHandle);
+    if (!left || !right) return;
+    addJoinStep(left, right);
+  }, [resolveHandle, addJoinStep]);
+
   // 딥링크(?col=) — 그 컬럼의 추천을 미리 켜 드래그 출발점을 알려준다. 1회성 의도라 이미
   // 적용한 컬럼이면 다시 켜지 않는다 — graph는 이웃 확장마다 새 참조를 받으므로 가드 없이
   // [initialColumnId, graph]에만 걸면 무관한 노드를 펼칠 때마다 되살아난다
-  // deep link: pre-light the candidates so the user knows where to drag from. One-shot intent
-  // — bail once this column has already been applied, since graph changes identity on every
-  // neighbour expansion and a plain dependency on it would re-highlight forever
+  // deep link: pre-light the candidates so the user knows where to drag from — or, when a
+  // target rode along too (?tgtCol=, the "add to builder" button), seed a validated step
+  // directly instead of just highlighting. One-shot intent — bail once this column has
+  // already been applied, since graph changes identity on every neighbour expansion and a
+  // plain dependency on it would re-fire forever
   useEffect(() => {
     if (!initialColumnId || !graph) return;
     if (appliedInitialColumnIdRef.current === initialColumnId) return;
     appliedInitialColumnIdRef.current = initialColumnId;
+
+    const anchorNode = graph.nodes.find((n) => n.id === graph.anchor_id);
+    const srcColumn = anchorNode?.columns.find((c) => c.id === initialColumnId);
+
+    if (initialTarget && anchorNode && srcColumn) {
+      const left: JoinColumnRef = {
+        objectId: anchorNode.id,
+        qname: `${anchorNode.schema}.${anchorNode.name}`,
+        columnId: srcColumn.id,
+        column: srcColumn.name,
+      };
+      // 타깃 objectId는 join-check 응답에 없다(target_object는 qname뿐) — 이미 로드된
+      // 그래프에 있으면 거기서, 없으면 이름 검색으로 찾는다. 드래그가 아니라 딥링크라
+      // 타깃이 캔버스에 없어도(앵커의 1-hop 이웃이 아니어도) 스텝은 얹을 수 있어야 한다
+      // the target's objectId isn't in the join-check response (target_object is qname
+      // only) — resolve it from the loaded graph first, falling back to a name search.
+      // This is a deep link, not a drag: the target need not already be on the canvas
+      // (need not be a 1-hop neighbour of the anchor) for the step to be seeded
+      const [tgtSchema, tgtName] = initialTarget.qname.split(".", 2);
+      const localNode = graph.nodes.find((n) => n.schema === tgtSchema && n.name === tgtName);
+      const objectIdPromise = localNode
+        ? Promise.resolve<number | null>(localNode.id)
+        : searchObjects(tgtName).then(
+            (res) => res.items.find((i) => i.schema === tgtSchema && i.name === tgtName)?.id
+              ?? null);
+      void objectIdPromise.then((objectId) => {
+        if (objectId === null) return; // 못 찾으면 조용히 포기 — 드래그로 직접 추가는 여전히 가능
+        addJoinStep(left, {
+          objectId, qname: initialTarget.qname,
+          columnId: initialTarget.columnId, column: initialTarget.column,
+        });
+      });
+      return;
+    }
+
     void fetchCandidates(initialColumnId)
       .then((res) => {
         const byNode = new Map<number, string[]>();
@@ -253,9 +374,29 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
           byNode.set(node.id, [...(byNode.get(node.id) ?? []), candidate.column]);
         }
         setDragHint(byNode);
+        // 후보가 있는 노드만 펼친다 — 안 그러면 하이라이트된 행이 접힌 채로 남아 딥링크의
+        // 원래 목적("드래그 시작점을 보여준다")이 무력화된다. 그래프에 없는 후보는 애초에
+        // byNode에 안 걸리므로 자동으로 소수(1-hop 이웃 중 일치하는 것만)로 제한된다
+        // expand only the nodes that actually have a candidate — otherwise the highlighted
+        // rows stay hidden inside a folded node, defeating the deep link's whole point.
+        // Candidates not already in the graph never make it into byNode, so this stays
+        // naturally bounded to a handful of nodes, never the whole graph
+        if (byNode.size > 0) {
+          // 이 확장으로 ELK가 앵커 좌표를 다시 계산한다 — 다음 레이아웃이 정착하면 다시
+          // 센터링하라고 표시해 둔다(앵커는 이미 한 번 센터링됐으니 그 가드는 안 건드린다)
+          // this expansion makes ELK recompute the anchor's coordinates — flag the next
+          // settled layout to recentre (the anchor was already centred once, so that guard
+          // is left untouched)
+          pendingDeepLinkRecenterRef.current = true;
+          setExpandedNodes((cur) => {
+            const next = new Set(cur);
+            for (const id of byNode.keys()) next.add(id);
+            return next;
+          });
+        }
       })
       .catch(() => undefined);
-  }, [initialColumnId, graph]);
+  }, [initialColumnId, initialTarget, graph, addJoinStep]);
 
   // 스캔 폴링 — 완료·실패까지 1.5초 간격 (다른 비동기 작업과 동일한 폴링 관용)
   // scanJobId가 done/failed에서 null로 바뀌면 이 effect가 재실행되며 클린업이 먼저 돌아
@@ -307,58 +448,6 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
     }, 1500);
     return () => clearInterval(timer);
   }, [scanJobId, graph, t]);
-
-  // 부작용은 updater 밖에서 실행한다 — StrictMode가 updater를 두 번 호출해,
-  // 안에 두면 runContainment(실 DB 질의)가 드롭마다 두 번 나간다.
-  // side effects stay out of the setDraft updater — StrictMode double-invokes updaters,
-  // and this one fires a live query against the source database.
-  const handleConnect = useCallback((connection: Connection) => {
-    const left = resolveHandle(connection.source, connection.sourceHandle);
-    const right = resolveHandle(connection.target, connection.targetHandle);
-    if (!left || !right) return;
-    const check = canAddStep(draft, left, right);
-    if (!check.ok) {
-      const reasonText = t(REJECT_REASON_KEY[check.reason]).replace("{max}", String(check.max));
-      setDropError(t("join.dropRejected").replace("{reason}", reasonText));
-      // 거절 배너와 스캔 제안이 같은 자리를 다툰다 — 방금 액션에 대한 응답인 거절이 이긴다
-      // (다음 드래그에서 다시 뜰 수 있어 제안 쪽을 접는다)
-      // both banners compete for the same slot; the rejection — about the action just taken —
-      // wins over the scan offer, which can reappear on the next drag
-      setScanOrigin(null);
-      return;
-    }
-    setDropError(null);
-    // 스텝이 추가됐다 — 드래그 하이라이트·스캔 제안은 이번 드롭의 몫을 다했다
-    setDragHint(null);
-    setScanOrigin(null);
-    // 위치가 아니라 컬럼 페어 키로 결과를 채운다 — 스텝이 배열 안에서 옮겨져도(제거로 인한
-    // 인덱스 이동) 비동기 결과가 엉뚱한 스텝을 덮어쓰지 않는다
-    // resolve by column-pair key, not position — a removal-induced index shift can't make this
-    // async result land on the wrong step
-    const stepKey = `${left.columnId}-${right.columnId}`;
-    setDraft((current) => addStep(current, left, right));
-    // 드롭 즉시 T2 자동 실행 — 단일 페어라 기존 검증과 같은 비용
-    void runContainment(left.columnId, right.columnId)
-      .then((result) => setDraft((latest) =>
-        setStepResult(latest, stepKey, "ready", result, getJoinVerdict(result, null))))
-      .catch((e: Error) => {
-        // "no value data"(404)만 데이터 부재 — 그 외(500·401·네트워크 오류 등)는 검증
-        // 자체가 실패한 것이라 같은 "값 없음" 문구로 뭉개면 실제 오류가 안 보인다
-        // only a 404 means "no data"; every other failure (500, 401, network) is a
-        // validation failure and must not be folded into the same "no data" copy
-        if (e.message.includes("no value data")) {
-          setDraft((latest) => setStepResult(
-            latest, stepKey, "no_data", null, getJoinVerdict(null, null)));
-          return;
-        }
-        const failedVerdict: JoinVerdict = {
-          level: "danger",
-          symptom: t("join.stepFailed").replace("{error}", e.message),
-          remedy: null,
-        };
-        setDraft((latest) => setStepResult(latest, stepKey, "failed", null, failedVerdict));
-      });
-  }, [draft, resolveHandle, t]);
 
   const centerOn = useCallback((x: number, y: number) => {
     if (!flowReadyRef.current) {
@@ -611,8 +700,12 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
       setGraphBusy(false); // 레이아웃 반영 완료 / layout applied
       // 전체 맞춤 대신 앵커 좌표로 직접 센터링 — ELK 좌표를 알고 있어 측정 타이밍에 무관
       // center on the anchor's ELK coordinates; no dependence on node measurement timing
-      if (centeredAnchorRef.current !== graph.anchor_id) {
+      const isNewAnchor = centeredAnchorRef.current !== graph.anchor_id;
+      // 딥링크 자동 펼침이 앵커 좌표를 옮겼으면 이미 센터링된 앵커라도 한 번 더 맞춘다
+      // re-centre even for an already-centred anchor when a deep-link auto-expand moved it
+      if (isNewAnchor || pendingDeepLinkRecenterRef.current) {
         centeredAnchorRef.current = graph.anchor_id;
+        pendingDeepLinkRecenterRef.current = false;
         const anchorPos = posMap.get(graph.anchor_id);
         const anchorSize = sized.find((s) => s.id === graph.anchor_id);
         if (anchorPos && anchorSize) {
@@ -836,9 +929,35 @@ function ErdCanvasInner({ anchorId, initialColumnId, onSelectColumn, onQuickStar
       )}
       <JoinBuilder
         draft={draft}
-        onRemoveStep={(index) => setDraft((current) => removeStep(current, index))}
+        // 테이블 미리보기 카드가 열려 있으면 그 위로 띄운다 — 둘 다 바닥 대역을 다투므로
+        // (Finding F) 겹치면 조인 드래프트가 완전히 가려진다
+        // float above the table preview card when it's open — both compete for the bottom
+        // band, and left unhandled the join draft becomes completely unreachable
+        offsetBottom={(preview || previewLoading) ? previewHeight + 12 + 8 : undefined}
+        onRemoveStep={(index) => {
+          // removeStep이 끊긴 뒤쪽 스텝을 함께 지울 수 있다 — 사용자가 지운 건 하나뿐이므로
+          // 몇 개가 더 지워졌는지 알려준다 (조용히 사라지면 사용자가 버그로 오인한다)
+          // removeStep can cascade to now-orphaned trailing steps — only one was asked for,
+          // so surface how many more went with it (a silent disappearance reads as a bug)
+          const next = removeStep(draft, index);
+          const cascaded = draft.steps.length - 1 - next.steps.length;
+          if (cascaded > 0) {
+            setDropError(t("join.cascadeRemoved").replace("{n}", String(cascaded)));
+          }
+          setDraft(next);
+        }}
         onSetJoinType={(index: number, joinType: JoinType) =>
           setDraft((current) => setStepJoinType(current, index, joinType))}
+        onConfirmStep={(index) => {
+          const step = draft.steps[index];
+          if (!step) return Promise.resolve();
+          const stepKey = getStepKey(step);
+          return confirmRelation(step.left.columnId, step.right.columnId)
+            .then(() => setDraft((current) => setStepConfirmed(current, stepKey)))
+            .catch((e: Error) => {
+              setDropError(t("join.confirmFailed").replace("{error}", e.message));
+            });
+        }}
         onClear={() => setDraft(EMPTY_DRAFT)}
         onPreview={() => {
           setJoinPreviewBusy(true);

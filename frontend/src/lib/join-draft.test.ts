@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  addStep, canAddStep, EMPTY_DRAFT, getDraftTables, getStepKey, MAX_JOIN_STEPS,
-  removeStep, setStepJoinType, setStepResult, type JoinColumnRef,
+  addStep, canAddStep, EMPTY_DRAFT, getDraftTables, getStepKey, isClosingStep, MAX_JOIN_STEPS,
+  removeStep, setStepConfirmed, setStepJoinType, setStepResult, type JoinColumnRef,
 } from "./join-draft";
 import { getJoinVerdict } from "./join-verdict";
 
@@ -103,6 +103,66 @@ describe("removeStep and setStepJoinType", () => {
   });
 });
 
+describe("removeStep cascades to now-orphaned steps", () => {
+  it("drops a trailing step that only connected through the removed one", () => {
+    // A-B, B-C, C-D — remove B-C (the bridge); C-D has nothing left to touch.
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A-B
+    draft = addStep(draft, LOG_USER, USER); // B-C
+    draft = addStep(draft, USER, DEPT); // C-D
+    const result = removeStep(draft, 1);
+    expect(result.steps).toHaveLength(1);
+    expect(getStepKey(result.steps[0])).toBe(getStepKey(draft.steps[0])); // only A-B survives
+  });
+
+  it("does not cascade when the removed step wasn't the only bridge", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A-B
+    draft = addStep(draft, LOG_USER, USER); // B-C
+    // second, independent bridge from A straight to C
+    draft = addStep(draft, ORDER, ref("ATM.T_USER", "SECOND", 8)); // A-C (direct)
+    const result = removeStep(draft, 1); // remove B-C
+    expect(result.steps).toHaveLength(2); // A-B and A-C both remain connected to A
+  });
+
+  it("keeps a step that reconnects through a later edge, in array order — not a plain set check", () => {
+    // A-B, B-C, A-D, D-C. Remove A-B. As a SET, {B-C, A-D, D-C} is one connected
+    // component (A-D-C-B all touch), so a union-find check would keep everything.
+    // But array order still matters: A-D comes right after B-C survives with only
+    // {B,C} seen, so A-D touches neither and must drop — D only re-enters through
+    // D-C, which appears later and does keep it. This is exactly backend
+    // join_preview.py:_check_connectivity's walk, not general graph connectivity.
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A-B
+    draft = addStep(draft, LOG_USER, USER); // B-C
+    draft = addStep(draft, ORDER, DEPT); // A-D
+    draft = addStep(draft, DEPT, USER); // D-C (closing edge in the original order)
+    const result = removeStep(draft, 0); // remove A-B
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps.map((s) => getStepKey(s))).toEqual([
+      getStepKey(draft.steps[1]), // B-C survives (first remaining step)
+      getStepKey(draft.steps[3]), // D-C survives (reconnects via C)
+    ]);
+  });
+});
+
+describe("isClosingStep", () => {
+  it("is never true for the first step", () => {
+    const draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    expect(isClosingStep(draft, 0)).toBe(false);
+  });
+
+  it("is false when a step introduces a new table", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A-B
+    draft = addStep(draft, LOG_USER, USER); // B-C — introduces C
+    expect(isClosingStep(draft, 1)).toBe(false);
+  });
+
+  it("is true when both tables were already introduced by earlier steps", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A-B
+    draft = addStep(draft, LOG_USER, USER); // B-C
+    draft = addStep(draft, ORDER, USER); // A-C — both sides already in the draft
+    expect(isClosingStep(draft, 2)).toBe(true);
+  });
+});
+
 describe("setStepResult", () => {
   it("no-ops when the target step was removed mid-flight (race guard)", () => {
     // Two steps; the first (A) will be removed while its T2 query is still in flight.
@@ -125,5 +185,25 @@ describe("setStepResult", () => {
     const result = setStepResult(draft, keyForSecond, "no_data", null, verdict);
     expect(result.steps[0].status).toBe("verifying"); // untouched
     expect(result.steps[1]).toMatchObject({ status: "no_data", result: null, verdict });
+  });
+});
+
+describe("setStepConfirmed", () => {
+  it("marks the step matching the given key as confirmed", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    draft = addStep(draft, LOG_USER, USER);
+    const keyForSecond = getStepKey(draft.steps[1]);
+    const result = setStepConfirmed(draft, keyForSecond);
+    expect(result.steps[0].confirmed).toBe(false); // untouched
+    expect(result.steps[1].confirmed).toBe(true);
+  });
+
+  it("no-ops when the target step was removed mid-flight (race guard)", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG); // A
+    draft = addStep(draft, LOG_USER, USER); // B
+    const keyForA = getStepKey(draft.steps[0]);
+    draft = removeStep(draft, 0); // B shifts into index 0
+    const result = setStepConfirmed(draft, keyForA);
+    expect(result).toEqual(draft); // no change
   });
 });

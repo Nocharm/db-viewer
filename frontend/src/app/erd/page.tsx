@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useI18n } from "@/components/i18n";
-import { ErdCanvas } from "@/components/erd/ErdCanvas";
+import { ErdCanvas, type InitialJoinTarget } from "@/components/erd/ErdCanvas";
 import { SearchPanel } from "@/components/SearchPanel";
 import { fetchAiJob, searchObjects, startAiSuggest } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
@@ -45,6 +45,14 @@ function ErdPageInner() {
   const [initialColumnId] = useState<number | null>(() => {
     const columnId = params.get("col");
     return columnId ? Number(columnId) : null;
+  });
+  // 조인 검증 결과의 「빌더에 추가」 딥링크 → 하이라이트 대신 검증된 스텝을 바로 얹는다
+  const [initialTarget] = useState<InitialJoinTarget | null>(() => {
+    const qname = params.get("tgtObject");
+    const columnId = params.get("tgtCol");
+    const column = params.get("tgtColName");
+    if (!qname || !columnId || !column) return null;
+    return { qname, columnId: Number(columnId), column };
   });
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -120,6 +128,7 @@ function ErdPageInner() {
         <ErdCanvas
           anchorId={anchor?.id ?? null}
           initialColumnId={initialColumnId}
+          initialTarget={initialTarget}
           onSelectColumn={() => undefined}
           onQuickStart={handleQuickStart}
         />

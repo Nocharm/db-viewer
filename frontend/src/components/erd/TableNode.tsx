@@ -75,11 +75,31 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
   const [visibleCount, setVisibleCount] = useState(RENDER_CHUNK);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const wasExpandedRef = useRef(expanded);
 
   // 접었다 펴면 처음 청크부터 / restart chunking when re-expanded
   useEffect(() => {
     if (collapsed) setVisibleCount(RENDER_CHUNK);
   }, [collapsed]);
+
+  // 접힘→펼침 전환 + 하이라이트 존재 시 첫 하이라이트 행을 스크롤 뷰포트로 (스펙 §1.2.3,
+  // 이번까지 미구현) — 드래그 중 자동 펼침(ErdCanvas onNodeMouseEnter)과 딥링크 자동 펼침
+  // (Finding A) 둘 다 여길 통과한다. highlightColumns는 순수 hover 강조(엣지·노드 hover)에도
+  // 쓰이지만 그건 expanded를 건드리지 않으므로 전환 여부로 가드하면 hover 스크롤은 안 섞인다.
+  // 60행 청크 아래(대략 20행 밑)는 펼쳐도 스크롤 없인 안 보인다는 게 원래 결함이었다.
+  // scroll the first highlighted row into view on a collapsed→expanded transition while a
+  // highlight is active (spec §1.2.3, never implemented before now) — covers both the
+  // drag-hover auto-expand path (ErdCanvas onNodeMouseEnter) and the deep-link auto-expand
+  // (Finding A). highlightColumns is also set by plain hover emphasis (edge/node hover),
+  // but that never touches `expanded`, so gating on the transition keeps hover scrolling
+  // out of this. Without it, a candidate below roughly row 20 stayed invisible even expanded.
+  useEffect(() => {
+    const justExpanded = expanded && !wasExpandedRef.current;
+    wasExpandedRef.current = expanded;
+    if (!justExpanded || !highlightColumns || highlightColumns.length === 0) return;
+    const row = scrollRef.current?.querySelector<HTMLElement>(".erd-node__row--hl");
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [expanded, highlightColumns]);
 
   // 바닥 도달 → 다음 청크 / append the next chunk at the bottom
   useEffect(() => {
