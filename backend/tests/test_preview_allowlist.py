@@ -166,3 +166,53 @@ def test_join_preview_uses_the_same_allowlist(client, load_fixture, migrated_eng
                 headers={"X-Preview-Password": preview_password},
                 json={"schema": rel["src_object"].split(".", 1)[0]})
     assert client.post("/api/validate/preview", json=ids).status_code == 200
+
+
+def test_n_way_join_preview_uses_the_same_allowlist(client, load_fixture, migrated_engine,
+                                                    fixture_dir, preview_password):
+    """조인 빌더가 실제로 쓰는 경로 — 2-way만 막으면 여기가 우회로가 된다.
+
+    2-way(/api/validate/preview)는 게이트가 있었지만 프론트는 이 N-웨이 경로만 호출한다.
+    같은 데이터에 대해 한쪽만 열려 있으면 허용 목록이 사실상 무력해진다.
+    """
+    import sqlalchemy as sa
+
+    from app.adapters.fake_validator import FakeJoinValidator
+    from app.api.validate import get_join_validator
+    from app.models import Base
+
+    _seed(client, load_fixture)
+    client.app.dependency_overrides[get_join_validator] = lambda: FakeJoinValidator(
+        fixture_dir / "value_sets.json"
+    )
+    rel = next(r for r in load_fixture("expected/relations.json")["rows"]
+               if r["kind"] == "real_no_fk" and r["orphan_count"] == 0)
+
+    obj_t, col_t = Base.metadata.tables["objects"], Base.metadata.tables["columns"]
+
+    def column_id(qname: str, column: str) -> int:
+        schema, table = qname.split(".", 1)
+        with migrated_engine.connect() as conn:
+            return conn.execute(
+                sa.select(col_t.c.id).join(obj_t, col_t.c.object_id == obj_t.c.id)
+                .where(obj_t.c.schema == schema, obj_t.c.name == table,
+                       col_t.c.name == column)
+            ).scalar_one()
+
+    body = {"steps": [{
+        "left_column_id": column_id(rel["src_object"], rel["src_column"]),
+        "right_column_id": column_id(rel["tgt_object"], rel["tgt_column"]),
+        "join_type": "inner",
+    }]}
+
+    blocked = client.post("/api/join/preview", json=body)
+    assert blocked.status_code == 403
+    # 스텝의 양쪽 테이블이 모두 실린다 — 한쪽만 보면 닫힌 쪽 값이 샌다
+    assert blocked.json()["error"]["context"]["objects"] == [rel["src_object"],
+                                                             rel["tgt_object"]]
+
+    client.post("/api/admin/preview-allowlist",
+                headers={"X-Preview-Password": preview_password},
+                json={"schema": rel["src_object"].split(".", 1)[0]})
+    # 403이 사라진 것으로 충분하다 — 여기서부터는 소스 가용성 문제라 이 파일의 관심 밖이다
+    assert client.post("/api/join/preview", json=body).status_code != 403

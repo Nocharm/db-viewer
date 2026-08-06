@@ -68,6 +68,27 @@ export function getDraftTables(draft: JoinDraft): string[] {
   return tables;
 }
 
+/**
+ * 미리보기가 막히는 테이블 — 드래프트에 든 것 중 스키마가 허용 목록에 없는 것.
+ * backend join_preview.py가 403으로 거부하는 조건과 같은 규칙을 화면에서 미리 적용해,
+ * 누를 수 없는 버튼을 누르고 오류를 받는 왕복을 없앤다. 실제 차단은 서버가 한다 —
+ * 여기 목록은 힌트이고, 그래서 허용 목록 조회가 실패한 빈 집합은 "전부 막힘"이 된다
+ * (use-preview-allowlist.ts의 같은 판단).
+ *
+ * The draft tables whose schema isn't on the preview allowlist — the same condition
+ * backend join_preview.py rejects with a 403, applied up front so the user doesn't press
+ * a button just to get an error. The server is still the one that blocks; an empty
+ * allowed set (a failed fetch) therefore reads as "everything blocked".
+ */
+export function getBlockedPreviewTables(
+  draft: JoinDraft,
+  allowedSchemas: Set<string>,
+): string[] {
+  return getDraftTables(draft).filter(
+    (qname) => !allowedSchemas.has(qname.split(".", 1)[0]),
+  );
+}
+
 function isSamePair(step: JoinStep, left: JoinColumnRef, right: JoinColumnRef): boolean {
   const a = [step.left.columnId, step.right.columnId].sort().join("-");
   const b = [left.columnId, right.columnId].sort().join("-");

@@ -54,7 +54,12 @@ def stub() -> StubValidator:
 
 
 @pytest.fixture()
-def jclient(client, stub):
+def jclient(client, stub, allow_preview):
+    # 이 파일은 미리보기 정책이 아니라 조인 동작을 본다 — 픽스처가 쓰는 dbo를 열어 두고,
+    # 허용 목록 자체의 검증은 test_preview_allowlist.py가 소유한다
+    # / this file tests join behaviour, not the preview policy: open the fixture's schema
+    # here and leave the allowlist assertions to test_preview_allowlist.py
+    allow_preview("dbo")
     client.app.dependency_overrides[get_join_validator] = lambda: stub
     return client
 
@@ -214,11 +219,13 @@ def test_bounds_the_audit_detail_to_the_column_length():
     assert _TRUNCATION_MARKER in detail
 
 
-def test_reports_503_when_the_source_is_synthetic(client, migrated_engine, load_fixture):
+def test_reports_503_when_the_source_is_synthetic(client, migrated_engine, load_fixture,
+                                                  allow_preview):
     """FakeJoinValidator는 명시 실패 — 합성 조인 결과가 실값처럼 나가면 안 된다."""
     from app.adapters.fake_validator import FakeJoinValidator
 
     _seed(client, load_fixture)
+    allow_preview("dbo")  # 허용 목록이 아니라 소스 부재로 막히는 것을 본다
 
     def _fake():
         return FakeJoinValidator.__new__(FakeJoinValidator)

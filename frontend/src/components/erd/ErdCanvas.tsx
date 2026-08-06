@@ -30,8 +30,9 @@ import { NODE_CONFIRM_THRESHOLD, planMerge, type MergePlan } from "@/lib/graph-m
 // MAX_VISIBLE_COLUMNS는 컬럼 절단 폐기와 함께 사라졌다 — 노드는 전량 렌더 + 내부 스크롤
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import {
-  addStep, canAddStep, EMPTY_DRAFT, getStepKey, removeStep, setStepConfirmed, setStepJoinType,
-  setStepResult, type CanAddFailureReason, type JoinColumnRef, type JoinDraft, type JoinType,
+  addStep, canAddStep, EMPTY_DRAFT, getBlockedPreviewTables, getStepKey, removeStep,
+  setStepConfirmed, setStepJoinType, setStepResult, type CanAddFailureReason,
+  type JoinColumnRef, type JoinDraft, type JoinType,
 } from "@/lib/join-draft";
 import { getJoinVerdict, type JoinVerdict } from "@/lib/join-verdict";
 import type { MessageKey } from "@/lib/i18n";
@@ -1001,6 +1002,7 @@ function ErdCanvasInner({
             .finally(() => setJoinPreviewBusy(false));
         }}
         previewBusy={joinPreviewBusy}
+        blockedPreviewTables={getBlockedPreviewTables(draft, previewAllowed)}
       />
       <JoinPreviewPanel
         result={joinPreview}

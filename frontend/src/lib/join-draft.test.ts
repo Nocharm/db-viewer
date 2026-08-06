@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  addStep, canAddStep, EMPTY_DRAFT, getDraftTables, getStepKey, isClosingStep, MAX_JOIN_STEPS,
-  removeStep, setStepConfirmed, setStepJoinType, setStepResult, type JoinColumnRef,
+  addStep, canAddStep, EMPTY_DRAFT, getBlockedPreviewTables, getDraftTables, getStepKey,
+  isClosingStep, MAX_JOIN_STEPS, removeStep, setStepConfirmed, setStepJoinType, setStepResult,
+  type JoinColumnRef,
 } from "./join-draft";
 import { getJoinVerdict } from "./join-verdict";
 
@@ -86,6 +87,36 @@ describe("getDraftTables", () => {
     expect(getDraftTables(draft)).toEqual([
       "ATM.T_ORDER", "ATM.T_ORDER_LOG", "ATM.T_USER",
     ]);
+  });
+});
+
+describe("getBlockedPreviewTables", () => {
+  const SAP = ref("SAP.T_VENDOR", "VENDOR_CD", 7);
+
+  it("returns nothing when every schema in the draft is allowed", () => {
+    const draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    expect(getBlockedPreviewTables(draft, new Set(["ATM"]))).toEqual([]);
+  });
+
+  it("names the tables whose schema is missing from the allowlist", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    draft = addStep(draft, LOG_USER, SAP);
+    expect(getBlockedPreviewTables(draft, new Set(["ATM"]))).toEqual(["SAP.T_VENDOR"]);
+  });
+
+  // 서버가 스텝 하나라도 닫혀 있으면 전부 막는 것과 같은 판단 — 부분 허용은 없다
+  it("reports a table once even when it spans several steps", () => {
+    let draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    draft = addStep(draft, LOG_USER, USER);
+    expect(getBlockedPreviewTables(draft, new Set())).toEqual([
+      "ATM.T_ORDER", "ATM.T_ORDER_LOG", "ATM.T_USER",
+    ]);
+  });
+
+  // 허용 목록 조회가 실패하면 빈 집합이 온다 — 열어두는 쪽으로 기울면 안 된다
+  it("treats an empty allowlist as everything blocked", () => {
+    const draft = addStep(EMPTY_DRAFT, ORDER, LOG);
+    expect(getBlockedPreviewTables(draft, new Set())).toHaveLength(2);
   });
 });
 

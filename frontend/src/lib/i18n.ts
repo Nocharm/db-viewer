@@ -314,6 +314,10 @@ export const MESSAGES = {
   "join.removeStep": { ko: "이 조인 지우기", en: "Remove this join" },
   "join.clear": { ko: "전부 지우기", en: "Clear all" },
   "join.preview": { ko: "SQL과 20행 보기", en: "Show SQL and 20 rows" },
+  "join.previewBlocked": {
+    ko: "{objects} — 미리보기 허용 목록에 없는 스키마입니다, 관리자에게 요청하세요",
+    en: "{objects} — schema is not on the preview allowlist, ask an admin to add it",
+  },
   "join.verifying": { ko: "검증 중…", en: "Verifying…" },
   "join.stepFailed": { ko: "검증 실패 — {error}", en: "Validation failed — {error}" },
   "join.levelSafe": { ko: "안전", en: "Safe" },

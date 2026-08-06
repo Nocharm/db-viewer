@@ -24,6 +24,9 @@ interface Props {
   onClear: () => void;
   onPreview: () => void;
   previewBusy: boolean;
+  /** 미리보기 허용 스키마가 아닌 드래프트 테이블 — 하나라도 있으면 서버가 403으로 막는다.
+   * draft tables outside the preview allowlist; any entry means the server would 403. */
+  blockedPreviewTables: string[];
   /** 하단 테이블 미리보기 카드가 열려 있을 때 그 위로 띄우는 오프셋(px) — 없으면 기본 12px(bottom-3)
    * pushes the dock above the table preview card when it's open; defaults to 12px (bottom-3) */
   offsetBottom?: number;
@@ -192,7 +195,7 @@ function StepRow({
 
 export function JoinBuilder({
   draft, onRemoveStep, onSetJoinType, onConfirmStep, onClear, onPreview, previewBusy,
-  offsetBottom,
+  blockedPreviewTables, offsetBottom,
 }: Props) {
   const { t } = useI18n();
   // 타입 가드 없이 filter하면 (JoinVerdict|null)[]로 남는다 / narrow with a type predicate
@@ -264,9 +267,17 @@ export function JoinBuilder({
                 )}
               </span>
             )}
+            {/* 판정과 버튼 사이 — 왜 못 누르는지가 버튼 옆에 붙어야 읽힌다 */}
+            {blockedPreviewTables.length > 0 && (
+              <span className="text-xs" style={{ color: "var(--error)" }}
+                    data-testid="JoinBuilder-previewBlocked">
+                {t("join.previewBlocked")
+                  .replace("{objects}", blockedPreviewTables.join(", "))}
+              </span>
+            )}
             <button
               className="btn-primary ml-auto"
-              disabled={previewBusy}
+              disabled={previewBusy || blockedPreviewTables.length > 0}
               onClick={onPreview}
               data-testid="JoinBuilder-previewButton"
             >

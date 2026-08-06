@@ -12,6 +12,7 @@ from app.api.validate import get_join_validator, resolve_column_ref
 from app.db import get_db
 from app.domain.validation import JoinStepRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog
+from app.services.preview_policy import is_preview_allowed
 
 router = APIRouter(prefix="/api/join", tags=["join"])
 
@@ -119,9 +120,14 @@ def run_join_preview(
 
     refs: list[JoinStepRef] = []
     masked_keys: set[str] = set()
+    # 등장 순서를 지키며 중복 제거 — 한 테이블이 여러 스텝에 걸쳐도 오류에 한 번만 싣는다
+    # / dedupe while preserving order: a table spanning several steps is reported once
+    involved: dict[str, str] = {}
     for step in req.steps:
         left_ref, left_col = resolve_column_ref(db, step.left_column_id)
         right_ref, right_col = resolve_column_ref(db, step.right_column_id)
+        for ref in (left_ref, right_ref):
+            involved.setdefault(f"{ref.schema}.{ref.table}", ref.schema)
         refs.append(JoinStepRef(
             left_schema=left_ref.schema, left_table=left_ref.table,
             left_column=left_ref.column,
@@ -137,6 +143,22 @@ def run_join_preview(
             masked_keys.add(f"{left_ref.schema}.{left_ref.table}.{left_ref.column}")
         if right_col.masking_policy:
             masked_keys.add(f"{right_ref.schema}.{right_ref.table}.{right_ref.column}")
+
+    # N-웨이 조인도 참여 테이블 전부의 실값을 한 행에 실어 내보낸다 — validate.py:/preview와
+    # 같은 허용 목록을 쓴다. 스텝 하나라도 닫힌 스키마를 물면 전부 막는다: 조인 결과 행은
+    # 열린 쪽과 닫힌 쪽 컬럼이 같이 붙어 나오므로 부분 허용이라는 게 성립하지 않는다.
+    # / an N-way join emits values from every participating table in the same row, so it
+    # uses the same allowlist as validate.py's /preview. One closed schema blocks the whole
+    # request — a joined row carries open and closed columns side by side, so there is no
+    # meaningful "partially allowed" result to return.
+    blocked = [qname for qname, schema in involved.items()
+               if not is_preview_allowed(db, schema)]
+    if blocked:
+        raise HTTPException(403, {
+            "message": "preview is not allowed for these objects — an admin must add "
+                       "their schemas to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
+            "context": {"objects": blocked},
+        })
 
     _check_connectivity(refs)
 
