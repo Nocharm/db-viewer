@@ -10,6 +10,7 @@ Usage: python tools/seed_ui_states.py [--base http://localhost:8000] [--fixtures
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -121,8 +122,22 @@ def main() -> None:
                   f"confidence {result['confidence']}): "
                   f"{rels[key]['src_object']}.{rels[key]['src_column']}")
 
-    suggested = call(base, "POST", "/api/ai/suggest-relations")
-    print(f"ai_suggested edges: {suggested['created']} created")
+    # 202 + job_id로 바뀐 뒤로 여기서 KeyError로 죽어, 뒤따르는 AI 요약·화이트리스트
+    # 시딩까지 통째로 건너뛰고 있었다 — 완료까지 폴링해 엣지가 실제로 생긴 뒤 넘어간다.
+    # / this endpoint became async (202 + job_id); the old ['created'] lookup raised and
+    #   took the AI-summary and whitelist seeding down with it. Poll until it finishes.
+    job_id = call(base, "POST", "/api/ai/suggest-relations")["job_id"]
+    for _ in range(120):
+        job = call(base, "GET", f"/api/ai/jobs/{job_id}")
+        if job["status"] in ("done", "failed"):
+            break
+        time.sleep(1)
+    else:
+        raise SystemExit(f"ai suggest job {job_id} did not finish in 120s")
+    if job["status"] == "failed":
+        raise SystemExit(f"ai suggest job {job_id} failed: {job.get('error')}")
+    print(f"ai_suggested edges: job {job_id} {job['status']} "
+          f"({job.get('created', job.get('processed', '?'))})")
 
     for qname in (rels["confirm"]["src_object"], rels["confirm"]["tgt_object"]):
         summary = call(base, "POST", f"/api/ai/summarize/{find_object_id(base, qname)}")
