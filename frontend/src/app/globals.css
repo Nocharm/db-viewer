@@ -566,6 +566,34 @@ input::placeholder {
   cursor: grabbing;
 }
 
+/* 컬럼 행 조인 그립 — 히트박스는 행 전체 높이(TableNode.tsx COLUMN_HANDLE_*_STYLE),
+   눈에 보이는 건 행에 호버했을 때의 얇은 바뿐이다. 기본 .react-flow__handle의 6px 점과
+   테두리는 여기서 지운다 — 평소 노출하면 컬럼 목록이 점으로 뒤덮인다.
+   / the grip's hit box is the whole row; only a thin bar shows, and only on row hover.
+     The stylesheet's default 6px dot and border are cleared here. */
+.erd-node__row .erd-handle {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  transition: opacity 0.15s ease-in-out;
+}
+/* connectingfrom — 드래그 중엔 포인터 캡처로 :hover가 갱신되지 않아 출발점이 사라진다 */
+.erd-node__row:hover .erd-handle,
+.erd-node__row .erd-handle.connectingfrom {
+  opacity: 1;
+}
+.erd-node__row .erd-handle::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
 /* 호버 강조 — 매칭 컬럼 행 / hover-emphasized matching column row */
 .erd-node__row--hl {
   background: color-mix(in srgb, var(--primary) 14%, transparent);

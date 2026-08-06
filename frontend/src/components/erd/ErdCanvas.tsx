@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyNodeChanges,
   Background,
+  ConnectionMode,
   Controls,
   ReactFlow,
   ReactFlowProvider,
@@ -315,10 +316,20 @@ function ErdCanvasInner({
       });
   }, [draft, t]);
 
+  // loose 모드에선 왼쪽(target) 그립에서 출발할 수도 있고, 그때 React Flow는 source/target을
+  // 뒤집어 넘긴다 — 방향은 containment 기준이자 첫 스텝의 FROM(join-draft.getDraftTables)이라
+  // 의미가 있으므로, 잡은 가장자리가 아니라 "끌기 시작한 쪽"을 left로 고정한다. onConnect는
+  // onConnectEnd보다 먼저 불려 dragOriginRef가 아직 살아 있다.
+  // loose mode lets a drag start from the left (target) grip, and React Flow then swaps
+  // source/target. Direction is meaningful — it's the containment direction and the first
+  // step's FROM — so left is pinned to the end the drag started from, not to whichever edge
+  // was grabbed. onConnect fires before onConnectEnd, so dragOriginRef is still populated.
   const handleConnect = useCallback((connection: Connection) => {
-    const left = resolveHandle(connection.source, connection.sourceHandle);
-    const right = resolveHandle(connection.target, connection.targetHandle);
-    if (!left || !right) return;
+    const source = resolveHandle(connection.source, connection.sourceHandle);
+    const target = resolveHandle(connection.target, connection.targetHandle);
+    if (!source || !target) return;
+    const startedFromTarget = dragOriginRef.current?.columnId === target.columnId;
+    const [left, right] = startedFromTarget ? [target, source] : [source, target];
     addJoinStep(left, right);
   }, [resolveHandle, addJoinStep]);
 
@@ -878,6 +889,13 @@ function ErdCanvasInner({
         onConnectStart={handleConnectStart}
         onConnect={handleConnect}
         onConnectEnd={handleConnectEnd}
+        // 기본 strict는 source(오른쪽)→target(왼쪽) 방향만 허용해, 상대 테이블이 왼쪽에
+        // 놓였을 때의 자연스러운 드래그가 조용히 거부된다. 컬럼끼리의 조인은 방향 대칭이고
+        // 같은 테이블 자기조인은 join-draft.canAddStep이 "same_table"로 이미 막는다.
+        // strict would only allow source(right)→target(left), silently rejecting the natural
+        // drag when the other table sits to the left. Column joins are direction-symmetric,
+        // and canAddStep already rejects a same-table pair.
+        connectionMode={ConnectionMode.Loose}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {

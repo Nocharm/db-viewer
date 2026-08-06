@@ -35,28 +35,35 @@ const HANDLE_STYLE = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 
 // 걸쳐 있으면(기본 Handle은 left:0/right:0 + translate ±50%로 정확히 그 경계 위에 앉는다)
 // document.elementFromPoint가 핸들 대신 부모 .erd-node div를 반환해 드래그가 시작조차 안 된다 —
 // 브라우저 실측으로만 잡힌 회귀라 정적 검사로는 못 본다. 경계 안쪽으로 들이고 실제 히트박스를
-// 줘야 한다. opacity: 0은 유지 — 컬럼 행 자체가 어포던스이며 점을 노출하지 않는다.
+// 줘야 한다. 드롭은 connectionRadius 기반 최근접 탐색이라 관대하지만, 드래그 시작만은
+// 핸들 엘리먼트가 직접 pointerdown을 받아야 하므로 여기 크기가 곧 조작 가능 여부다.
 // / column-row handles are BOTH the edge-docking anchor and the user's drag grip. A
 // zero-size handle, or one sitting on the scroll container's clip boundary (the default
 // left:0/right:0 + translate ±50% puts it exactly there), makes elementFromPoint resolve
-// to the parent .erd-node div instead — drag-to-join silently never starts. Fixed by
-// insetting inside the clip box with a real hit width; do not shrink this back to a dot.
+// to the parent .erd-node div instead — drag-to-join silently never starts. Dropping is
+// forgiving (nearest-handle within connectionRadius), but starting a drag requires a real
+// pointerdown on the handle element, so this box is what decides whether joining works.
 const COLUMN_HANDLE_INSET = 3; // px — 클립 경계 안쪽 여유 (엣지 도킹 위치도 이만큼만 안쪽으로 이동)
 const COLUMN_HANDLE_WIDTH = 12; // px — 실제 드래그 그립 폭 (10–14px 권장 범위)
-const COLUMN_HANDLE_LEFT_STYLE = {
-  opacity: 0,
+// 높이는 반드시 명시한다 — 기본 .react-flow__handle의 height:6px가 살아 있으면 top/bottom을
+// 둘 다 줘도 CSS over-constrained 규칙에 따라 bottom이 무시되어 22px 행의 위 6px만 잡힌다
+// (실측: 행 세로 중앙의 elementFromPoint가 .erd-node__row를 반환 → 드래그 시작 불가).
+// / height must be explicit: the stylesheet's height:6px wins over a top+bottom pair (CSS
+// drops `bottom` when over-constrained), leaving only the top 6px of a 22px row grabbable.
+const COLUMN_HANDLE_BASE_STYLE = {
   top: 0,
-  bottom: 0,
-  left: COLUMN_HANDLE_INSET,
+  height: "100%",
+  boxSizing: "border-box",
   width: COLUMN_HANDLE_WIDTH,
+} as const;
+const COLUMN_HANDLE_LEFT_STYLE = {
+  ...COLUMN_HANDLE_BASE_STYLE,
+  left: COLUMN_HANDLE_INSET,
   transform: "none", // 기본 .react-flow__handle-left의 translate(-50%,-50%) 상쇄
 } as const;
 const COLUMN_HANDLE_RIGHT_STYLE = {
-  opacity: 0,
-  top: 0,
-  bottom: 0,
+  ...COLUMN_HANDLE_BASE_STYLE,
   right: COLUMN_HANDLE_INSET,
-  width: COLUMN_HANDLE_WIDTH,
   transform: "none", // 기본 .react-flow__handle-right의 translate(50%,-50%) 상쇄
 } as const;
 
@@ -211,11 +218,13 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
                   data.onSelectColumn(col.id, col.name, `${node.schema}.${node.name}`)}
                 data-testid={`ErdNode-columnRow-${col.id}`}
               >
-                {/* 컬럼 행이 조인 드래그의 출발·도착점 / column rows are join endpoints */}
+                {/* 컬럼 행이 조인 드래그의 출발·도착점 — .erd-handle이 행 hover 시 그립 바를
+                    드러낸다(globals.css) / column rows are join endpoints; .erd-handle reveals
+                    the grip bar on row hover */}
                 <Handle type="target" position={Position.Left} id={`t-${col.name}`}
-                        isConnectable style={COLUMN_HANDLE_LEFT_STYLE} />
+                        isConnectable className="erd-handle" style={COLUMN_HANDLE_LEFT_STYLE} />
                 <Handle type="source" position={Position.Right} id={`s-${col.name}`}
-                        isConnectable style={COLUMN_HANDLE_RIGHT_STYLE} />
+                        isConnectable className="erd-handle" style={COLUMN_HANDLE_RIGHT_STYLE} />
                 <span className="truncate">
                   {col.is_pk && <span className="pk-mark">PK</span>}
                   {col.name}
