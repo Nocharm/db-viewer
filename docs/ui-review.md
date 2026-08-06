@@ -46,7 +46,7 @@ AI 제안 엣지(상한 `AI_SUGGEST_MAX_PAIRS`, 기본 40건까지), AI 요약 2
 | 7 | **DMV 격리 배지** | `V_DMV` 검색 (매 노드 헤더 배지) |
 | 8 | **AI 요약 툴팁 + AI 배지** | HR_SALARY·HR_EMP 노드 헤더에 AI 배지, hover 시 요약 |
 | 9 | **저카디널리티 배지·사유** | 아무 테이블의 `USE_YN` 컬럼 클릭 → 패널에 제외 사유 |
-| 10 | **ColumnPanel 전체 플로우** | `T_ORG_DUTY` 노드에서 `DEPTCD` 클릭 → 후보(신호 배지) → T2 검증 → 결과 카드(containment·cardinality·confidence·패턴 라벨) + **기존 이력 3건** → 미리보기 20행 → 확정 → ✓ CONFIRMED 배지 |
+| 10 | **ERD 조인 빌더 전체 플로우** | `T_ORG_DUTY` 노드의 `DEPTCD` 컬럼 행(`ErdNode-columnRow-*`)에서 드래그 시작 → 후보 컬럼이 하이라이트(같은 행에 `erd-node__row--hl`) → 대상 컬럼 위에 드롭 → 하단 도크(`JoinBuilder-root`)에 스텝 추가(`JoinBuilder-step-*`)되며 자동 검증 → 판정이 증상+처방으로 렌더(`JoinBuilder-stepLevel-*` 배지 + symptom 텍스트, 있으면 "→ remedy") → `JoinBuilder-previewButton` → 모달(`JoinPreviewPanel-root`)에서 SQL 탭(`JoinPreviewPanel-sqlTab`/`-sql`) 확인 후 행 탭(`JoinPreviewPanel-rowsTab`/`-rows`, 최대 20행) 확인 |
 | 11 | **40노드 임계 확인 모달** | 노드의 `+` 버튼으로 이웃 확장 반복 (AI 엣지 때문에 2~3회면 초과) |
 | 12 | **검색 3종** | 일반 검색 / 타입 필터(테이블·뷰) / `?주문` 처럼 `?` 프리픽스 AI 탐색 |
 | 13 | **/parsing 지표 화면** | 헤더 "파싱 지표" — 타일 7개 + 격리 목록(V_PVT 2건: unsupported) |

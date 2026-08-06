@@ -36,6 +36,8 @@ n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 �
 - **Activate**: 우상단 토글 — webhook은 활성일 때만 프로덕션 URL이 열린다.
 - **편집할 값 없음** — 환경변수도 API 키도 참조하지 않는다. n8n이 백엔드를 호출하지 않고
   백엔드가 n8n을 호출하기 때문(수집 결과는 HTTP 응답으로 돌아온다).
+- **재임포트**: 이미 임포트된 워크플로에 새 JSON을 다시 Import from File 하면 credential
+  연결과 Activate 상태가 풀린다 — 매번 credential 재선택 + 재활성화가 필요하다.
 
 ## 워크플로별 계약
 
@@ -43,7 +45,22 @@ n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 �
   `objects`, `columns`, `key_constraints`, `foreign_keys`, `view_definitions`,
   `view_deps`, `view_refs`. 파라미터는 **정수만** 보간되고 SQL 문자열은 받지 않는다.
 - **W2 `dbv-query`** — body `{kind, 식별자…}`. kind는 `containment`, `join_preview`,
-  `table_preview`. 값 데이터에 닿으므로 `SOURCE_MODE=live` 게이트 뒤에서만 쓰인다
-  (W1은 메타데이터 전용이라 게이트와 무관 — 두 실행기를 분리해 둔 이유).
+  `table_preview`, `multi_join_preview`. 값 데이터에 닿으므로 `SOURCE_MODE=live` 게이트
+  뒤에서만 쓰인다(W1은 메타데이터 전용이라 게이트와 무관 — 두 실행기를 분리해 둔 이유).
+  - `multi_join_preview` — body `{kind: "multi_join_preview", limit, steps: [...]}`.
+    각 step은 `{left_schema, left_table, left_column, right_schema, right_table,
+    right_column, join_type}`(`join_type`은 `inner` | `left`). 첫 step의 left가 FROM,
+    이후 각 step이 JOIN 한 줄을 추가한다(별칭 t0..tN, `tools/build_n8n_workflow.py` 참고).
+  - **노드 4개**(다른 kind와 공유) — `webhook → Build query(Code) → MSSQL →
+    Attach query(Code)`. 마지막 `Attach query` 노드가 실행문과 결과를 `{query, rows}`
+    단일 객체로 묶어 응답하며, webhook은 `responseData=firstEntryJson`을 쓴다 — W1은
+    행마다 아이템 하나씩 내므로 `allEntries`가 필요하지만, W2는 Attach query가 이미
+    전 행을 하나로 묶어 두었으니 `allEntries`를 쓰면 그 단일 아이템이 배열에 한 번 더
+    감싸여 `{query, rows}` 계약이 깨진다 — **W1과 일부러 다르게 둔다.**
+  - **백엔드 하위호환** — `backend/app/adapters/n8n_query.py`의 `_post_query`가 신형
+    `{query, rows}` 응답과 구형(행 리스트만) 응답을 모두 받는다. 재임포트가 늦어 구
+    W2가 아직 떠 있어도 `containment` / `join_preview` / `table_preview`는 그대로
+    동작하고, `multi_join_preview`만 "재배포 필요" 메시지와 함께 502로 멈춘다 —
+    깨지는 대신 저하된다(a stale W2 degrades rather than breaks).
 - **W0** — 정찰 6종 + 리포트. 유일한 다중 노드 워크플로이며 백엔드 경로가 없다
   (배포 전 1회 진단용, 끝나면 삭제 가능).

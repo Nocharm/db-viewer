@@ -1,5 +1,13 @@
 """N-웨이 조인 미리보기 엔드포인트 테스트. / multi-table join preview API."""
 
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import String
@@ -7,6 +15,14 @@ from sqlalchemy import String
 from app.api.validate import get_join_validator
 from app.domain.validation import JoinStepRef
 from app.models import AuditLog, Base
+
+# build_n8n_workflow.py는 배포 산출물이 아니라 저장소 tools/에 있다 — 마스킹 키 포맷
+# 고정 테스트가 W2의 실제 별칭 생성 JS를 실행해야 해서 import한다.
+# tools/build_n8n_workflow.py lives outside the package; imported so the masking-key
+# pin test can run W2's real alias-building JS.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+import build_n8n_workflow  # noqa: E402
 
 # 픽스처의 실제 FK — fixtures/catalog.json: FK_HR_EMP_FAMILY_HR_EMP
 LEFT = ("dbo.HR_EMP_FAMILY", "EMP_NO")
@@ -210,3 +226,102 @@ def test_reports_503_when_the_source_is_synthetic(client, migrated_engine, load_
     client.app.dependency_overrides[get_join_validator] = _fake
     res = client.post("/api/join/preview", json={"steps": [_step(migrated_engine)]})
     assert res.status_code == 503
+
+
+def test_masks_columns_with_a_masking_policy(jclient, migrated_engine, load_fixture):
+    """이 브랜치의 유일한 보안 불변식 — masking_policy가 있는 컬럼은 응답에서
+    실값 대신 ●●●로 나가야 한다. 스텁이 실제 W2 별칭 형식(스키마.테이블.컬럼)으로
+    키를 채워, 정책 조회 → 마스킹 키 조립 → 값 치환까지 실경로를 그대로 통과시킨다.
+    This branch's one security-relevant invariant — a masked column's real value must
+    never reach the response. The stub keys its row with W2's real alias shape so the
+    lookup-then-substitute path actually runs end to end, not just the empty-steps/cap/
+    audit paths the rest of this file covers."""
+    _seed(jclient, load_fixture)
+
+    with migrated_engine.begin() as conn:
+        col_t = Base.metadata.tables["columns"]
+        left_col_id = _column_id(migrated_engine, *LEFT)
+        conn.execute(sa.update(col_t).where(col_t.c.id == left_col_id)
+                     .values(masking_policy="full"))
+
+    masked_key = f"{LEFT[0]}.{LEFT[1]}"      # "dbo.HR_EMP_FAMILY.EMP_NO"
+    unmasked_key = f"{RIGHT[0]}.{RIGHT[1]}"  # "dbo.HR_EMP.EMP_NO"
+
+    class MaskingStub:
+        def containment(self, src, tgt):  # pragma: no cover - 이 테스트에서 미사용
+            raise NotImplementedError
+
+        def preview(self, src, tgt, limit):  # pragma: no cover - 이 테스트에서 미사용
+            raise NotImplementedError
+
+        def multi_join_preview(self, steps, limit):
+            return [{masked_key: "E001", unmasked_key: "E001"}], "SELECT ..."
+
+    jclient.app.dependency_overrides[get_join_validator] = lambda: MaskingStub()
+    res = jclient.post("/api/join/preview", json={"steps": [_step(migrated_engine)]})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["masked_columns"] == [masked_key]
+    assert body["rows"][0][masked_key] == "●●●"
+    # 반대편은 마스킹되지 않는다 / the unmasked sibling column keeps its real value
+    assert body["rows"][0][unmasked_key] == "E001"
+
+
+def test_masking_key_matches_w2s_alias_format(jclient, migrated_engine, load_fixture) -> None:
+    """마스킹 키(join_preview.py)와 W2가 실제로 내는 컬럼 별칭
+    (tools/build_n8n_workflow.py)은 서로 다른 파일에 있는 두 개의 독립된
+    "스키마.테이블.컬럼" 조립부다 — 문자열 일치가 깨지면 마스킹이 예외 없이
+    조용히 무력화된다. W2의 실제 JS를 노드로 실행해 산출된 별칭과, 실제 엔드포인트
+    응답(`masked_columns`)이 내부에서 계산한 키를 직접 비교한다 — 어느 한쪽만
+    바뀌어도 실패해야 하므로, 어느 쪽 공식도 이 테스트 안에서 손으로 재구현하지
+    않고 두 실제 산출물을 그대로 비교한다.
+    The masking key (join_preview.py) and the alias W2 actually emits
+    (tools/build_n8n_workflow.py) are two independently-written "schema.table.column"
+    assemblies in different files — a drift between them silently disables masking
+    with no exception. Compares W2's real JS output against the real endpoint's
+    `masked_columns` field (the backend's actual computed key) — neither formula is
+    hand-reimplemented here, so either side drifting alone fails loudly."""
+    _seed(jclient, load_fixture)
+    with migrated_engine.begin() as conn:
+        col_t = Base.metadata.tables["columns"]
+        left_col_id = _column_id(migrated_engine, *LEFT)
+        conn.execute(sa.update(col_t).where(col_t.c.id == left_col_id)
+                     .values(masking_policy="full"))
+
+    node_bin = shutil.which("node")
+    assert node_bin is not None, "node is required to run W2's Build query JS"
+
+    wf = build_n8n_workflow.build_query_executor_workflow()
+    js = next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+    return_marker = "return [{ json: { query } }];"
+    assert return_marker in js, "Build query jsCode의 반환문 형태가 바뀌었다 — 테스트 갱신 필요"
+
+    step = {
+        "left_schema": LEFT[0].split(".")[0], "left_table": LEFT[0].split(".")[1],
+        "left_column": LEFT[1],
+        "right_schema": RIGHT[0].split(".")[0], "right_table": RIGHT[0].split(".")[1],
+        "right_column": RIGHT[1], "join_type": "inner",
+    }
+    js_body = {"kind": "multi_join_preview", "steps": [step]}
+    script = (
+        "const $json = " + json.dumps({"body": js_body}, ensure_ascii=False) + ";\n"
+        + js.replace(return_marker, "console.log(JSON.stringify({ query }));")
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(script)
+        path = f.name
+    try:
+        result = subprocess.run(
+            [node_bin, path], capture_output=True, text=True, timeout=10, check=True,
+        )
+    finally:
+        Path(path).unlink(missing_ok=True)
+    query = json.loads(result.stdout)["query"]
+    w2_alias = re.findall(r"AS \[([^\]]+)\]", query)[0]  # 첫 SELECT 컬럼(left 쪽) 별칭
+
+    # 실제 엔드포인트가 이 컬럼에 매긴 키를 그대로 읽는다 — 공식을 다시 안 쓴다.
+    jclient.app.dependency_overrides[get_join_validator] = lambda: StubValidator()
+    res = jclient.post("/api/join/preview", json={"steps": [_step(migrated_engine)]})
+    assert res.status_code == 200
+    assert res.json()["masked_columns"] == [w2_alias]

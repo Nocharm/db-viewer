@@ -5,9 +5,7 @@ import type {
   CandidatesResponse,
   ContainmentResponse,
   GraphResponse,
-  HistoryItem,
   JoinPreviewResponse,
-  PreviewResponse,
   SearchResponse,
 } from "./types";
 
@@ -148,14 +146,6 @@ export function runContainment(
   });
 }
 
-export function runPreview(
-  srcColumnId: number, tgtColumnId: number,
-): Promise<PreviewResponse> {
-  return postJson("/api/validate/preview", {
-    src_column_id: srcColumnId, tgt_column_id: tgtColumnId, requested_by: "ui",
-  });
-}
-
 /** N-웨이 조인 미리보기 — 행과 실행 SQL을 함께 받는다 / rows plus the executed SQL. */
 export async function runJoinPreview(
   steps: { left_column_id: number; right_column_id: number; join_type: string }[],
@@ -169,14 +159,6 @@ export function confirmRelation(
   return postJson("/api/relations/confirm", {
     src_column_id: srcColumnId, tgt_column_id: tgtColumnId, confirmed_by: "ui",
   });
-}
-
-export function fetchHistory(
-  srcColumnId: number, tgtColumnId: number,
-): Promise<{ items: HistoryItem[] }> {
-  return getJson(
-    `/api/validate/history?src_column_id=${srcColumnId}&tgt_column_id=${tgtColumnId}`,
-  );
 }
 
 /** mock=true면 LLM 미연결 휴리스틱 결과 — 실 판단으로 오독되지 않게 화면에 표시한다.
@@ -384,13 +366,6 @@ export function explainViewAi(
   objectId: number,
 ): Promise<{ explanation: string; mock: boolean }> {
   return postJson(`/api/ai/explain-view/${objectId}`, {});
-}
-
-export function explainValidationAi(
-  srcColumnId: number, tgtColumnId: number,
-): Promise<{ explanation: string; mock: boolean }> {
-  return postJson(
-    `/api/ai/explain-validation?src_column_id=${srcColumnId}&tgt_column_id=${tgtColumnId}`, {});
 }
 
 export interface TablePreview {

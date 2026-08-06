@@ -30,8 +30,16 @@ const SEVERITY: Record<VerdictLevel, number> = {
 };
 
 /**
- * 표 순서대로 평가한다 — N:M이 containment 100%보다 우선이다.
- * `result`가 null이면 값 데이터가 없어 검증 불가(404)를 뜻한다.
+ * 평가 순서: 제외 사유 → 값 없음(404) → N:M → 고아 존재 → **표본 부족** →
+ * containment 100% → 그 외. 스펙 표는 containment 100%를 표본 부족보다 앞에 두지만,
+ * 표본이 적으면 100%조차 우연일 수 있어 그걸 safe라 부르면 오도한다 — 그래서 표본
+ * 경고를 먼저 걸어 caution으로 낮춘다. 의도된 이탈이며 "warns about small samples"
+ * 테스트가 이 순서를 고정한다.
+ * Evaluation order: excluded → no data(404) → N:M → orphans → **small sample** →
+ * 100% containment → fallback. The spec table lists 100% containment before the
+ * small-sample case, but a small sample makes even 100% containment unreliable —
+ * calling that "safe" would mislead, so the small-sample warning is checked first on
+ * purpose. This is a deliberate deviation, pinned by the "warns about small samples" test.
  */
 export function getJoinVerdict(
   result: ContainmentResponse | null,
