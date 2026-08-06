@@ -128,6 +128,16 @@ function HomeInner() {
     router.push(`/?table=${table.id}`, { scroll: false });
   }, [router]);
 
+  // 카테고리를 바꾸면 선택된 표가 목록에서 빠질 수 있다 — 목록에 없는 표의 상세가 남으면
+  // 무엇을 보고 있는지 어긋난다 / drop the selection when the new category filters it out
+  const changeCategory = useCallback((code: string | null) => {
+    setCategory(code);
+    if (!selected || code === null) return;
+    if (resolveCategory(selected.schema, categoryBySchema) !== code) {
+      router.push("/", { scroll: false });
+    }
+  }, [selected, categoryBySchema, router]);
+
   const selectByQname = useCallback((qname: string) => {
     const [schema, name] = qname.split(".", 2);
     const table = tables.find((t) => t.schema === schema && t.name === name);
@@ -266,7 +276,7 @@ function HomeInner() {
             categories={categories}
             selected={category}
             totalCount={typedObjects.length}
-            onSelect={setCategory}
+            onSelect={changeCategory}
             schemas={schemas}
             dbFilter={dbFilter}
             onDbFilter={changeDbFilter}

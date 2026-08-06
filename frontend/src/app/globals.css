@@ -318,6 +318,10 @@ h1, h2, h3 {
 .scroll-area::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
+/* 세로만 스크롤 — 좁은 레일에서 칩 몇 px 넘침으로 가로 스크롤이 생기는 걸 막는다 */
+.scroll-area--y {
+  overflow-x: hidden;
+}
 
 /* ── 인터랙션 공통 ── */
 .pressable {
@@ -434,6 +438,17 @@ mark.hl {
   color: var(--ink);
 }
 
+/* ── 아코디언 — max-height 전환. 높이는 실측값을 인라인 스타일로 넣는다 ── */
+.collapsible {
+  overflow: hidden;
+  transition: max-height 0.28s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .collapsible {
+    transition: none;
+  }
+}
+
 /* ── 로딩 스켈레톤 — 텍스트 대신 형태로 상태 전달 ── */
 .skeleton {
   background: var(--surface-elevated);
@@ -481,7 +496,6 @@ mark.hl {
 
 /* ── ⓘ 툴팁 — 호버·포커스에 설명 말풍선 / info icon with a hover tooltip ── */
 .info-tip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -496,11 +510,10 @@ mark.hl {
   font-style: normal;
   cursor: help;
 }
+/* body로 포털되어 fixed로 뜬다 — 좌표는 InfoTip이 아이콘 위치에서 계산한다
+   (스크롤 컨테이너의 overflow에 잘리지 않게) */
 .info-tip__bubble {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
   z-index: 60;
   width: max-content;
   max-width: 260px;
@@ -516,25 +529,7 @@ mark.hl {
   text-transform: none;
   text-align: left;
   white-space: normal;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease-in-out;
-}
-.info-tip:hover .info-tip__bubble,
-.info-tip:focus .info-tip__bubble {
-  opacity: 1;
-}
-/* 우측 끝 섹션은 말풍선을 왼쪽 정렬로 / right-edge sections align the bubble left */
-.info-tip--left .info-tip__bubble {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-/* 좌측 끝 섹션은 오른쪽으로 펼침 / left-edge sections open rightward */
-.info-tip--right .info-tip__bubble {
-  left: 0;
-  right: auto;
-  transform: none;
 }
 
 /* ── 브랜드 마크 — 옐로 사각 앵커 ── */

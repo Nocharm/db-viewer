@@ -57,10 +57,15 @@ export function CategoryList({
 
   return (
     <aside
-      className="card scroll-area max-h-[60vh] w-44 shrink-0 py-3 lg:max-h-none"
+      className="card scroll-area scroll-area--y max-h-[60vh] w-44 shrink-0 pb-3 lg:max-h-none"
       data-testid="CategoryList-root"
     >
-      <div className="flex items-center gap-1 px-3 pb-2">
+      {/* 탭 헤더는 스크롤해도 남는다 — 목록이 길어도 탭 전환이 항상 손에 닿게 */}
+      <div
+        className="sticky top-0 z-10 flex flex-wrap items-center gap-1 px-3 pt-3 pb-2"
+        style={{ background: "var(--surface-card)" }}
+        data-testid="CategoryList-tabs"
+      >
         <button
           className={`pressable key-chip ${tab === "category" ? "key-chip--selected" : ""}`}
           onClick={() => setTab("category")}

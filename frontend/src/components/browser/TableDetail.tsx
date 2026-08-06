@@ -2,7 +2,7 @@
 
 /** 우측 테이블 정보 패널 — 사용 뷰·유사 테이블·관계·조인 검증. / table detail panel. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
@@ -33,6 +33,9 @@ interface Props {
     target?: { qname: string; columnId: number; column: string },
   ) => void;
 }
+
+/** 접힌 컬럼 영역 높이 = 칩 2줄. 칩 26px(12px 글자 + py-1 + 테두리) × 2 + gap-2 8px */
+const COLLAPSED_COLUMNS_HEIGHT = 60;
 
 /** 클릭 가능한 테이블명 / clickable table reference. */
 function TableRef({ name, onSelect }: { name: string; onSelect: (qname: string) => void }) {
@@ -103,6 +106,10 @@ export function TableDetail({
   const [aiMock, setAiMock] = useState(false);
   // 장시간 검증의 살아있음 표시 / liveness indicator for long-running checks
   const checkElapsed = useElapsedSeconds(checking);
+  // 컬럼 칩은 기본 2줄만 — 컬럼 수십 개짜리 테이블이 나머지 섹션을 화면 밖으로 밀어낸다
+  const [columnsExpanded, setColumnsExpanded] = useState(false);
+  const [columnsHeight, setColumnsHeight] = useState(0);
+  const columnsRef = useRef<HTMLDivElement>(null);
 
   // 테이블 전환 시 검증·AI 상태 초기화 / reset per-table state on switch
   useEffect(() => {
@@ -112,6 +119,17 @@ export function TableDetail({
     setAiSummary(null);
     setAiExplanation(null);
     setAiBusy(false);
+    setColumnsExpanded(false);
+  }, [detail?.id]);
+
+  // 칩 줄바꿈은 패널 폭에 따라 달라진다 — 실측해야 「더보기」 노출과 펼침 높이가 맞는다
+  useEffect(() => {
+    const box = columnsRef.current;
+    if (!box) return;
+    setColumnsHeight(box.scrollHeight);
+    const observer = new ResizeObserver(() => setColumnsHeight(box.scrollHeight));
+    observer.observe(box);
+    return () => observer.disconnect();
   }, [detail?.id]);
 
   const runAi = (task: () => Promise<void>) => {
@@ -267,23 +285,42 @@ export function TableDetail({
             {t("detail.columns")} ({detail.column_count})
             <InfoTip text={t("tip.columns")} />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {detail.columns.map((column) => (
-              <button
-                key={column.id}
-                className="pressable rounded-md border px-2.5 py-1 font-mono text-xs"
-                style={{
-                  borderColor: column.is_join_key ? "var(--rel-confirmed)" : "var(--hairline-strong)",
-                  color: column.is_join_key ? "var(--rel-confirmed)" : "var(--body-text)",
-                }}
-                title={`${column.data_type} — ${t("panel.verify")}`}
-                onClick={() => onOpenColumn(column.id, column.name)}
-                data-testid={`TableDetail-column-${column.id}`}
-              >
-                {column.is_pk && <span className="pk-mark">PK</span>}{column.name}
-              </button>
-            ))}
+          <div
+            className="collapsible"
+            style={{
+              maxHeight: columnsExpanded ? columnsHeight : COLLAPSED_COLUMNS_HEIGHT,
+            }}
+            data-testid="TableDetail-columnsBox"
+          >
+            <div ref={columnsRef} className="flex flex-wrap gap-2">
+              {detail.columns.map((column) => (
+                <button
+                  key={column.id}
+                  className="pressable rounded-md border px-2.5 py-1 font-mono text-xs"
+                  style={{
+                    borderColor: column.is_join_key ? "var(--rel-confirmed)" : "var(--hairline-strong)",
+                    color: column.is_join_key ? "var(--rel-confirmed)" : "var(--body-text)",
+                  }}
+                  title={`${column.data_type} — ${t("panel.verify")}`}
+                  onClick={() => onOpenColumn(column.id, column.name)}
+                  data-testid={`TableDetail-column-${column.id}`}
+                >
+                  {column.is_pk && <span className="pk-mark">PK</span>}{column.name}
+                </button>
+              ))}
+            </div>
           </div>
+          {columnsHeight > COLLAPSED_COLUMNS_HEIGHT && (
+            <button
+              className="pressable mt-2 rounded px-1 text-xs underline-offset-2 hover:underline"
+              style={{ color: "var(--action-blue)" }}
+              aria-expanded={columnsExpanded}
+              onClick={() => setColumnsExpanded((current) => !current)}
+              data-testid="TableDetail-columnsToggle"
+            >
+              {columnsExpanded ? t("detail.columnsFold") : t("detail.columnsMore")}
+            </button>
+          )}
         </section>
 
         {/* 조인 가능성 검증 — 타깃별 최고 페어 T2 일괄 실행 / table-level join check */}
@@ -367,7 +404,9 @@ export function TableDetail({
             <ul className="space-y-1.5">
               {detail.using_views.map((view) => (
                 <li key={view.id} className="flex items-center gap-2 text-sm">
-                  <span className="truncate font-mono text-xs">{view.name}</span>
+                  <span className="truncate text-xs">
+                    <TableRef name={view.name} onSelect={onSelectTable} />
+                  </span>
                   <span className="badge badge--muted">depth {view.min_depth}</span>
                 </li>
               ))}

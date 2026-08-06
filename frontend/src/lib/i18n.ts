@@ -33,6 +33,8 @@ export const MESSAGES = {
   "detail.loading": { ko: "조회 중…", en: "Loading…" },
   "detail.openErd": { ko: "ERD 보기 →", en: "Open ERD →" },
   "detail.columns": { ko: "컬럼", en: "Columns" },
+  "detail.columnsMore": { ko: "컬럼 더보기", en: "Show all columns" },
+  "detail.columnsFold": { ko: "컬럼 접기", en: "Fold columns" },
   "detail.usingViews": { ko: "이 테이블을 사용하는 뷰", en: "Views using this table" },
   "detail.baseTables": { ko: "구성 테이블 (lineage)", en: "Base tables (lineage)" },
   "detail.similar": { ko: "유사 테이블 (컬럼명 일치율)", en: "Similar tables (column match)" },

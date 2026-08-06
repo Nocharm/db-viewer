@@ -16,8 +16,9 @@ interface Props {
 
 export function SearchPanel({ onSelect, selectedId }: Props) {
   const { t } = useI18n();
-  // 플로팅 오버레이 — 접으면 검색 버튼만 남는다 / floating overlay, folds to a button
-  const [open, setOpen] = useState(true);
+  // 플로팅 오버레이 — 기본은 접힘(캔버스를 가리지 않게), 펴면 검색 버튼 자리에 패널이 뜬다
+  // floating overlay: folded by default so the canvas stays clear
+  const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "table" | "view">("");
   const [items, setItems] = useState<ObjectSummary[]>([]);
@@ -64,7 +65,7 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
   if (!open) {
     return (
       <button
-        className="icon-button absolute left-3 top-3 z-20"
+        className="icon-button absolute left-3 top-14 z-20"
         onClick={() => setOpen(true)}
         title={t("erd.searchOpen")}
         data-testid="SearchPanel-openButton"
@@ -75,11 +76,12 @@ export function SearchPanel({ onSelect, selectedId }: Props) {
   }
 
   return (
+    // top-14 = 뷰 표시 토글 바(top-3 + 약 34px) 아래 — 겹치면 토글을 못 누른다
     <aside
-      className="absolute left-3 top-3 z-20 flex w-72 flex-col rounded-xl border"
+      className="absolute left-3 top-14 z-20 flex w-72 flex-col rounded-xl border"
       style={{
         borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
-        maxHeight: "calc(100% - 24px)",
+        maxHeight: "calc(100% - 68px)",
       }}
       data-testid="SearchPanel-root"
     >
