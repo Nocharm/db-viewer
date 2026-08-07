@@ -3,7 +3,7 @@
 /** 1:1 조인 검증 화면 — 테이블 두 개 → 컬럼 페어 → 게이트 → 포함률 → 확정.
  * The 1:1 join verification flow: two tables, a column pair, gate, containment, confirm. */
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import type { ObjectSummary } from "@/lib/types";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
+import { isSamePair } from "@/lib/verify-pair";
 import {
   applyConfirm, applyContainment, applyGateResult, canConfirm, canRunContainment,
   createInitialState, resetForNewPair, type VerifyState,
@@ -71,11 +72,26 @@ function VerifyPageInner() {
   // 확정하면 대기 큐에서 내려간다 — 값을 올려 PendingList에 재조회를 지시
   const [pendingRefresh, setPendingRefresh] = useState(0);
 
+  // 인플라이트 응답을 적용할지 가리는 기준 — 늦게 온 이전 페어의 결과는 버린다
+  // the yardstick for late results: anything from a pair we've left is dropped
+  const pairRef = useRef<PairCandidate | null>(null);
+  useEffect(() => {
+    pairRef.current = pair;
+  }, [pair]);
+
+  // 페어를 떠나면 그 페어의 요청은 더 이상 busy를 풀어주지 않는다 — 여기서 직접 푼다
+  const clearBusy = useCallback(() => {
+    setGateBusy(false);
+    setContainmentBusy(false);
+    setConfirmBusy(false);
+  }, []);
+
   const handlePickPair = useCallback((next: PairCandidate) => {
     setPair(next);
     setState(resetForNewPair());
     setError(null);
-  }, []);
+    clearBusy();
+  }, [clearBusy]);
 
   const handleSelectSide = (side: "src" | "tgt", obj: ObjectSummary | null) => {
     if (side === "src") setSrc(obj);
@@ -83,6 +99,7 @@ function VerifyPageInner() {
     setPair(null);
     setState(resetForNewPair());
     setError(null);
+    clearBusy();
   };
 
   // URL 프리필 — /verify?src=&srcLabel=&srcCol=&tgt=&tgtLabel=&tgtCol= (전부 선택적)
@@ -142,35 +159,62 @@ function VerifyPageInner() {
 
   const handleRunGate = () => {
     if (!pair) return;
+    const requested = pair;
     setGateBusy(true);
     setError(null);
-    runGate(pair.src_column_id, pair.tgt_column_id)
-      .then((gate) => setState((cur) => applyGateResult(cur, gate)))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setGateBusy(false));
+    runGate(requested.src_column_id, requested.tgt_column_id)
+      .then((gate) => {
+        if (!isSamePair(requested, pairRef.current)) return;
+        setState((cur) => applyGateResult(cur, gate));
+      })
+      .catch((e: Error) => {
+        if (!isSamePair(requested, pairRef.current)) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (isSamePair(requested, pairRef.current)) setGateBusy(false);
+      });
   };
 
   const handleRunContainment = () => {
     if (!pair) return;
+    const requested = pair;
     setContainmentBusy(true);
     setError(null);
-    runContainment(pair.src_column_id, pair.tgt_column_id)
-      .then((result) => setState((cur) => applyContainment(cur, result)))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setContainmentBusy(false));
+    runContainment(requested.src_column_id, requested.tgt_column_id)
+      .then((result) => {
+        // 페어가 바뀌었으면 버린다 — 아니면 검증한 적 없는 페어가 "validated"로 올라선다
+        if (!isSamePair(requested, pairRef.current)) return;
+        setState((cur) => applyContainment(cur, result));
+      })
+      .catch((e: Error) => {
+        if (!isSamePair(requested, pairRef.current)) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (isSamePair(requested, pairRef.current)) setContainmentBusy(false);
+      });
   };
 
   const handleConfirm = () => {
     if (!pair) return;
+    const requested = pair;
     setConfirmBusy(true);
     setError(null);
-    confirmRelation(pair.src_column_id, pair.tgt_column_id)
+    confirmRelation(requested.src_column_id, requested.tgt_column_id)
       .then(() => {
-        setState(applyConfirm);
+        // 확정 자체는 서버에 남는다 — 화면 상태만 현재 페어일 때 반영한다
         setPendingRefresh((cur) => cur + 1);
+        if (!isSamePair(requested, pairRef.current)) return;
+        setState(applyConfirm);
       })
-      .catch((e: Error) => setError(t("join.confirmFailed").replace("{error}", e.message)))
-      .finally(() => setConfirmBusy(false));
+      .catch((e: Error) => {
+        if (!isSamePair(requested, pairRef.current)) return;
+        setError(t("join.confirmFailed").replace("{error}", e.message));
+      })
+      .finally(() => {
+        if (isSamePair(requested, pairRef.current)) setConfirmBusy(false);
+      });
   };
 
   const previewOk = src !== null && tgt !== null

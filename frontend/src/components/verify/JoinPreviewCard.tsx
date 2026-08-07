@@ -3,7 +3,7 @@
 /** 확정 직전 눈으로 확인하는 카드 — 조인 샘플과 양쪽 테이블 원본 샘플.
  * The last look before confirming: a join sample plus each side's raw rows. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { fetchObjectPreview, runValidatePreview } from "@/lib/api";
@@ -49,23 +49,37 @@ export function JoinPreviewCard({
   const [view, setView] = useState<SampleView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 최신 요청 표식 — 이 값과 다른 응답은 버린다 (페어 변경·연속 클릭 모두 무효화한다)
+  // marks the newest request; anything else resolving is a stale result and gets dropped
+  const requestIdRef = useRef(0);
 
-  // 페어가 바뀌면 이전 페어의 원본 값이 화면에 남지 않게 지운다 — 오귀속 방지
+  // 페어가 바뀌면 이전 페어의 원본 값이 화면에 남지 않게 지우고, 인플라이트 응답도 무효화한다
+  // — 값이 그대로 되살아나면 다른 페어의 행을 지금 페어의 것으로 오귀속하게 된다
   useEffect(() => {
+    requestIdRef.current += 1;
     setView(null);
     setError(null);
+    setBusy(false);
   }, [srcColumnId, tgtColumnId]);
 
   const load = (request: Promise<SampleView>) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setBusy(true);
     setError(null);
     request
-      .then(setView)
+      .then((next) => {
+        if (requestId !== requestIdRef.current) return;
+        setView(next);
+      })
       .catch((e: Error) => {
+        if (requestId !== requestIdRef.current) return;
         setError(e.message);
         setView(null);
       })
-      .finally(() => setBusy(false));
+      .finally(() => {
+        if (requestId === requestIdRef.current) setBusy(false);
+      });
   };
 
   const handleJoin = () => load(

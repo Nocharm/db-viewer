@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { fetchObjectDetail, fetchPairCandidates, type ObjectDetail, type PairCandidate } from "@/lib/api";
+import { applyManualSelection, buildManualPair, toManualSelection } from "@/lib/verify-pair";
 
 interface PairCandidateListProps {
   srcObjectId: number;
@@ -16,15 +17,6 @@ interface PairCandidateListProps {
 }
 
 type DetailColumn = ObjectDetail["columns"][number];
-
-/** 수동 선택은 점수·신호가 없다 — 0/{}으로 채워 후보와 같은 모양을 유지한다. */
-function buildManualPair(src: DetailColumn, tgt: DetailColumn): PairCandidate {
-  return {
-    src_column_id: src.id, src_column: src.name, src_data_type: src.data_type,
-    tgt_column_id: tgt.id, tgt_column: tgt.name, tgt_data_type: tgt.data_type,
-    tgt_is_pk: tgt.is_pk, score: 0, signals: {},
-  };
-}
 
 export function PairCandidateList({
   srcObjectId, tgtObjectId, selectedPair, onPick,
@@ -62,19 +54,20 @@ export function PairCandidateList({
     };
   }, [srcObjectId, tgtObjectId]);
 
-  // 드롭다운은 선택된 페어를 그대로 비춘다 — 후보를 눌러도 같은 값이 표시된다
-  const manualSrcId = selectedPair?.src_column_id ?? null;
-  const manualTgtId = selectedPair?.tgt_column_id ?? null;
+  // 반쪽 선택은 여기 산다 — 페어가 완성되기 전에는 부모(selectedPair)가 담을 수 없다
+  // the half-picked state lives here: the parent's pair can't represent "one side chosen"
+  const [manual, setManual] = useState(() => toManualSelection(selectedPair));
 
-  const handleManualChange = (side: "src" | "tgt", columnId: number) => {
-    const src = side === "src"
-      ? srcColumns.find((c) => c.id === columnId)
-      : srcColumns.find((c) => c.id === manualSrcId);
-    const tgt = side === "tgt"
-      ? tgtColumns.find((c) => c.id === columnId)
-      : tgtColumns.find((c) => c.id === manualTgtId);
-    if (!src || !tgt) return; // 한쪽만 고른 상태 — 나머지를 고를 때 페어가 완성된다
-    onPick(buildManualPair(src, tgt));
+  // 후보 클릭·딥링크로 페어가 바뀌면 드롭다운도 그 페어를 가리킨다
+  useEffect(() => {
+    setManual(toManualSelection(selectedPair));
+  }, [selectedPair]);
+
+  const handleManualChange = (side: "src" | "tgt", columnId: number | null) => {
+    const next = applyManualSelection(manual, side, columnId);
+    setManual(next);
+    const pair = buildManualPair(next, srcColumns, tgtColumns);
+    if (pair) onPick(pair); // 나머지 한 쪽이 채워지는 순간 페어가 선다
   };
 
   return (
@@ -144,8 +137,8 @@ export function PairCandidateList({
           <select
             className="min-w-0 flex-1 rounded border px-2 py-1 font-mono text-xs"
             style={{ borderColor: "var(--border-light)" }}
-            value={manualSrcId ?? ""}
-            onChange={(e) => handleManualChange("src", Number(e.target.value))}
+            value={manual.srcColumnId ?? ""}
+            onChange={(e) => handleManualChange("src", e.target.value ? Number(e.target.value) : null)}
             data-testid="PairCandidateList-srcColumnSelect"
           >
             <option value="">—</option>
@@ -157,8 +150,8 @@ export function PairCandidateList({
           <select
             className="min-w-0 flex-1 rounded border px-2 py-1 font-mono text-xs"
             style={{ borderColor: "var(--border-light)" }}
-            value={manualTgtId ?? ""}
-            onChange={(e) => handleManualChange("tgt", Number(e.target.value))}
+            value={manual.tgtColumnId ?? ""}
+            onChange={(e) => handleManualChange("tgt", e.target.value ? Number(e.target.value) : null)}
             data-testid="PairCandidateList-tgtColumnSelect"
           >
             <option value="">—</option>
