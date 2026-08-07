@@ -48,15 +48,15 @@ export function ChatPanel() {
   };
 
   // 챗 응답의 테이블은 qname뿐 object id가 없어, 브라우저 페이지의 앵커 이동과
-  // 동일하게 검색으로 id를 구한 뒤 이동한다 (erd 앵커 딥링크는 anchor=id + label=qname 필요).
+  // 동일하게 검색으로 id를 구한 뒤 이동한다 (erd 포커스 딥링크는 focus=id + label=qname 필요).
   // chat only carries qnames (no id) — resolve one like the browser page's anchor flow does,
-  // since the ERD deep link needs both a numeric anchor id and the qname label.
+  // since the ERD deep link needs both a numeric focus id and the qname label.
   const openTable = (qname: string) => {
     const name = qname.split(".", 2)[1] ?? qname;
     searchObjects(name, "table")
       .then((res) => {
         const hit = res.items.find((i) => `${i.schema}.${i.name}` === qname);
-        if (hit) router.push(`/erd?anchor=${hit.id}&label=${qname}`);
+        if (hit) router.push(`/erd?focus=${hit.id}&label=${qname}`);
       })
       .catch((e) => setError(e.message));
   };

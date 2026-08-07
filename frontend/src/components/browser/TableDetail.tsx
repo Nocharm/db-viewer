@@ -26,11 +26,11 @@ interface Props {
   onOpenErd: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
   onSelectTable: (qname: string) => void;
-  /** 컬럼 칩 클릭 → ERD 조인 검증 패널로 이동. target이 있으면(조인 검증 결과 행) 하이라이트
-   * 대신 그 스텝을 빌더에 바로 얹는다 / opens the ERD join panel; when target is given (a
-   * join-check result row) the ERD seeds that step in the builder instead of just highlighting */
+  /** 컬럼 칩 클릭 → 검증 페이지로 이동. target이 있으면(조인 검증 결과 행) 타깃까지 프리필한다
+   * / opens the verify page; when target is given (a join-check result row) the verify page
+   * prefills both source and target. */
   onOpenColumn: (
-    columnId: number, columnName: string,
+    columnId: number,
     target?: { qname: string; columnId: number; column: string },
   ) => void;
 }
@@ -101,7 +101,7 @@ function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
       )}
       <button
         className="btn-secondary !py-0.5 text-xs"
-        onClick={() => onOpenColumn(item.src_column_id, item.src_column, {
+        onClick={() => onOpenColumn(item.src_column_id, {
           qname: item.target_object, columnId: item.tgt_column_id, column: item.tgt_column,
         })}
         data-testid={`TableDetail-addToBuilder-${item.target_object}`}
@@ -331,7 +331,7 @@ export function TableDetail({
                     color: column.is_join_key ? "var(--rel-confirmed)" : "var(--body-text)",
                   }}
                   title={`${column.data_type} — ${t("panel.verify")}`}
-                  onClick={() => onOpenColumn(column.id, column.name)}
+                  onClick={() => onOpenColumn(column.id)}
                   data-testid={`TableDetail-column-${column.id}`}
                 >
                   {column.is_pk && <span className="pk-mark">PK</span>}{column.name}
