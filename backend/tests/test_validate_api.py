@@ -254,3 +254,31 @@ def test_gate_passes_when_one_side_is_unique_and_caches(vclient, migrated_engine
                            json={"src_column_id": src_id, "tgt_column_id": tgt_id}).json()
     assert second["verdict"] == "pass"
     assert second["src"]["cached"] is True and second["tgt"]["cached"] is True
+
+
+def test_pair_candidates_ranks_matching_columns(vclient, migrated_engine, load_fixture):
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_schema, src_name = rel["src_object"].split(".", 1)
+    tgt_schema, tgt_name = rel["tgt_object"].split(".", 1)
+    obj_t = Base.metadata.tables["objects"]
+    with migrated_engine.connect() as conn:
+        src_oid = conn.execute(sa.select(obj_t.c.id).where(
+            obj_t.c.schema == src_schema, obj_t.c.name == src_name)).scalar_one()
+        tgt_oid = conn.execute(sa.select(obj_t.c.id).where(
+            obj_t.c.schema == tgt_schema, obj_t.c.name == tgt_name)).scalar_one()
+
+    body = vclient.get("/api/validate/pair-candidates",
+                       params={"src_object_id": src_oid, "tgt_object_id": tgt_oid}).json()
+
+    pairs = [(i["src_column"], i["tgt_column"]) for i in body["items"]]
+    assert (rel["src_column"], rel["tgt_column"]) in pairs  # 알려진 관계가 후보로 떠야 한다
+    scores = [i["score"] for i in body["items"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_pair_candidates_missing_object_is_404(vclient, load_fixture):
+    _seed(vclient, load_fixture)
+    resp = vclient.get("/api/validate/pair-candidates",
+                       params={"src_object_id": 999999, "tgt_object_id": 999998})
+    assert resp.status_code == 404

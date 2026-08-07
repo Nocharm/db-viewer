@@ -13,6 +13,7 @@ from app.db import get_db
 from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
+from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 from app.services.observations import record_observation
 from app.services.preview_policy import is_preview_allowed
 from app.services.schema_visibility import is_schema_hidden
@@ -268,3 +269,54 @@ def get_validation_history(
         }
         for h in rows
     ]}
+
+
+PAIR_CANDIDATE_LIMIT = 20  # 상위 페어 수 — UI 한 화면 분량
+
+
+@router.get("/pair-candidates")
+def list_pair_candidates(
+    src_object_id: int,
+    tgt_object_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """두 테이블 간 후보 컬럼 페어 — 카탈로그 신호만, 쿼리 0회 (스펙 §컬럼 선택)."""
+    src_obj = db.get(CatalogObject, src_object_id)
+    tgt_obj = db.get(CatalogObject, tgt_object_id)
+    if src_obj is None or tgt_obj is None:
+        missing = src_object_id if src_obj is None else tgt_object_id
+        raise HTTPException(404, {"message": "object not found",
+                                  "context": {"object_id": missing}})
+    for obj in (src_obj, tgt_obj):
+        if is_schema_hidden(obj.schema):
+            raise HTTPException(403, {
+                "message": "this schema is hidden (HIDDEN_SCHEMAS)",
+                "context": {"object": f"{obj.schema}.{obj.name}"},
+            })
+
+    settings = get_settings()
+    columns = load_scoring_columns(db, src_obj.snapshot_id)
+    view_pairs, fk_pairs = load_pair_sets(db, src_obj.snapshot_id)
+    src_qname = f"{src_obj.schema}.{src_obj.name}"
+    tgt_qname = f"{tgt_obj.schema}.{tgt_obj.name}"
+    targets = [c for c in columns.values() if c.object_qname == tgt_qname]
+
+    blacklist = {name.upper() for name in settings.low_cardinality_blacklist}
+    items = []
+    for src in columns.values():
+        if src.object_qname != src_qname:
+            continue
+        for cand in scoring.score_candidates(
+            src, targets, view_pairs, fk_pairs,
+            settings.low_cardinality_min_distinct, blacklist,
+        ):
+            items.append({
+                "src_column_id": src.column_id, "src_column": src.name,
+                "src_data_type": src.data_type,
+                "tgt_column_id": cand.target.column_id, "tgt_column": cand.target.name,
+                "tgt_data_type": cand.target.data_type,
+                "tgt_is_pk": cand.target.is_pk,
+                "score": cand.score, "signals": cand.signals,
+            })
+    items.sort(key=lambda i: (-i["score"], i["src_column"], i["tgt_column"]))
+    return {"items": items[:PAIR_CANDIDATE_LIMIT]}
