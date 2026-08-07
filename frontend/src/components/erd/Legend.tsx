@@ -23,7 +23,7 @@ export function Legend() {
 
   return (
     <div
-      className="rounded-lg border px-3 py-2"
+      className="pointer-events-auto rounded-lg border px-3 py-2"
       style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
       data-testid="ErdCanvas-legend"
     >

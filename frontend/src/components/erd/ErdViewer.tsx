@@ -293,10 +293,12 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       </ReactFlow>
       <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} />
 
-      {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다 */}
-      <div className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2">
+      {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다.
+          컨테이너는 클릭을 통과시키고(폭이 다른 두 자식 사이 빈 여백이 캔버스 pan/zoom을 가로채지 않도록),
+          카드·Legend 각각에만 복원 — isEmpty 오버레이와 같은 패턴 */}
+      <div className="pointer-events-none absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2">
         {selectedEdge && (
-          <div className="max-w-sm rounded-lg border px-3 py-2 text-xs"
+          <div className="pointer-events-auto max-w-sm rounded-lg border px-3 py-2 text-xs"
                style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
                         color: "var(--body-text)" }}
                data-testid="ErdViewer-edgeDetail">
