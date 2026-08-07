@@ -33,6 +33,13 @@ def _column_id(engine, object_qname: str, column: str) -> int:
         ).scalar_one()
 
 
+def _pick_relation(load_fixture, **filters):
+    for rel in load_fixture("expected/relations.json")["rows"]:
+        if all(rel[k] == v for k, v in filters.items()):
+            return rel
+    raise AssertionError(f"no relation matching {filters}")
+
+
 def _relation_pair(migrated_engine, load_fixture) -> tuple[dict, dict]:
     rel = next(r for r in load_fixture("expected/relations.json")["rows"]
                if r["kind"] == "real_no_fk" and r["orphan_count"] == 0)
@@ -115,3 +122,36 @@ def test_confirm_promotes_and_survives_revalidation(vclient, migrated_engine, lo
     anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == rel["src_object"])
     graph = vclient.get(f"/api/objects/{anchor['id']}/graph").json()
     assert any(e["kind"] == "confirmed" for e in graph["edges"])
+
+
+def test_pending_lists_candidates_and_maps_ids(vclient, migrated_engine, load_fixture):
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
+    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
+    # T2 실행 → status=validated 관계가 생긴다 (기존 containment 플로우 재사용)
+    vclient.post("/api/validate/containment",
+                 json={"src_column_id": src_id, "tgt_column_id": tgt_id})
+
+    body = vclient.get("/api/relations/pending").json()
+
+    assert body["total"] >= 1
+    entry = next(i for i in body["items"]
+                 if (i["src_object"], i["src_column"]) == (rel["src_object"], rel["src_column"]))
+    assert entry["status"] == "validated"
+    assert entry["src_column_id"] == src_id and entry["tgt_column_id"] == tgt_id
+
+
+def test_pending_excludes_confirmed(vclient, migrated_engine, load_fixture):
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
+    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
+    vclient.post("/api/validate/containment",
+                 json={"src_column_id": src_id, "tgt_column_id": tgt_id})
+    vclient.post("/api/relations/confirm",
+                 json={"src_column_id": src_id, "tgt_column_id": tgt_id})
+
+    body = vclient.get("/api/relations/pending").json()
+    pairs = [(i["src_object"], i["src_column"]) for i in body["items"]]
+    assert (rel["src_object"], rel["src_column"]) not in pairs
