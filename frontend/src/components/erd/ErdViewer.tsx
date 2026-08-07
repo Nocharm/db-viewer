@@ -127,6 +127,8 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const pendingFitViewRef = useRef(false);
   // 마지막으로 배치된 노드 좌표 — 맵 검색 픽이 레이아웃 이펙트 밖에서도 centerOn 좌표를 찾을 수 있게 한다
   const placedRef = useRef<Map<number, PlacedNode>>(new Map());
+  // 최초 레이아웃이 끝나기 전에 검색을 픽하면 placedRef가 아직 비어 있다 — 레이아웃 완료 후 처리하도록 대상만 남겨둔다
+  const pendingCenterIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     fetchErdGraph()
@@ -155,7 +157,12 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const handleSearchPick = useCallback((id: number) => {
     setHighlightedId(id);
     const target = placedRef.current.get(id);
-    if (target) centerOn(target.x + target.width / 2, target.y + target.height / 2);
+    if (target) {
+      centerOn(target.x + target.width / 2, target.y + target.height / 2);
+    } else {
+      // 최초 레이아웃 완료 전 픽 — 레이아웃 이펙트의 post-layout 센터링이 이어받는다
+      pendingCenterIdRef.current = id;
+    }
   }, [centerOn]);
 
   const fitViewOnce = useCallback(() => {
@@ -210,7 +217,18 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         } as Edge;
       }));
 
-      // focus 없이 들어오면 전체 맞춤(fitView), 있으면 그 좌표로 센터링 — 둘 다 대상당 1회
+      // post-layout 센터링 우선순위: ① 레이아웃 완료 전 남겨둔 검색 픽 ② focus 없는 첫 진입의 전체 맞춤
+      // ③ URL focus 센터링 — ①②③ 모두 대상당 1회. 검색 픽이 있었다면 ②③의 "1회"를 이미 소모 처리해
+      // 이후 재레이아웃(펼침 토글 등)에서 뒤늦게 끼어들어 카메라를 되돌리지 않게 한다.
+      const pendingCenterId = pendingCenterIdRef.current;
+      if (pendingCenterId !== null) {
+        pendingCenterIdRef.current = null;
+        fitViewDoneRef.current = true;
+        if (focusId !== null) centeredFocusRef.current = focusId;
+        const target = placed.get(pendingCenterId);
+        if (target) centerOn(target.x + target.width / 2, target.y + target.height / 2);
+        return;
+      }
       if (focusId === null) {
         fitViewOnce();
         return;
@@ -274,7 +292,48 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         <Controls />
       </ReactFlow>
       <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} />
-      <Legend />
+
+      {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다 */}
+      <div className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2">
+        {selectedEdge && (
+          <div className="max-w-sm rounded-lg border px-3 py-2 text-xs"
+               style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
+                        color: "var(--body-text)" }}
+               data-testid="ErdViewer-edgeDetail">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="truncate font-mono font-semibold" style={{ color: "var(--ink)" }}>
+                {getQname(selectedEdge.src_object_id)} → {getQname(selectedEdge.tgt_object_id)}
+              </span>
+              <button className="icon-button ml-auto"
+                      onClick={() => setSelectedEdgeId(null)}
+                      data-testid="ErdViewer-edgeDetailClose">
+                <CloseIcon />
+              </button>
+            </div>
+            <div style={{ color: "var(--slate)" }}>
+              {t(GRADE_LABEL[getEdgeGrade(selectedEdge.kind)])}
+            </div>
+            <div className="font-mono">
+              {getColumnPairs(selectedEdge)
+                .map((c) => `${c.src_column} = ${c.tgt_column}`).join(", ")}
+            </div>
+            {selectedEdge.confidence !== null && selectedEdge.confidence !== undefined && (
+              <div style={{ color: "var(--slate)" }}>
+                confidence {selectedEdge.confidence.toFixed(2)}
+              </div>
+            )}
+            {selectedEdge.cardinality && (
+              <div style={{ color: "var(--slate)" }}>cardinality {selectedEdge.cardinality}</div>
+            )}
+            {selectedEdge.last_verified_at && (
+              <div style={{ color: "var(--slate)" }}>
+                {t("erd.edgeVerifiedAt")} {selectedEdge.last_verified_at}
+              </div>
+            )}
+          </div>
+        )}
+        <Legend />
+      </div>
 
       {graph === null && !error && (
         <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2
@@ -319,45 +378,6 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
               {t("erd.goVerify")}
             </Link>
           </div>
-        </div>
-      )}
-
-      {/* 엣지 클릭 → 검증 근거 카드 / the clicked edge's provenance */}
-      {selectedEdge && (
-        <div className="absolute bottom-3 right-3 z-20 max-w-sm rounded-lg border px-3 py-2 text-xs"
-             style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
-                      color: "var(--body-text)" }}
-             data-testid="ErdViewer-edgeDetail">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="truncate font-mono font-semibold" style={{ color: "var(--ink)" }}>
-              {getQname(selectedEdge.src_object_id)} → {getQname(selectedEdge.tgt_object_id)}
-            </span>
-            <button className="icon-button ml-auto"
-                    onClick={() => setSelectedEdgeId(null)}
-                    data-testid="ErdViewer-edgeDetailClose">
-              <CloseIcon />
-            </button>
-          </div>
-          <div style={{ color: "var(--slate)" }}>
-            {t(GRADE_LABEL[getEdgeGrade(selectedEdge.kind)])}
-          </div>
-          <div className="font-mono">
-            {getColumnPairs(selectedEdge)
-              .map((c) => `${c.src_column} = ${c.tgt_column}`).join(", ")}
-          </div>
-          {selectedEdge.confidence !== null && selectedEdge.confidence !== undefined && (
-            <div style={{ color: "var(--slate)" }}>
-              confidence {selectedEdge.confidence.toFixed(2)}
-            </div>
-          )}
-          {selectedEdge.cardinality && (
-            <div style={{ color: "var(--slate)" }}>cardinality {selectedEdge.cardinality}</div>
-          )}
-          {selectedEdge.last_verified_at && (
-            <div style={{ color: "var(--slate)" }}>
-              {t("erd.edgeVerifiedAt")} {selectedEdge.last_verified_at}
-            </div>
-          )}
         </div>
       )}
 
