@@ -7,6 +7,8 @@
 
 ## 2026-08-07
 
+- **ERD·검색 UX 브랜치(feature/erd-search-ux) 진행 — Task 1: 공통 검색 랭킹 lib** — `getMatchRank`: 정확(0) > 접두어(1) > 포함(2) > 순서 유사(3) 판정·비매칭 Infinity 반환(대소문자 무시, query 공백 trim). `rankSearchResults`: 비매칭 제외 정렬 후 반환(rank 우선, 동단계 이름 사전순). 파일: `frontend/src/lib/search-rank.ts` + test, vitest 4/4 통과, tsc 클린. TDD 순서(테스트→실패→구현→통과) 준수.
+
 - **ERD·검색 UX 개선 설계·계획** — 머지 직후 사용자 피드백 9건(꺾은선 엣지·호버 컬럼 내비·범례 이동·맵 검색·더블클릭 토글·엣지 라벨·타입 줄바꿈·검증 콤보박스·검색 랭킹 통일)을 스펙+6태스크 계획으로. 핵심 결정: 검색 랭킹은 백엔드 무변경 — 전량 로드 목록 위 클라이언트 4단계(정확>접두어>포함>순서 유사) 공통 lib, 호버 자동 펼침은 해제 후에도 유지(레이아웃 요동 방지), 엣지 라벨은 호버 시에만. 스펙/계획: `docs/superpowers/{specs,plans}/2026-08-07-erd-search-ux*.md`.
 
 - **검증 분리 + 읽기 전용 ERD — 브랜치 머지 완료** (feature/verify-page-readonly-erd, 21커밋). `/verify` 신설(피커→후보 페어→게이트→containment→프리뷰→확정, 검증 대기 목록+AI 제안 이사)·`/erd` 재작성(confirmed+FK 전체 그래프, 연결요소 클러스터, `?focus=` 딥링크)·앵커 그래프 API와 캔버스 검증 UI(ErdCanvas·JoinBuilder 등 10파일) 삭제. 주요 결정: 게이트 샘플 통계는 페어가 아닌 **컬럼 속성으로 캐시**(0014), 게이트는 원본 값 비노출이라 allowlist·감사 무관, 빈 표본은 차단 근거로 안 씀(ratio 1.0), 검증 UI 경합(페어 전환 중 stale 응답)은 요청 시점 페어 캡처로 폐기. 리뷰 루프가 잡은 실결함: 수동 페어 선택 불능, stale 응답의 게이트 우회, union-find 무한 루프, last_verified_at 커버리지 유실 — 전부 수정 후 재리뷰 통과. 검증: 백엔드 330 passed·프론트 62+tsc+lint+build, API 스모크(43건 대기→게이트 캐시 적중→확정→ERD 성장) 통과. **시각 스모크는 미수행**(브라우저 확장 미연결) — 후속 확인 필요. 파킹: 근거 카드 kind 축약, erd.aiNotice 키 네이밍, 링크 label 인코딩, 검색 stale 가드, ErdCanvas-* testid 잔재, docs/ui-review.md 구 시나리오, relations confirm의 rejected 미거부(기존 코드).
