@@ -12,6 +12,8 @@ import type { GraphNode } from "@/lib/types";
 interface ErdSearchProps {
   nodes: GraphNode[];
   onPick: (nodeId: number) => void;
+  /** true면 nodes가 비어 있는 이유가 아직 그래프 로딩 중이라서다 — searchEmpty 대신 로딩 문구 */
+  loading?: boolean;
 }
 
 const MAX_RESULTS = 20;
@@ -20,7 +22,7 @@ function getLabel(node: GraphNode): string {
   return `${node.schema}.${node.name}`;
 }
 
-export function ErdSearch({ nodes, onPick }: ErdSearchProps) {
+export function ErdSearch({ nodes, onPick, loading = false }: ErdSearchProps) {
   const { t } = useI18n();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -94,7 +96,8 @@ export function ErdSearch({ nodes, onPick }: ErdSearchProps) {
           {results.length === 0 ? (
             <li className="px-2 py-1.5 text-xs" style={{ color: "var(--muted)" }}
                 data-testid="ErdSearch-emptyState">
-              {t("erd.searchEmpty")}
+              {/* 그래프 로딩 중엔 nodes가 비어 매 타이핑마다 "없는 테이블"로 오해시킨다 */}
+              {t(loading ? "erd.graphLoading" : "erd.searchEmpty")}
             </li>
           ) : (
             results.map((node, idx) => (

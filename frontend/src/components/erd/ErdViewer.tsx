@@ -226,22 +226,31 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     void layoutGroups(groups, graph.edges, expandedNodes).then((placed) => {
       if (cancelled) return;
       placedRef.current = placed;
-      setFlowNodes(graph.nodes.map((n) => ({
-        id: String(n.id),
-        type: "tableNode" as const,
-        position: { x: placed.get(n.id)?.x ?? 0, y: placed.get(n.id)?.y ?? 0 },
-        data: {
-          node: n,
-          expanded: expandedNodes.has(n.id),
-          // 읽기 전용에선 앵커 강조가 곧 focus 강조 / the anchor style doubles as focus
-          isAnchor: n.id === highlightedId,
-          highlightColumns: null,
-          onExpandNeighbors: null, // 읽기 전용 — 이웃 확장 없음
-          onToggleNode: toggleNode,
-          onSelectColumn: () => undefined,
-          onVisibleColumnsChange: () => undefined,
-        },
-      })));
+      setFlowNodes(graph.nodes.map((n) => {
+        const expanded = expandedNodes.has(n.id);
+        return {
+          id: String(n.id),
+          type: "tableNode" as const,
+          position: { x: placed.get(n.id)?.x ?? 0, y: placed.get(n.id)?.y ?? 0 },
+          // measured를 여기서부터 실어 보낸다 — 없으면 이 배열이 통째로 교체될 때(검색 픽
+          // 이후 재레이아웃 등) React Flow가 모든 노드를 미측정으로 되돌려 handleBounds가
+          // 리셋되고 그 노드들의 엣지가 한 프레임 통째로 언마운트된다(@xyflow/system
+          // parseHandles). displayNodes가 같은 패턴으로 이어받는다.
+          measured: estimateNodeSize(n, expanded),
+          data: {
+            node: n,
+            expanded,
+            // isAnchor는 displayNodes에서 highlightedId로 계산한다 — 검색 픽마다 이 이펙트가
+            // 다시 돌면 ELK가 불필요하게 재실행된다(레이아웃과 하이라이트를 분리).
+            isAnchor: false,
+            highlightColumns: null,
+            onExpandNeighbors: null, // 읽기 전용 — 이웃 확장 없음
+            onToggleNode: toggleNode,
+            onSelectColumn: () => undefined,
+            onVisibleColumnsChange: () => undefined,
+          },
+        };
+      }));
       setFlowEdges(graph.edges.map((e) => {
         const visual = getEdgeVisual(e.kind, e.confidence ?? undefined);
         const ends = getCardinalityEnds(e.cardinality);
@@ -284,7 +293,9 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedNodes, focusId, highlightedId, toggleNode, centerOn, fitViewOnce]);
+    // highlightedId는 여기서 안 쓴다 — 검색 픽은 displayNodes의 isAnchor만 갈아 끼우고
+    // ELK 재레이아웃은 건드리지 않는다 / search picks skip this effect on purpose
+  }, [graph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -299,34 +310,36 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     [graph, hoveredEdgeId],
   );
 
-  // 호버 오버레이는 레이아웃 결과(flowNodes/flowEdges) 위에 덧씌운다 — 호버가 배치를
-  // 다시 계산하게 두면 포인터 아래에서 그래프가 흔들린다.
-  // hover state is layered on top of the layout output, never folded back into it
+  // 앵커(검색 픽·URL focus)·호버 오버레이는 레이아웃 결과(flowNodes/flowEdges) 위에 덧씌운다 —
+  // 재계산이 배치를 다시 흔들지 않게, 그리고 새로 만드는 모든 노드 객체에 measured를 실어
+  // handleBounds가 리셋되지 않게 한다. measured 없이 나가면 adoptUserNodes가 그 노드를
+  // 미측정으로 되돌리고(@xyflow/system parseHandles: userNode.measured 없으면 handleBounds까지
+  // undefined) 그 노드에 붙은 엣지가 한 프레임 언마운트된다 — 검색 픽 하이라이트 갱신에서도
+  // 예외가 아니라서 매핑 전량에 붙인다.
+  // every object this produces carries `measured`, or its edges flash for a frame on swap —
+  // that includes the isAnchor-only update path a search pick takes, not just hover
   const displayNodes = useMemo(() => {
-    if (!hoveredEdge) return flowNodes;
-    const pairs = getColumnPairs(hoveredEdge);
-    const srcId = String(hoveredEdge.src_object_id);
-    const tgtId = String(hoveredEdge.tgt_object_id);
+    const pairs = hoveredEdge ? getColumnPairs(hoveredEdge) : [];
+    const srcId = hoveredEdge ? String(hoveredEdge.src_object_id) : null;
+    const tgtId = hoveredEdge ? String(hoveredEdge.tgt_object_id) : null;
     return flowNodes.map((n) => {
       // self-join이면 한 노드가 양끝이라 두 목록을 합친다
       const columns = [
         ...(n.id === srcId ? pairs.map((c) => c.src_column) : []),
         ...(n.id === tgtId ? pairs.map((c) => c.tgt_column) : []),
       ];
-      if (columns.length === 0) return n;
-      // measured를 반드시 실어 보낸다 — 없으면 adoptUserNodes가 이 노드를 미측정으로 되돌리고
-      // (@xyflow/system parseHandles: userNode.measured 없으면 handleBounds까지 undefined)
-      // 그 노드에 붙은 엣지가 한 프레임 언마운트된다. 호버 엣지 자신이 사라지면 mouseout이
-      // 발화해 호버가 즉시 풀린다. ELK 입력과 같은 추정치라 배치와도 일관된다.
-      // carrying `measured` keeps handleBounds alive across the object swap; without it every
-      // edge on this node unmounts for a frame and the hover cancels itself
       return {
         ...n,
         measured: estimateNodeSize(n.data.node, n.data.expanded),
-        data: { ...n.data, highlightColumns: columns },
+        data: {
+          ...n.data,
+          // 읽기 전용에선 앵커 강조가 곧 focus 강조 / the anchor style doubles as focus
+          isAnchor: n.data.node.id === highlightedId,
+          highlightColumns: columns.length > 0 ? columns : null,
+        },
       };
     });
-  }, [flowNodes, hoveredEdge]);
+  }, [flowNodes, hoveredEdge, highlightedId]);
 
   const displayEdges = useMemo(() => {
     if (!hoveredEdge) return flowEdges;
@@ -398,7 +411,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         <Background color="var(--hairline)" />
         <Controls />
       </ReactFlow>
-      <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} />
+      <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} loading={graph === null} />
 
       {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다.
           컨테이너는 클릭을 통과시키고(폭이 다른 두 자식 사이 빈 여백이 캔버스 pan/zoom을 가로채지 않도록),

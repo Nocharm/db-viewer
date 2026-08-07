@@ -596,12 +596,9 @@ input::placeholder {
 }
 
 /* ── React Flow 다크 대응 ── */
-/* 캔버스 안에서만 — 헤더가 노드 드래그 핸들 / header doubles as the node drag handle */
+/* nodesDraggable=false라 드래그 불가 — 더블클릭 펼침/접힘 어포던스로 pointer / not draggable; hints the dblclick toggle instead */
 .react-flow .erd-node__header {
-  cursor: grab;
-}
-.react-flow .erd-node__header:active {
-  cursor: grabbing;
+  cursor: pointer;
 }
 
 /* 컬럼 행 조인 그립 — 히트박스는 행 전체 높이(TableNode.tsx COLUMN_HANDLE_*_STYLE),
