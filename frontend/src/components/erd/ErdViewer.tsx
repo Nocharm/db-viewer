@@ -22,6 +22,7 @@ import { groupConnectedComponents } from "@/lib/erd-graph";
 import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
+import { ErdSearch } from "./ErdSearch";
 import { Legend } from "./Legend";
 import { TableNode, type TableFlowNode } from "./TableNode";
 
@@ -112,6 +113,9 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // isAnchor 하이라이트의 일반화 상태 — 초기값은 URL ?focus=, 이후 맵 검색 픽으로 갱신된다.
+  // focusMissing 배너는 이 state가 아니라 URL 원본 focusId를 계속 참조한다(검색 픽이 배너를 띄우면 안 됨).
+  const [highlightedId, setHighlightedId] = useState<number | null>(focusId);
   const { setCenter, fitView } = useReactFlow();
   // fresh 마운트에선 ReactFlow 초기화 전 setCenter가 무시된다 — onInit까지 보류
   // setCenter before ReactFlow init is lost; defer until onInit
@@ -121,6 +125,8 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   // focus 없이 진입한 첫 레이아웃에서 전체 맞춤 — 재레이아웃마다 반복 호출하지 않도록 1회만
   const fitViewDoneRef = useRef(false);
   const pendingFitViewRef = useRef(false);
+  // 마지막으로 배치된 노드 좌표 — 맵 검색 픽이 레이아웃 이펙트 밖에서도 centerOn 좌표를 찾을 수 있게 한다
+  const placedRef = useRef<Map<number, PlacedNode>>(new Map());
 
   useEffect(() => {
     fetchErdGraph()
@@ -142,8 +148,15 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       pendingCenterRef.current = { x, y };
       return;
     }
-    void setCenter(x, y, { zoom: 0.75, duration: 300 });
+    void setCenter(x, y, { zoom: 0.75, duration: 500 });
   }, [setCenter]);
+
+  // 맵 검색 픽 → 하이라이트 갱신 + 마지막 배치 좌표로 센터링(fetch 없이 로드된 nodes 기반)
+  const handleSearchPick = useCallback((id: number) => {
+    setHighlightedId(id);
+    const target = placedRef.current.get(id);
+    if (target) centerOn(target.x + target.width / 2, target.y + target.height / 2);
+  }, [centerOn]);
 
   const fitViewOnce = useCallback(() => {
     if (fitViewDoneRef.current) return;
@@ -162,6 +175,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     const groups = groupConnectedComponents(graph.nodes, graph.edges);
     void layoutGroups(groups, graph.edges, expandedNodes).then((placed) => {
       if (cancelled) return;
+      placedRef.current = placed;
       setFlowNodes(graph.nodes.map((n) => ({
         id: String(n.id),
         type: "tableNode" as const,
@@ -170,7 +184,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
           node: n,
           expanded: expandedNodes.has(n.id),
           // 읽기 전용에선 앵커 강조가 곧 focus 강조 / the anchor style doubles as focus
-          isAnchor: n.id === focusId,
+          isAnchor: n.id === highlightedId,
           highlightColumns: null,
           onExpandNeighbors: null, // 읽기 전용 — 이웃 확장 없음
           onToggleNode: toggleNode,
@@ -210,7 +224,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
+  }, [graph, expandedNodes, focusId, highlightedId, toggleNode, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -259,6 +273,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         <Background color="var(--hairline)" />
         <Controls />
       </ReactFlow>
+      <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} />
       <Legend />
 
       {graph === null && !error && (

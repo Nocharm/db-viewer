@@ -163,6 +163,11 @@ export const MESSAGES = {
   "erd.focusMissing": { ko: "{label}은 아직 검증되지 않았습니다", en: "{label} has not been verified yet" },
   "erd.goVerify": { ko: "조인 검증으로", en: "Open Join Verify" },
   "erd.edgeVerifiedAt": { ko: "검증 시각", en: "Verified at" },
+  "erd.searchPlaceholder": { ko: "ERD에서 테이블 찾기", en: "Find a table in the ERD" },
+  "erd.searchEmpty": {
+    ko: "그래프에 없는 테이블입니다 — 검증된 테이블만 그려집니다",
+    en: "Not in the graph — only verified tables are drawn",
+  },
 
   "panel.verify": { ko: "조인 검증", en: "Check join" },
 
