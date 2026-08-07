@@ -27,7 +27,8 @@ def get_erd_graph(db: Session = Depends(get_db)) -> dict:
         f"{schema}.{name}": oid
         for oid, schema, name in db.execute(
             select(CatalogObject.id, CatalogObject.schema, CatalogObject.name)
-            .where(CatalogObject.snapshot_id == sid)
+            # 뷰 완전 제외 방어선 — API로 뷰 컬럼 관계를 confirm해도 뷰 노드가 그려지지 않도록
+            .where(CatalogObject.snapshot_id == sid, CatalogObject.type == "table")
         )
         if schema.lower() not in hidden
     }

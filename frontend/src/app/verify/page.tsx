@@ -64,6 +64,9 @@ function VerifyPageInner() {
   const [src, setSrc] = useState<ObjectSummary | null>(null);
   const [tgt, setTgt] = useState<ObjectSummary | null>(null);
   const [pair, setPair] = useState<PairCandidate | null>(null);
+  // src=&srcCol=만 있고 tgt가 없는 딥링크의 srcCol — 페어를 못 만들어도 버리지 않고
+  // PairCandidateList의 수동 선택(src쪽)을 미리 채우는 데 쓴다
+  const [manualSrcColumnId, setManualSrcColumnId] = useState<number | null>(null);
   const [state, setState] = useState<VerifyState>(createInitialState);
   const [gateBusy, setGateBusy] = useState(false);
   const [containmentBusy, setContainmentBusy] = useState(false);
@@ -94,8 +97,10 @@ function VerifyPageInner() {
   }, [clearBusy]);
 
   const handleSelectSide = (side: "src" | "tgt", obj: ObjectSummary | null) => {
-    if (side === "src") setSrc(obj);
-    else setTgt(obj);
+    if (side === "src") {
+      setSrc(obj);
+      setManualSrcColumnId(null); // 소스가 바뀌면 이전 딥링크의 srcCol은 더 이상 유효하지 않다
+    } else setTgt(obj);
     setPair(null);
     setState(resetForNewPair());
     setError(null);
@@ -117,7 +122,12 @@ function VerifyPageInner() {
 
       const srcCol = params.get("srcCol");
       const tgtCol = params.get("tgtCol");
-      if (!srcCol || !tgtCol || !nextSrc || !nextTgt) return;
+      if (!srcCol || !tgtCol || !nextSrc || !nextTgt) {
+        // tgt가 없으면(또는 tgtCol이 없으면) 페어를 완성할 수 없다 — srcCol은 버리지 않고
+        // 수동 선택 초기값으로 넘겨, 사용자가 tgt를 고른 뒤 이어서 채워지게 한다
+        if (srcCol && nextSrc) setManualSrcColumnId(Number(srcCol));
+        return;
+      }
       // 컬럼 id만으로는 이름·타입을 모른다 — 상세에서 메타를 채워 페어를 완성한다
       const [srcDetail, tgtDetail] = await Promise.all([
         fetchObjectDetail(nextSrc.id), fetchObjectDetail(nextTgt.id),
@@ -247,6 +257,7 @@ function VerifyPageInner() {
               tgtObjectId={tgt.id}
               selectedPair={pair}
               onPick={handlePickPair}
+              initialManualSrcColumnId={manualSrcColumnId}
             />
           )}
         </div>

@@ -14,12 +14,14 @@ interface PairCandidateListProps {
   tgtObjectId: number;
   selectedPair: PairCandidate | null;
   onPick: (pair: PairCandidate) => void;
+  /** 딥링크가 src 컬럼만 싣고 tgt를 못 정했을 때의 수동 선택 초기값(src쪽만) */
+  initialManualSrcColumnId?: number | null;
 }
 
 type DetailColumn = ObjectDetail["columns"][number];
 
 export function PairCandidateList({
-  srcObjectId, tgtObjectId, selectedPair, onPick,
+  srcObjectId, tgtObjectId, selectedPair, onPick, initialManualSrcColumnId = null,
 }: PairCandidateListProps) {
   const { t } = useI18n();
   const [items, setItems] = useState<PairCandidate[]>([]);
@@ -56,11 +58,17 @@ export function PairCandidateList({
 
   // 반쪽 선택은 여기 산다 — 페어가 완성되기 전에는 부모(selectedPair)가 담을 수 없다
   // the half-picked state lives here: the parent's pair can't represent "one side chosen"
-  const [manual, setManual] = useState(() => toManualSelection(selectedPair));
+  // src만 실은 딥링크(tgt 미정)는 이 초기값으로 들어온다 — 마운트 시 한 번만 반영
+  const [manual, setManual] = useState(() => (
+    initialManualSrcColumnId !== null
+      ? { srcColumnId: initialManualSrcColumnId, tgtColumnId: null }
+      : toManualSelection(selectedPair)
+  ));
 
-  // 후보 클릭·딥링크로 페어가 바뀌면 드롭다운도 그 페어를 가리킨다
+  // 후보 클릭·딥링크로 페어가 바뀌면 드롭다운도 그 페어를 가리킨다 — null로는 되돌리지
+  // 않는다(그러면 마운트 직후 위의 초기 seed를 이 effect가 곧바로 지워버린다)
   useEffect(() => {
-    setManual(toManualSelection(selectedPair));
+    if (selectedPair) setManual(toManualSelection(selectedPair));
   }, [selectedPair]);
 
   const handleManualChange = (side: "src" | "tgt", columnId: number | null) => {

@@ -35,6 +35,30 @@ def _column_id(migrated_engine, qname: str, column: str) -> int:
         ).scalar_one()
 
 
+def _object_id(migrated_engine, qname: str) -> int:
+    from app.models import Base
+
+    obj_t = Base.metadata.tables["objects"]
+    schema, name = qname.split(".", 1)
+    with migrated_engine.connect() as conn:
+        return conn.execute(
+            sa.select(obj_t.c.id).where(obj_t.c.schema == schema, obj_t.c.name == name)
+        ).scalar_one()
+
+
+@pytest.fixture()
+def vclient(client, fixture_dir):
+    """FakeJoinValidator를 주입한 클라이언트 (test_preview_confirm.py와 동일 패턴) —
+    gate·pending 신규 테스트가 containment 경로를 태우는 데 쓴다."""
+    from app.adapters.fake_validator import FakeJoinValidator
+    from app.api.validate import get_join_validator
+
+    client.app.dependency_overrides[get_join_validator] = lambda: FakeJoinValidator(
+        fixture_dir / "value_sets.json"
+    )
+    return client
+
+
 @pytest.fixture()
 def preview_password(monkeypatch):
     """토글 게이트는 미리보기 허용 목록과 같은 비밀번호를 쓴다 (test_preview_allowlist와 동일)."""
@@ -208,3 +232,55 @@ def test_matching_ignores_case(client, load_fixture, hide_schemas):
     obj = _an_object(client)
     hide_schemas(SCHEMA.upper())
     assert client.get(f"/api/objects/{obj['id']}/detail").json()["columns"] == []
+
+
+def test_gate_is_refused_for_a_hidden_column(vclient, load_fixture, migrated_engine,
+                                             hide_schemas):
+    """게이트도 컬럼 판정 경로다 — 표본 조회 전에 감춘 스키마부터 막혀야 한다."""
+    _seed(vclient, load_fixture)
+    ids = {
+        "src_column_id": _column_id(migrated_engine, f"{SCHEMA}.HR_EMP_FAMILY", "EMP_NO"),
+        "tgt_column_id": _column_id(migrated_engine, f"{SCHEMA}.HR_EMP", "EMP_NO"),
+    }
+    assert vclient.post("/api/validate/gate", json=ids).status_code == 200
+
+    hide_schemas(SCHEMA)
+    assert vclient.post("/api/validate/gate", json=ids).status_code == 403
+
+
+def test_pair_candidates_are_refused_for_a_hidden_schema(client, load_fixture,
+                                                          migrated_engine, hide_schemas):
+    """테이블 단위 후보 조회도 컬럼 신호를 반환한다 — 감추면 조회 자체를 막는다."""
+    _seed(client, load_fixture)
+    params = {
+        "src_object_id": _object_id(migrated_engine, f"{SCHEMA}.HR_EMP_FAMILY"),
+        "tgt_object_id": _object_id(migrated_engine, f"{SCHEMA}.HR_EMP"),
+    }
+    assert client.get("/api/validate/pair-candidates", params=params).status_code == 200
+
+    hide_schemas(SCHEMA)
+    assert client.get("/api/validate/pair-candidates", params=params).status_code == 403
+
+
+def test_pending_excludes_a_hidden_schemas_relations(vclient, load_fixture, migrated_engine,
+                                                      hide_schemas):
+    """다른 곳처럼 403이 아니다 — 대기 목록은 조회 자체가 아니라 다음 검증 대상을 고르는
+    화면이라 감춘 스키마의 관계는 조용히 빠진다(test_preview_confirm.py의 관계 생성 패턴)."""
+    _seed(vclient, load_fixture)
+    rel = next(r for r in load_fixture("expected/relations.json")["rows"]
+               if r["kind"] == "real_no_fk" and r["orphan_count"] == 0)
+    ids = {
+        "src_column_id": _column_id(migrated_engine, rel["src_object"], rel["src_column"]),
+        "tgt_column_id": _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"]),
+    }
+    vclient.post("/api/validate/containment", json=ids)
+
+    pair = (rel["src_object"], rel["src_column"])
+    before = [(i["src_object"], i["src_column"])
+              for i in vclient.get("/api/relations/pending").json()["items"]]
+    assert pair in before
+
+    hide_schemas(SCHEMA)
+    after = [(i["src_object"], i["src_column"])
+             for i in vclient.get("/api/relations/pending").json()["items"]]
+    assert pair not in after

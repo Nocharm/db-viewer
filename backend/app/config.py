@@ -137,7 +137,7 @@ class Settings(BaseSettings):
         "USE_YN", "DEL_YN", "STATUS_CD", "TYPE_CD", "KIND_CD", "UNIT_CD",
     ]
 
-    # 조인 게이트 — TOP-N 샘플 크기와 유니크니스 임계. 양쪽 모두 distinct/rows가 임계
+    # Tuning: 조인 게이트 — TOP-N 샘플 크기와 유니크니스 임계. 양쪽 모두 distinct/rows가 임계
     # 미만이면(둘 다 중복투성이 = m:n 추정) 전수 containment 전에 차단한다.
     gate_sample_top: int = 200
     gate_distinct_ratio: float = 0.9

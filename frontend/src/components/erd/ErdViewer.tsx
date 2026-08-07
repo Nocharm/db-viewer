@@ -112,12 +112,15 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { setCenter } = useReactFlow();
+  const { setCenter, fitView } = useReactFlow();
   // fresh 마운트에선 ReactFlow 초기화 전 setCenter가 무시된다 — onInit까지 보류
   // setCenter before ReactFlow init is lost; defer until onInit
   const flowReadyRef = useRef(false);
   const pendingCenterRef = useRef<{ x: number; y: number } | null>(null);
   const centeredFocusRef = useRef<number | null>(null);
+  // focus 없이 진입한 첫 레이아웃에서 전체 맞춤 — 재레이아웃마다 반복 호출하지 않도록 1회만
+  const fitViewDoneRef = useRef(false);
+  const pendingFitViewRef = useRef(false);
 
   useEffect(() => {
     fetchErdGraph()
@@ -141,6 +144,16 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     }
     void setCenter(x, y, { zoom: 0.75, duration: 300 });
   }, [setCenter]);
+
+  const fitViewOnce = useCallback(() => {
+    if (fitViewDoneRef.current) return;
+    fitViewDoneRef.current = true;
+    if (!flowReadyRef.current) {
+      pendingFitViewRef.current = true;
+      return;
+    }
+    void fitView({ duration: 300 });
+  }, [fitView]);
 
   // 그래프·접힘 변경 → 그룹별 ELK 재배치 / re-layout on graph or collapse changes
   useEffect(() => {
@@ -183,8 +196,12 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         } as Edge;
       }));
 
-      // focus 대상이 그래프에 있으면 그 좌표로 센터링 — 대상당 1회 / centre once per focus
-      if (focusId === null || centeredFocusRef.current === focusId) return;
+      // focus 없이 들어오면 전체 맞춤(fitView), 있으면 그 좌표로 센터링 — 둘 다 대상당 1회
+      if (focusId === null) {
+        fitViewOnce();
+        return;
+      }
+      if (centeredFocusRef.current === focusId) return;
       const target = placed.get(focusId);
       if (!target) return;
       centeredFocusRef.current = focusId;
@@ -193,7 +210,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [graph, expandedNodes, focusId, toggleNode, centerOn]);
+  }, [graph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -229,9 +246,14 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         onInit={() => {
           flowReadyRef.current = true;
           const pendingCenter = pendingCenterRef.current;
-          if (!pendingCenter) return;
-          pendingCenterRef.current = null;
-          void setCenter(pendingCenter.x, pendingCenter.y, { zoom: 0.75 });
+          if (pendingCenter) {
+            pendingCenterRef.current = null;
+            void setCenter(pendingCenter.x, pendingCenter.y, { zoom: 0.75 });
+          }
+          if (pendingFitViewRef.current) {
+            pendingFitViewRef.current = false;
+            void fitView({ duration: 300 });
+          }
         }}
       >
         <Background color="var(--hairline)" />
@@ -270,9 +292,10 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       )}
 
       {isEmpty && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center"
+        // 컨테이너는 클릭을 통과시키고(Legend 등 아래 요소가 계속 눌리도록), 카드에만 복원
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
              data-testid="ErdViewer-emptyState">
-          <div className="max-w-md rounded-xl border p-8 text-center"
+          <div className="pointer-events-auto max-w-md rounded-xl border p-8 text-center"
                style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}>
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
               {t("erd.emptyReadOnly")}
