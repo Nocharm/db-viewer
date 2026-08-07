@@ -99,7 +99,7 @@ def test_confirm_requires_prior_validation(vclient, migrated_engine, load_fixtur
 
 def test_confirm_promotes_and_survives_revalidation(vclient, migrated_engine, load_fixture):
     _seed(vclient, load_fixture)
-    rel, ids = _relation_pair(migrated_engine, load_fixture)
+    _, ids = _relation_pair(migrated_engine, load_fixture)
 
     vclient.post("/api/validate/containment", json=ids)
     body = vclient.post("/api/relations/confirm",
@@ -115,13 +115,7 @@ def test_confirm_promotes_and_survives_revalidation(vclient, migrated_engine, lo
             a.action for a in conn.execute(sa.select(Base.metadata.tables["audit_logs"])).all()
         ]
     assert "confirm" in audit_actions
-
-    # 그래프에 confirmed 엣지로 노출 / surfaces as a confirmed edge
-    _, table = rel["src_object"].split(".", 1)
-    items = vclient.get("/api/objects", params={"q": table}).json()["items"]
-    anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == rel["src_object"])
-    graph = vclient.get(f"/api/objects/{anchor['id']}/graph").json()
-    assert any(e["kind"] == "confirmed" for e in graph["edges"])
+    # 읽기 전용 ERD에 confirmed 엣지로 노출되는 것은 test_erd_api.py가 이미 커버한다
 
 
 def test_pending_lists_candidates_and_maps_ids(vclient, migrated_engine, load_fixture):

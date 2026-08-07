@@ -104,7 +104,6 @@ def test_the_toggle_never_opens_the_columns(client, load_fixture, hide_schemas,
     body = client.get(f"/api/objects/{obj['id']}/detail").json()
     assert body["hidden"] is True
     assert body["columns"] == []
-    assert client.get(f"/api/objects/{obj['id']}/graph").status_code == 403
 
 
 def test_the_admin_view_exposes_the_schemas_read_only(client, hide_schemas):
@@ -142,15 +141,6 @@ def test_the_column_search_index_drops_hidden_schemas(client, load_fixture, hide
 
     hide_schemas(SCHEMA)
     assert client.get("/api/objects/columns-index").json()["items"] == []
-
-
-def test_the_erd_graph_refuses_a_hidden_anchor(client, load_fixture, hide_schemas):
-    _seed(client, load_fixture)
-    obj = _an_object(client)
-    assert client.get(f"/api/objects/{obj['id']}/graph").status_code == 200
-
-    hide_schemas(SCHEMA)
-    assert client.get(f"/api/objects/{obj['id']}/graph").status_code == 403
 
 
 def test_candidates_are_refused_for_a_hidden_column(client, load_fixture, migrated_engine,

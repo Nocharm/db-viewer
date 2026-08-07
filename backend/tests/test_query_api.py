@@ -1,4 +1,4 @@
-"""Query API tests — search, graph expansion, lineage, diff. / 조회 API 테스트."""
+"""Query API tests — search, view lineage, diff. / 조회 API 테스트."""
 
 import copy
 
@@ -62,54 +62,6 @@ def test_search_without_ready_snapshot_is_404(client):
     res = client.get("/api/objects", params={"q": "x"})
     assert res.status_code == 404
     assert res.json()["error"]["message"] == "no ready snapshot"
-
-
-def test_graph_depth1_returns_fk_neighborhood(client, load_fixture):
-    _seed(client, load_fixture)
-    rel = load_fixture("expected/relations.json")["rows"][0]
-    src_name = rel["src_object"].split(".", 1)[1]
-    anchor = _find_object(client, src_name, "table")
-
-    graph = client.get(f"/api/objects/{anchor['id']}/graph", params={"depth": 1}).json()
-    node_ids = {n["id"] for n in graph["nodes"]}
-    assert anchor["id"] in node_ids
-    assert len(node_ids) > 1  # FK 이웃 포함 / includes FK neighbors
-    for e in graph["edges"]:
-        assert e["src_object_id"] in node_ids and e["tgt_object_id"] in node_ids
-    fk_edges = [e for e in graph["edges"] if e["kind"] == "fk"]
-    assert fk_edges and all(e["columns"] for e in fk_edges)
-
-
-def test_graph_depth2_is_superset_of_depth1(client, load_fixture):
-    _seed(client, load_fixture)
-    rel = load_fixture("expected/relations.json")["rows"][0]
-    anchor = _find_object(client, rel["src_object"].split(".", 1)[1], "table")
-    d1 = client.get(f"/api/objects/{anchor['id']}/graph", params={"depth": 1}).json()
-    d2 = client.get(f"/api/objects/{anchor['id']}/graph", params={"depth": 2}).json()
-    assert {n["id"] for n in d1["nodes"]} <= {n["id"] for n in d2["nodes"]}
-
-
-def test_graph_depth_is_capped(client, load_fixture):
-    _seed(client, load_fixture)
-    anchor = _find_object(client, "V_CHAIN_01", "view")
-    assert client.get(f"/api/objects/{anchor['id']}/graph", params={"depth": 5}).status_code == 422
-
-
-def test_graph_on_view_has_lineage_edges(client, load_fixture):
-    _seed(client, load_fixture)
-    anchor = _find_object(client, "V_CHAIN_05", "view")
-    graph = client.get(f"/api/objects/{anchor['id']}/graph", params={"depth": 1}).json()
-    vl = [e for e in graph["edges"] if e["kind"] == "view_lineage"
-          and e["src_object_id"] == anchor["id"]]
-    assert vl and vl[0]["columns"]  # base table로 향하는 lineage 엣지
-
-
-def test_graph_flagged_view_carries_lineage_flag(client, load_fixture):
-    _seed(client, load_fixture)
-    anchor = _find_object(client, "V_CHAIN_12", "view")
-    graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
-    me = next(n for n in graph["nodes"] if n["id"] == anchor["id"])
-    assert me["lineage_flag"] == "depth_exceeded"
 
 
 def test_view_lineage_endpoint_cycle_and_chain(client, load_fixture):

@@ -202,17 +202,6 @@ def test_ai_candidate_cannot_be_confirmed_without_validation(ai_job_client, migr
     assert "validation" in res.json()["error"]["message"]
 
 
-def test_ai_candidates_render_as_ai_suggested_edges(ai_job_client, migrated_engine, load_fixture):
-    _seed(ai_job_client, load_fixture)
-    created = _run_suggest_job(ai_job_client)["items"]
-    target = created[0]
-    _, table = target["src_object"].split(".", 1)
-    items = ai_job_client.get("/api/objects", params={"q": table}).json()["items"]
-    anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == target["src_object"])
-    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph").json()
-    assert any(e["kind"] == "ai_suggested" for e in graph["edges"])
-
-
 def test_search_tables_endpoint(client, load_fixture):
     _seed(client, load_fixture)
     body = client.get("/api/ai/search-tables", params={"q": "ZZQX_NOPE"}).json()
@@ -429,6 +418,7 @@ def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
     from app.api.ai import get_ai_client
 
     _seed(client, load_fixture)
+    # rows[0]은 kind="fk" — FK 엣지가 있어 /api/erd 노드에 항상 포함된다
     rel = load_fixture("expected/relations.json")["rows"][0]
     _, table = rel["src_object"].split(".", 1)
     items = client.get("/api/objects", params={"q": table}).json()["items"]
@@ -448,8 +438,8 @@ def test_summarize_caches_and_feeds_graph_tooltip(client, load_fixture):
     finally:
         client.app.dependency_overrides.pop(get_ai_client)
 
-    graph = client.get(f"/api/objects/{anchor['id']}/graph").json()
-    me = next(n for n in graph["nodes"] if n["id"] == anchor["id"])
+    erd = client.get("/api/erd").json()
+    me = next(n for n in erd["nodes"] if n["id"] == anchor["id"])
     assert me["ai_summary"] == first["summary"]
 
 
@@ -605,63 +595,6 @@ def test_judgements_persist_reason_and_rejections(ai_job_client, migrated_engine
     first_keys = {(r.src_object, r.src_column, r.tgt_object, r.tgt_column) for r in rows}
     assert len(first_keys) == len(rows)  # 중복 적재 없음
     assert second["suggested"] == 0 or second["created"] + second["rejected"] > 0  # 다음 창으로 전진
-
-
-def test_rejected_relations_never_render_as_edges(ai_job_client, migrated_engine, load_fixture):
-    """기각 relation은 그래프 엣지로 그려지지 않는다.
-
-    FakeAiClient는 후보 우주(view_join ∪ 동명↔PK)를 전량 수용하므로 이 엔드포인트
-    흐름에서는 rejected 행이 생기지 않아 공허 통과한다 — _SplitAi로 기각을 강제
-    생성해 실제로 검증되게 한다 (사이클2 리뷰 Finding 1).
-    """
-    from app.api.ai import get_ai_client
-    from app.adapters.ai import RelationJudgement
-
-    _seed(ai_job_client, load_fixture)
-
-    class _SplitAi:
-        def judge_relations(self, candidates):
-            return [
-                RelationJudgement(
-                    src_object=c.src_object, src_column=c.src_column,
-                    tgt_object=c.tgt_object, tgt_column=c.tgt_column,
-                    accepted=(i % 2 == 0), reason=f"근거 {i}",
-                )
-                for i, c in enumerate(candidates)
-            ]
-
-    ai_job_client.app.dependency_overrides[get_ai_client] = lambda: _SplitAi()
-    try:
-        body = _run_suggest_job(ai_job_client)
-    finally:
-        ai_job_client.app.dependency_overrides.pop(get_ai_client)
-
-    assert body["created"] > 0  # index 0은 항상 수용 — 앵커 선정 근거
-    target = body["items"][0]
-    _, table = target["src_object"].split(".", 1)
-    anchor = ai_job_client.get("/api/objects", params={"q": table}).json()["items"][0]
-    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph?depth=3").json()
-    assert graph["edges"]  # 앵커에 실제 엣지가 잡힌다 — 공허 통과 방지 선행 단언
-
-    with migrated_engine.connect() as conn:
-        rel_t = Base.metadata.tables["relations"]
-        rejected = conn.execute(
-            sa.select(rel_t).where(rel_t.c.status == "rejected")).all()
-    rejected_ids = {f"rel-{r.id}" for r in rejected}
-    assert rejected_ids  # 기각 행이 실제로 존재 — 이중 공허 방지 선행 단언
-    assert all(e["id"] not in rejected_ids for e in graph["edges"])
-
-
-def test_ai_suggested_edges_carry_reason(ai_job_client, migrated_engine, load_fixture):
-    _seed(ai_job_client, load_fixture)
-    body = _run_suggest_job(ai_job_client)
-    assert body["created"] > 0
-    target = body["items"][0]
-    _, table = target["src_object"].split(".", 1)
-    anchor = ai_job_client.get("/api/objects", params={"q": table}).json()["items"][0]
-    graph = ai_job_client.get(f"/api/objects/{anchor['id']}/graph").json()
-    ai_edges = [e for e in graph["edges"] if e["kind"] == "ai_suggested"]
-    assert ai_edges and all(e.get("reason") for e in ai_edges)
 
 
 # 사이클2 Task 5: suggest 202 전환 — 동시 실행 가드

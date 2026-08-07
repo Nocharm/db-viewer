@@ -43,9 +43,8 @@ def find_object_id(base: str, qname: str) -> int:
 
 def find_column_id(base: str, qname: str, column: str) -> int:
     object_id = find_object_id(base, qname)
-    graph = call(base, "GET", f"/api/objects/{object_id}/graph?depth=1")
-    anchor = next(n for n in graph["nodes"] if n["id"] == object_id)
-    for col in anchor["columns"]:
+    detail = call(base, "GET", f"/api/objects/{object_id}/detail")
+    for col in detail["columns"]:
         if col["name"] == column:
             return col["id"]
     raise SystemExit(f"column not found: {qname}.{column}")
@@ -148,11 +147,12 @@ def main() -> None:
              {"login_id": login_id, "note": note}, headers=ADMIN)
     print("whitelist: hong.gil, kim.chulsoo")
 
-    # 결과 확인 — 확정 앵커의 그래프에 엣지 종류가 실제로 섞였는지 / verify edge kinds
+    # 결과 확인 — 확정 관계가 읽기 전용 ERD에 실제로 반영됐는지 / verify it surfaces in the read-only ERD
     anchor_id = find_object_id(base, rels["confirm"]["src_object"])
-    graph = call(base, "GET", f"/api/objects/{anchor_id}/graph?depth=1")
-    kinds = sorted({e["kind"] for e in graph["edges"]})
-    print(f"\n앵커 {rels['confirm']['src_object']} (id {anchor_id}) depth1 엣지 종류: {kinds}")
+    erd = call(base, "GET", "/api/erd")
+    kinds = sorted({e["kind"] for e in erd["edges"]
+                    if anchor_id in (e["src_object_id"], e["tgt_object_id"])})
+    print(f"\n앵커 {rels['confirm']['src_object']} (id {anchor_id}) ERD 엣지 종류: {kinds}")
     print("→ 검색창에 위 테이블명을 넣고 시작하세요. 체크리스트: docs/ui-review.md")
 
 

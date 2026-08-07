@@ -132,28 +132,6 @@ def test_orphan_relation_reports_orphans(vclient, migrated_engine, load_fixture)
     assert body["containment"] < 1.0
 
 
-def test_validated_relation_appears_as_inferred_edge(vclient, migrated_engine, load_fixture):
-    _seed(vclient, load_fixture)
-    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
-    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
-    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
-    vclient.post("/api/validate/containment", json={
-        "src_column_id": src_id, "tgt_column_id": tgt_id,
-    })
-
-    _, table = rel["src_object"].split(".", 1)
-    items = vclient.get("/api/objects", params={"q": table}).json()["items"]
-    anchor = next(i for i in items if f"{i['schema']}.{i['name']}" == rel["src_object"])
-    graph = vclient.get(f"/api/objects/{anchor['id']}/graph").json()
-
-    inferred = [e for e in graph["edges"] if e["kind"] == "inferred"]
-    assert inferred
-    edge = inferred[0]
-    assert edge["confidence"] is not None
-    assert edge["last_verified_at"]
-    assert edge["columns"] == [{"src_column": rel["src_column"], "tgt_column": rel["tgt_column"]}]
-
-
 def test_containment_on_column_without_data_is_404(vclient, migrated_engine, load_fixture):
     _seed(vclient, load_fixture)
     # 값 집합이 없는 일반 컬럼 (관계 비관련) / a column with no value set
