@@ -83,31 +83,25 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
   const [visibleCount, setVisibleCount] = useState(RENDER_CHUNK);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const wasExpandedRef = useRef(expanded);
+  // 배열 identity가 아니라 내용으로 스크롤 이펙트를 트리거 — 부모가 매 렌더 새 배열을 넘겨도 안전
+  const highlightKey = highlightColumns?.join(",") ?? "";
 
   // 접었다 펴면 처음 청크부터 / restart chunking when re-expanded
   useEffect(() => {
     if (collapsed) setVisibleCount(RENDER_CHUNK);
   }, [collapsed]);
 
-  // 접힘→펼침 전환 + 하이라이트 존재 시 첫 하이라이트 행을 스크롤 뷰포트로 (스펙 §1.2.3,
-  // 이번까지 미구현) — 드래그 중 자동 펼침(ErdCanvas onNodeMouseEnter)과 딥링크 자동 펼침
-  // (Finding A) 둘 다 여길 통과한다. highlightColumns는 순수 hover 강조(엣지·노드 hover)에도
-  // 쓰이지만 그건 expanded를 건드리지 않으므로 전환 여부로 가드하면 hover 스크롤은 안 섞인다.
-  // 60행 청크 아래(대략 20행 밑)는 펼쳐도 스크롤 없인 안 보인다는 게 원래 결함이었다.
-  // scroll the first highlighted row into view on a collapsed→expanded transition while a
-  // highlight is active (spec §1.2.3, never implemented before now) — covers both the
-  // drag-hover auto-expand path (ErdCanvas onNodeMouseEnter) and the deep-link auto-expand
-  // (Finding A). highlightColumns is also set by plain hover emphasis (edge/node hover),
-  // but that never touches `expanded`, so gating on the transition keeps hover scrolling
-  // out of this. Without it, a candidate below roughly row 20 stayed invisible even expanded.
+  // 하이라이트가 살아 있는 동안 첫 하이라이트 행을 스크롤 뷰포트로 — 펼침 전환(드래그 중
+  // 자동 펼침·딥링크 자동 펼침)과 이미 펼쳐진 노드의 하이라이트 교체(엣지 호버 컬럼 내비)를
+  // 모두 덮는다. 60행 청크 안이라도 대략 20행 밑은 스크롤 없이는 안 보인다.
+  // scroll the first highlighted row into view whenever a highlight is active — covers both
+  // the collapsed→expanded transitions (drag hover, deep link) and a highlight swap on an
+  // already-expanded node (edge-hover column navigation).
   useEffect(() => {
-    const justExpanded = expanded && !wasExpandedRef.current;
-    wasExpandedRef.current = expanded;
-    if (!justExpanded || !highlightColumns || highlightColumns.length === 0) return;
+    if (!expanded || highlightKey === "") return;
     const row = scrollRef.current?.querySelector<HTMLElement>(".erd-node__row--hl");
     row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [expanded, highlightColumns]);
+  }, [expanded, highlightKey]);
 
   // 바닥 도달 → 다음 청크 / append the next chunk at the bottom
   useEffect(() => {
@@ -166,13 +160,19 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
         isView ? "erd-node--view" : "",
         isAnchor ? "erd-node--selected" : "",
       ].join(" ")}
-      onDoubleClick={() => data.onToggleNode(node.id)}
       data-testid={`ErdCanvas-node-${node.id}`}
     >
       <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
 
-      <div className="erd-node__header" title={node.ai_summary ?? undefined}>
+      {/* 더블클릭 토글은 헤더 한정 — 컬럼 행은 선택(onSelectColumn)이 있어 겹치면 안 된다.
+          select-none은 더블클릭이 헤더 텍스트를 선택 반전시키는 것을 막는다 */}
+      <div
+        className="erd-node__header select-none"
+        title={node.ai_summary ?? undefined}
+        onDoubleClick={() => data.onToggleNode(node.id)}
+        data-testid={`ErdNode-header-${node.id}`}
+      >
         <span className="erd-node__type">{isView ? "VIEW" : "TBL"}</span>
         <span className="flex-1 truncate">{node.schema}.{node.name}</span>
         {/* 접힘 상태에서도 규모가 보이게 / column count visible while folded */}
@@ -233,7 +233,9 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
                   {col.name}
                   {col.is_computed ? " ƒ" : ""}
                 </span>
-                <span className="erd-node__type">
+                {/* 타입은 줄바꿈·축소 금지 — 좁아지면 컬럼명 쪽 truncate가 흡수해 행이 한 줄로 남는다
+                    / the type never wraps or shrinks; the name's truncate absorbs the squeeze */}
+                <span className="erd-node__type shrink-0 whitespace-nowrap">
                   {col.data_type}
                   {col.is_nullable ? "" : " *"}
                 </span>

@@ -31,6 +31,16 @@ const nodeTypes = { tableNode: TableNode };
 /** 연결요소 사이 세로 간격(px) — 그룹 경계를 알아보게 하는 유일한 단서라 여백이 넉넉해야 한다 */
 const GROUP_GAP = 120;
 
+/** 호버 세션 중 나머지 엣지 투명도 — 등급별 기본 톤(0.5~1.0)보다 확실히 낮아야 대비가 선다 */
+const HOVER_DIM_OPACITY = 0.25;
+
+/** 호버 라벨 필 — 새 색 없이 카드 표면·hairline 테두리 재사용 / surface + hairline, no new hues */
+const EDGE_LABEL_STYLE = { fontSize: 11, fill: "var(--ink)" } as const;
+const EDGE_LABEL_BG_STYLE = {
+  fill: "var(--surface-card)", stroke: "var(--hairline-strong)", strokeWidth: 1,
+} as const;
+const EDGE_LABEL_BG_PADDING: [number, number] = [6, 3];
+
 /** 엣지 등급 → 범례와 같은 문구 / edge grade to the same wording the legend uses */
 const GRADE_LABEL: Record<EdgeGrade, MessageKey> = {
   confirmed: "erd.legendConfirmed",
@@ -51,6 +61,16 @@ interface PlacedNode {
 function getColumnPairs(edge: GraphEdge): { src_column: string; tgt_column: string }[] {
   return edge.columns.filter(
     (c): c is { src_column: string; tgt_column: string } => typeof c !== "string");
+}
+
+/** 호버 라벨 문구 — 첫 페어만 쓰고 나머지는 개수로 접는다(선 위 필이 길어지면 노드를 가린다).
+ * first pair only; the rest collapse into a +N counter. */
+function formatColumnPairLabel(edge: GraphEdge): string | undefined {
+  const pairs = getColumnPairs(edge);
+  const first = pairs[0];
+  if (!first) return undefined;
+  const rest = pairs.length - 1;
+  return `${first.src_column} → ${first.tgt_column}${rest > 0 ? ` +${rest}` : ""}`;
 }
 
 /** 연결요소별로 ELK를 독립 실행해 세로로 적층한다 — 한 번에 돌리면 ELK가 무관한 그룹을
@@ -110,6 +130,8 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  // 호버 세션은 스타일 전용 state — 재레이아웃 없이 강조·감쇠·라벨만 갈아 끼운다
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +166,23 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       return next;
     });
   }, []);
+
+  // 엣지 호버 = 양끝 펼침 + 컬럼 하이라이트. 펼침은 leave 후에도 유지한다 — 되접으면
+  // ELK가 다시 돌아 포인터 아래 그래프가 통째로 움직인다(스펙 §1.2 요동 방지).
+  // hovering an edge expands both ends; the expansion outlives the hover on purpose
+  const handleEdgeMouseEnter = useCallback((_event: unknown, edge: Edge) => {
+    setHoveredEdgeId(edge.id);
+    const ends = [Number(edge.source), Number(edge.target)];
+    setExpandedNodes((current) => {
+      // 이미 둘 다 펼쳐져 있으면 같은 Set을 돌려 재레이아웃 자체를 건너뛴다
+      if (ends.every((id) => current.has(id))) return current;
+      const next = new Set(current);
+      for (const id of ends) next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleEdgeMouseLeave = useCallback(() => setHoveredEdgeId(null), []);
 
   const centerOn = useCallback((x: number, y: number) => {
     if (!flowReadyRef.current) {
@@ -202,17 +241,16 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       setFlowEdges(graph.edges.map((e) => {
         const visual = getEdgeVisual(e.kind, e.confidence ?? undefined);
         const ends = getCardinalityEnds(e.cardinality);
-        const pairs = getColumnPairs(e);
         return {
           id: e.id,
+          // 꺾은선 — 직교 라우팅(layout.ts)과 짝을 이뤄 노드 관통을 줄인다
+          type: "smoothstep",
           source: String(e.src_object_id),
           target: String(e.tgt_object_id),
           style: visual,
           markerStart: ends.source ? `url(#${MARKER_ID[ends.source]})` : undefined,
           markerEnd: ends.target ? `url(#${MARKER_ID[ends.target]})` : undefined,
-          // 라벨은 컬럼명만 — 카디널리티는 마커, 근거는 클릭 카드가 맡는다
-          label: pairs.length > 0 ? pairs.map((c) => c.src_column).join(", ") : undefined,
-          labelStyle: { fontSize: 10, fill: "var(--slate)" },
+          // 라벨은 호버 중인 엣지에만 — 전량 표시는 선 위 글자가 그래프를 덮는다(아래 displayEdges)
           "data-testid": `ErdViewer-edge-${e.id}`,
         } as Edge;
       }));
@@ -252,6 +290,50 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     () => (graph?.edges ?? []).find((e) => e.id === selectedEdgeId) ?? null,
     [graph, selectedEdgeId],
   );
+  const hoveredEdge = useMemo(
+    () => (graph?.edges ?? []).find((e) => e.id === hoveredEdgeId) ?? null,
+    [graph, hoveredEdgeId],
+  );
+
+  // 호버 오버레이는 레이아웃 결과(flowNodes/flowEdges) 위에 덧씌운다 — 호버가 배치를
+  // 다시 계산하게 두면 포인터 아래에서 그래프가 흔들린다.
+  // hover state is layered on top of the layout output, never folded back into it
+  const displayNodes = useMemo(() => {
+    if (!hoveredEdge) return flowNodes;
+    const pairs = getColumnPairs(hoveredEdge);
+    const srcId = String(hoveredEdge.src_object_id);
+    const tgtId = String(hoveredEdge.tgt_object_id);
+    return flowNodes.map((n) => {
+      // self-join이면 한 노드가 양끝이라 두 목록을 합친다
+      const columns = [
+        ...(n.id === srcId ? pairs.map((c) => c.src_column) : []),
+        ...(n.id === tgtId ? pairs.map((c) => c.tgt_column) : []),
+      ];
+      if (columns.length === 0) return n;
+      return { ...n, data: { ...n.data, highlightColumns: columns } };
+    });
+  }, [flowNodes, hoveredEdge]);
+
+  const displayEdges = useMemo(() => {
+    if (!hoveredEdge) return flowEdges;
+    return flowEdges.map((e) => {
+      if (e.id !== hoveredEdge.id) {
+        return { ...e, style: { ...e.style, opacity: HOVER_DIM_OPACITY } };
+      }
+      const width = typeof e.style?.strokeWidth === "number" ? e.style.strokeWidth : 2;
+      return {
+        ...e,
+        style: { ...e.style, strokeWidth: width + 1, opacity: 1 },
+        zIndex: 1, // 감쇠된 이웃 위로 / above the dimmed neighbours
+        label: formatColumnPairLabel(hoveredEdge),
+        labelShowBg: true,
+        labelStyle: EDGE_LABEL_STYLE,
+        labelBgStyle: EDGE_LABEL_BG_STYLE,
+        labelBgPadding: EDGE_LABEL_BG_PADDING,
+        labelBgBorderRadius: 6,
+      };
+    });
+  }, [flowEdges, hoveredEdge]);
 
   const getQname = (id: number): string => {
     const node = nodeById.get(id);
@@ -265,13 +347,15 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     <div className="relative h-full w-full" data-testid="ErdViewer-canvas">
       <CardinalityMarkerDefs />
       <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
+        nodes={displayNodes}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
         nodesConnectable={false}
         edgesFocusable
         onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)}
+        onEdgeMouseEnter={handleEdgeMouseEnter}
+        onEdgeMouseLeave={handleEdgeMouseLeave}
         onPaneClick={() => setSelectedEdgeId(null)}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}

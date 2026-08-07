@@ -7,7 +7,7 @@
 
 ## 2026-08-07
 
-- **ERD·검색 UX 브랜치(feature/erd-search-ux) 진행 — Task 1: 공통 검색 랭킹 lib** — `getMatchRank`: 정확(0) > 접두어(1) > 포함(2) > 순서 유사(3) 판정·비매칭 Infinity 반환(대소문자 무시, query 공백 trim). `rankSearchResults`: 비매칭 제외 정렬 후 반환(rank 우선, 동단계 이름 사전순). 파일: `frontend/src/lib/search-rank.ts` + test, vitest 4/4 통과, tsc 클린. TDD 순서(테스트→실패→구현→통과) 준수. Task 2: 브라우저 검색 정확 우선 정렬. Task 3: 검증 콤보박스. Task 4: ERD 맵 검색·범례 이동.
+- **ERD·검색 UX 브랜치(feature/erd-search-ux) 진행 — Task 1: 공통 검색 랭킹 lib** — `getMatchRank`: 정확(0) > 접두어(1) > 포함(2) > 순서 유사(3) 판정·비매칭 Infinity 반환(대소문자 무시, query 공백 trim). `rankSearchResults`: 비매칭 제외 정렬 후 반환(rank 우선, 동단계 이름 사전순). 파일: `frontend/src/lib/search-rank.ts` + test, vitest 4/4 통과, tsc 클린. TDD 순서(테스트→실패→구현→통과) 준수. Task 2: 브라우저 검색 정확 우선 정렬. Task 3: 검증 콤보박스. Task 4: ERD 맵 검색·범례 이동. Task 5: 꺾은선 엣지·호버 컬럼 내비·노드 개선.
 
 - **ERD·검색 UX 개선 설계·계획** — 머지 직후 사용자 피드백 9건(꺾은선 엣지·호버 컬럼 내비·범례 이동·맵 검색·더블클릭 토글·엣지 라벨·타입 줄바꿈·검증 콤보박스·검색 랭킹 통일)을 스펙+6태스크 계획으로. 핵심 결정: 검색 랭킹은 백엔드 무변경 — 전량 로드 목록 위 클라이언트 4단계(정확>접두어>포함>순서 유사) 공통 lib, 호버 자동 펼침은 해제 후에도 유지(레이아웃 요동 방지), 엣지 라벨은 호버 시에만. 스펙/계획: `docs/superpowers/{specs,plans}/2026-08-07-erd-search-ux*.md`.
 
