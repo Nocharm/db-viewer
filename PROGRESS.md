@@ -132,3 +132,5 @@
 - **프로젝트 초기화** — claude-code-template 기반 셋업. 스택은 FastAPI(Python) + Next.js(TypeScript)로 결정, 백엔드/프론트엔드/양 언어 룰 모두 유지. 템플릿 메타 문서(docs/template/)와 템플릿 개발 이력(PROGRESS) 제거. 상세 설계·스캐폴딩은 후속 계획으로 진행 예정.
 - **Task 5: n8n W2 sample_distinct kind** — W2 query executor에 `sample_distinct` 쿼리 kind 추가. TOP-N 표본 수·distinct 집계만 반환하고 원본 값은 노출하지 않음(gate-only). BUILD_QUERY_JS에 분기 추가·notes 업데이트·워크플로 JSON 재생성, 테스트 통과.
 - **Task 14: 딥링크 재편** — `/erd?anchor=` → `/erd?focus=` 치환 + 컬럼 클릭 `/verify` 프리필 재배선. `page.tsx`의 handleOpenErd·handleOpenColumn 교체(후자는 /verify?src·srcLabel·srcCol·tgtLabel·tgtCol 계약으로 전환, columnName 미사용 제거), `ChatPanel.tsx`의 anchor→focus, `TableDetail.tsx`의 onOpenColumn 타입·호출부 정리. TypeScript/ESLint/vitest 전 통과. Task 15: 구 검증 UI 삭제.
+
+- **Task 6: 전체 게이트 + README 영향 확인** — 프론트엔드 게이트(tsc ✓·eslint ✓·vitest 12 files 72 tests ✓·build ✓), 백엔드 게이트(pytest 331 tests ✓). README `## 화면` 절의 ERD 설명 수정: "앵커 검색·1-hop 확장·조인 빌더는 없다" → "테이블 검색과 호버 컬럼 내비게이션을 제공하며, 1-hop 확장·조인 빌더는 없다"(이번 변경 Task 4·5 반영).
