@@ -28,4 +28,14 @@ describe("groupConnectedComponents", () => {
   it("keeps an empty graph empty", () => {
     expect(groupConnectedComponents([], [])).toEqual([]);
   });
+
+  it("ignores edges referencing absent nodes", () => {
+    const nodes = [1, 2].map(makeNode);
+    const edges = [makeEdge("a", 1, 2), makeEdge("b", 2, 999)]; // 999는 없음
+
+    const groups = groupConnectedComponents(nodes, edges);
+
+    expect(groups.map((g) => g.map((n) => n.id).sort((x, y) => x - y)))
+      .toEqual([[1, 2]]); // 999 엣지는 무시, 1-2만 연결
+  });
 });

@@ -14,6 +14,8 @@ export function groupConnectedComponents(
   };
   for (const n of nodes) parent.set(n.id, n.id);
   for (const e of edges) {
+    // 그래프에 없는 노드를 참조하는 엣지는 무시 — 그룹핑 대상이 아님
+    if (!parent.has(e.src_object_id) || !parent.has(e.tgt_object_id)) continue;
     const a = find(e.src_object_id);
     const b = find(e.tgt_object_id);
     if (a !== b) parent.set(a, b);
