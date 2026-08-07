@@ -46,9 +46,10 @@ export async function layoutGraph(
       "elk.layered.spacing.nodeNodeBetweenLayers": "80",
       "elk.spacing.nodeNode": "32",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-      // 직교 라우팅 + 엣지 여백 — 렌더는 React Flow smoothstep이 맡지만, ELK가 같은 가정으로
-      // 배치해야 꺾은선이 노드를 관통하지 않는다 / orthogonal routing keeps the smoothstep
-      // render from cutting through node cards; the spacings reserve the corridor for it
+      // 꺾은선(React Flow smoothstep)이 지날 회랑을 확보하는 건 아래 spacing 둘이다.
+      // edgeRouting은 layered의 기본값이라 실측상 배치를 바꾸지 않지만, 이 배치가 직교
+      // 라우팅을 전제한다는 의도를 명시로 남긴다 / the two spacings are what actually
+      // reserve the corridor; edgeRouting is layered's default and measured as a no-op
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.edgeNode": "24",
       "elk.spacing.edgeEdge": "12",

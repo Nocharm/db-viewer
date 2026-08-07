@@ -182,7 +182,11 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     });
   }, []);
 
-  const handleEdgeMouseLeave = useCallback(() => setHoveredEdgeId(null), []);
+  // 떠난 엣지가 지금 호버 중인 엣지일 때만 해제 — 엣지 재마운트로 leave가 늦게 도착하면
+  // 이미 시작된 다음 호버를 지워버린다 / only clear the session this leave belongs to
+  const handleEdgeMouseLeave = useCallback((_event: unknown, edge: Edge) => {
+    setHoveredEdgeId((current) => (current === edge.id ? null : current));
+  }, []);
 
   const centerOn = useCallback((x: number, y: number) => {
     if (!flowReadyRef.current) {
@@ -243,7 +247,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         const ends = getCardinalityEnds(e.cardinality);
         return {
           id: e.id,
-          // 꺾은선 — 직교 라우팅(layout.ts)과 짝을 이뤄 노드 관통을 줄인다
+          // 꺾은선 — layout.ts의 엣지 간격 확보와 짝을 이뤄 노드 관통을 줄인다
           type: "smoothstep",
           source: String(e.src_object_id),
           target: String(e.tgt_object_id),
@@ -310,21 +314,33 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         ...(n.id === tgtId ? pairs.map((c) => c.tgt_column) : []),
       ];
       if (columns.length === 0) return n;
-      return { ...n, data: { ...n.data, highlightColumns: columns } };
+      // measured를 반드시 실어 보낸다 — 없으면 adoptUserNodes가 이 노드를 미측정으로 되돌리고
+      // (@xyflow/system parseHandles: userNode.measured 없으면 handleBounds까지 undefined)
+      // 그 노드에 붙은 엣지가 한 프레임 언마운트된다. 호버 엣지 자신이 사라지면 mouseout이
+      // 발화해 호버가 즉시 풀린다. ELK 입력과 같은 추정치라 배치와도 일관된다.
+      // carrying `measured` keeps handleBounds alive across the object swap; without it every
+      // edge on this node unmounts for a frame and the hover cancels itself
+      return {
+        ...n,
+        measured: estimateNodeSize(n.data.node, n.data.expanded),
+        data: { ...n.data, highlightColumns: columns },
+      };
     });
   }, [flowNodes, hoveredEdge]);
 
   const displayEdges = useMemo(() => {
     if (!hoveredEdge) return flowEdges;
-    return flowEdges.map((e) => {
+    const dimmed: Edge[] = [];
+    let emphasized: Edge | null = null;
+    for (const e of flowEdges) {
       if (e.id !== hoveredEdge.id) {
-        return { ...e, style: { ...e.style, opacity: HOVER_DIM_OPACITY } };
+        dimmed.push({ ...e, style: { ...e.style, opacity: HOVER_DIM_OPACITY } });
+        continue;
       }
       const width = typeof e.style?.strokeWidth === "number" ? e.style.strokeWidth : 2;
-      return {
+      emphasized = {
         ...e,
         style: { ...e.style, strokeWidth: width + 1, opacity: 1 },
-        zIndex: 1, // 감쇠된 이웃 위로 / above the dimmed neighbours
         label: formatColumnPairLabel(hoveredEdge),
         labelShowBg: true,
         labelStyle: EDGE_LABEL_STYLE,
@@ -332,7 +348,10 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         labelBgPadding: EDGE_LABEL_BG_PADDING,
         labelBgBorderRadius: 6,
       };
-    });
+    }
+    // 배열 맨 뒤 = 다른 엣지 위. zIndex를 올리면 엣지 레이어가 노드 레이어까지 넘어서
+    // 긴 엣지가 카드를 관통해 보인다 / last in the array, not raised out of the edge layer
+    return emphasized ? [...dimmed, emphasized] : dimmed;
   }, [flowEdges, hoveredEdge]);
 
   const getQname = (id: number): string => {
@@ -353,6 +372,10 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         nodesDraggable={false}
         nodesConnectable={false}
         edgesFocusable
+        // 헤더 더블클릭 = 펼침/접힘 전용. d3의 dblclick.zoom은 캔버스 자체에 걸려 있어
+        // 노드 쪽 stopPropagation으로는 못 막는다 — 여기서 꺼야 줌이 같이 튀지 않는다
+        // / d3 binds dblclick.zoom on the pane, so stopPropagation upstream cannot stop it
+        zoomOnDoubleClick={false}
         onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)}
         onEdgeMouseEnter={handleEdgeMouseEnter}
         onEdgeMouseLeave={handleEdgeMouseLeave}
