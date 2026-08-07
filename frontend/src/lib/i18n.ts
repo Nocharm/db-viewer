@@ -194,6 +194,13 @@ export const MESSAGES = {
     ko: "뷰를 포함하면 {n}개 노드를 그립니다. 계속할까요?",
     en: "Including views renders {n} nodes. Continue?",
   },
+  "erd.emptyReadOnly": {
+    ko: "검증된 관계가 아직 없습니다 — 조인 검증에서 키를 확정하면 여기 그려집니다",
+    en: "No verified relations yet — confirm a key in Join Verify and it shows up here",
+  },
+  "erd.focusMissing": { ko: "{label}은 아직 검증되지 않았습니다", en: "{label} has not been verified yet" },
+  "erd.goVerify": { ko: "조인 검증으로", en: "Open Join Verify" },
+  "erd.edgeVerifiedAt": { ko: "검증 시각", en: "Verified at" },
 
   "panel.verify": { ko: "조인 검증", en: "Check join" },
 

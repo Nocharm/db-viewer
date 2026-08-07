@@ -17,7 +17,8 @@ export interface TableNodeData extends Record<string, unknown> {
   isAnchor: boolean;
   /** 호버 강조·조인 추천으로 강조된 컬럼명 / columns to highlight */
   highlightColumns: string[] | null;
-  onExpandNeighbors: (id: number) => void;
+  /** null이면 읽기 전용 — 이웃 확장 버튼 자체를 렌더하지 않는다 / null hides the expand button */
+  onExpandNeighbors: ((id: number) => void) | null;
   onToggleNode: (id: number) => void;
   onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
   /** 스크롤 뷰포트 안의 컬럼 보고 — 엣지 앵커 해석에 쓰인다 */
@@ -74,7 +75,7 @@ const RENDER_CHUNK = 60;
 export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
   const { t } = useI18n();
   const updateNodeInternals = useUpdateNodeInternals();
-  const { node, expanded, isAnchor, highlightColumns } = data;
+  const { node, expanded, isAnchor, highlightColumns, onExpandNeighbors } = data;
   const isView = node.type === "view";
   const collapsed = !expanded;
   const highlight = highlightColumns ? new Set(highlightColumns) : null;
@@ -187,14 +188,16 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
         >
           {collapsed ? <CaretRightIcon size={11} /> : <CaretDownIcon size={11} />}
         </button>
-        <button
-          className="icon-button"
-          data-testid={`ErdNode-expandButton-${node.id}`}
-          onClick={() => data.onExpandNeighbors(node.id)}
-          title={t("erd.expandNeighbors")}
-        >
-          +
-        </button>
+        {onExpandNeighbors && (
+          <button
+            className="icon-button"
+            data-testid={`ErdNode-expandButton-${node.id}`}
+            onClick={() => onExpandNeighbors(node.id)}
+            title={t("erd.expandNeighbors")}
+          >
+            +
+          </button>
+        )}
       </div>
 
       {!collapsed && (
