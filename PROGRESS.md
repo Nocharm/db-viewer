@@ -7,7 +7,7 @@
 
 ## 2026-08-07
 
-- **검증 분리 브랜치(feature/verify-page-readonly-erd) 진행** — Task 1: 게이트 캐시용 컬럼 샘플 통계 필드(0014). Task 2: 게이트 튜닝 설정(GATE_SAMPLE_TOP/GATE_DISTINCT_RATIO). Task 4: 검증기 sample_stats(Fake·n8n). Task 6: 게이트 엔드포인트. Task 7: 페어 후보 API. Task 8: 검증 대기 목록 API. Task 9: 읽기 전용 ERD 그래프 API. Task 10: 프론트 API 레이어·verify-flow. Task 11: /verify 페이지. Task 12: ERD 연결요소 그룹핑. Task 13: 읽기 전용 ErdViewer. Task 16: 앵커 그래프 API 삭제. Task 17: README·전체 검증. 최종 리뷰 수정 7건.
+- **검증 분리 + 읽기 전용 ERD — 브랜치 머지 완료** (feature/verify-page-readonly-erd, 21커밋). `/verify` 신설(피커→후보 페어→게이트→containment→프리뷰→확정, 검증 대기 목록+AI 제안 이사)·`/erd` 재작성(confirmed+FK 전체 그래프, 연결요소 클러스터, `?focus=` 딥링크)·앵커 그래프 API와 캔버스 검증 UI(ErdCanvas·JoinBuilder 등 10파일) 삭제. 주요 결정: 게이트 샘플 통계는 페어가 아닌 **컬럼 속성으로 캐시**(0014), 게이트는 원본 값 비노출이라 allowlist·감사 무관, 빈 표본은 차단 근거로 안 씀(ratio 1.0), 검증 UI 경합(페어 전환 중 stale 응답)은 요청 시점 페어 캡처로 폐기. 리뷰 루프가 잡은 실결함: 수동 페어 선택 불능, stale 응답의 게이트 우회, union-find 무한 루프, last_verified_at 커버리지 유실 — 전부 수정 후 재리뷰 통과. 검증: 백엔드 330 passed·프론트 62+tsc+lint+build, API 스모크(43건 대기→게이트 캐시 적중→확정→ERD 성장) 통과. **시각 스모크는 미수행**(브라우저 확장 미연결) — 후속 확인 필요. 파킹: 근거 카드 kind 축약, erd.aiNotice 키 네이밍, 링크 label 인코딩, 검색 stale 가드, ErdCanvas-* testid 잔재, docs/ui-review.md 구 시나리오, relations confirm의 rejected 미거부(기존 코드).
 
 - **검증 분리 구현 계획 작성** — 스펙을 17개 태스크(백엔드 9 → /verify 2 → ERD 2 → 정리 4)로 분해, 태스크별 실제 코드·테스트 포함. 사전 정찰로 확정한 사실: `get_db`가 요청 성공 시 커밋이라 게이트 캐시는 flush만으로 지속, `runJoinPreview`/`fetchGraph`는 ErdCanvas 전용이라 삭제 안전. 계획: `docs/superpowers/plans/2026-08-07-verify-page-readonly-erd.md`.
 
