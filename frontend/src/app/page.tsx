@@ -196,9 +196,11 @@ function HomeInner() {
       });
       if (match.matched) items.push({ table, match });
     }
-    // 정확 매칭이 먼저 뜨도록 등급으로 정렬, 동급이면 이름순 / exact-first, then name
-    items.sort((a, b) => a.match.rank - b.match.rank
-      || a.table.name.localeCompare(b.table.name));
+    // 검색어가 있을 때만 등급 정렬 — 빈 검색어의 기본 목록은 백엔드 (schema, name) 순서를 보존한다
+    if (query.trim() !== "") {
+      items.sort((a, b) => a.match.rank - b.match.rank
+        || a.table.name.localeCompare(b.table.name));
+    }
     return items;
   }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
