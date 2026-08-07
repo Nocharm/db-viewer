@@ -107,3 +107,9 @@ export interface GraphResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+
+export interface ErdResponse {
+  snapshot_id: number | null;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}

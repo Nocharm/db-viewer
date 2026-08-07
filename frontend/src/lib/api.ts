@@ -4,6 +4,7 @@ import type {
   AiTableHit,
   CandidatesResponse,
   ContainmentResponse,
+  ErdResponse,
   GraphResponse,
   JoinPreviewResponse,
   SearchResponse,
@@ -143,8 +144,26 @@ export function fetchGraph(objectId: number, depth = 1): Promise<GraphResponse> 
   return getJson(`/api/objects/${objectId}/graph?depth=${depth}`);
 }
 
+/** confirmed+FK만 담은 읽기 전용 전체 그래프 — /erd 전용(앵커·검색 없음). */
+export function fetchErdGraph(): Promise<ErdResponse> {
+  return getJson("/api/erd");
+}
+
 export function fetchCandidates(columnId: number): Promise<CandidatesResponse> {
   return getJson(`/api/columns/${columnId}/candidates`);
+}
+
+export interface PairCandidate {
+  src_column_id: number; src_column: string; src_data_type: string;
+  tgt_column_id: number; tgt_column: string; tgt_data_type: string;
+  tgt_is_pk: boolean; score: number; signals: Record<string, number>;
+}
+
+/** 두 오브젝트 사이 컬럼 페어 후보 — /verify 페어 선택 단계에서 쓴다. */
+export function fetchPairCandidates(
+  srcObjectId: number, tgtObjectId: number,
+): Promise<{ items: PairCandidate[] }> {
+  return getJson(`/api/validate/pair-candidates?src_object_id=${srcObjectId}&tgt_object_id=${tgtObjectId}`);
 }
 
 export function runContainment(
@@ -155,11 +174,42 @@ export function runContainment(
   });
 }
 
+export interface GateSide {
+  qname: string; column: string; data_type: string; family: string;
+  sample_rows: number | null; sample_distinct: number | null;
+  ratio: number | null; cached: boolean;
+}
+
+export interface GateResult {
+  verdict: "pass" | "blocked";
+  reason: "type_mismatch" | "both_low_distinct" | null;
+  threshold: number; src: GateSide; tgt: GateSide;
+}
+
+/** containment 실행 전 사전 게이트 — 타입 패밀리 + 표본 유니크니스로 값 조회 없이 차단. */
+export function runGate(srcColumnId: number, tgtColumnId: number): Promise<GateResult> {
+  return postJson("/api/validate/gate",
+    { src_column_id: srcColumnId, tgt_column_id: tgtColumnId });
+}
+
 /** N-웨이 조인 미리보기 — 행과 실행 SQL을 함께 받는다 / rows plus the executed SQL. */
 export async function runJoinPreview(
   steps: { left_column_id: number; right_column_id: number; join_type: string }[],
 ): Promise<JoinPreviewResponse> {
   return postJson("/api/join/preview", { steps, requested_by: "ui" });
+}
+
+export interface JoinSamplePreview {
+  src: string; tgt: string; rows: Record<string, unknown>[];
+  limit: number; masked_columns: string[]; observed_at: string;
+}
+
+/** 확정 직전 1:1 페어 샘플 미리보기 — /verify 흐름 전용(N-웨이 아님). */
+export function runValidatePreview(
+  srcColumnId: number, tgtColumnId: number,
+): Promise<JoinSamplePreview> {
+  return postJson("/api/validate/preview",
+    { src_column_id: srcColumnId, tgt_column_id: tgtColumnId, requested_by: "ui" });
 }
 
 export function confirmRelation(
@@ -168,6 +218,19 @@ export function confirmRelation(
   return postJson("/api/relations/confirm", {
     src_column_id: srcColumnId, tgt_column_id: tgtColumnId, confirmed_by: "ui",
   });
+}
+
+export interface PendingRelation {
+  id: number; status: "candidate" | "validated"; origin: string;
+  confidence: number | null; reason: string | null;
+  src_object: string; src_column: string; tgt_object: string; tgt_column: string;
+  src_object_id: number | null; src_column_id: number | null;
+  tgt_object_id: number | null; tgt_column_id: number | null;
+}
+
+/** 아직 확정 안 된 관계 큐 — /verify 진입점(무엇부터 검증할지) 목록. */
+export function fetchPendingRelations(): Promise<{ items: PendingRelation[]; total: number }> {
+  return getJson("/api/relations/pending");
 }
 
 /** mock=true면 LLM 미연결 휴리스틱 결과 — 실 판단으로 오독되지 않게 화면에 표시한다.
