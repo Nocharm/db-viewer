@@ -7,7 +7,7 @@
 
 ## 2026-08-07
 
-- **검증 분리 브랜치(feature/verify-page-readonly-erd) 진행** — Task 1: 게이트 캐시용 컬럼 샘플 통계 필드(0014). Task 2: 게이트 튜닝 설정(GATE_SAMPLE_TOP/GATE_DISTINCT_RATIO). Task 4: 검증기 sample_stats(Fake·n8n). Task 6: 게이트 엔드포인트. Task 7: 페어 후보 API. Task 8: 검증 대기 목록 API.
+- **검증 분리 브랜치(feature/verify-page-readonly-erd) 진행** — Task 1: 게이트 캐시용 컬럼 샘플 통계 필드(0014). Task 2: 게이트 튜닝 설정(GATE_SAMPLE_TOP/GATE_DISTINCT_RATIO). Task 4: 검증기 sample_stats(Fake·n8n). Task 6: 게이트 엔드포인트. Task 7: 페어 후보 API. Task 8: 검증 대기 목록 API. Task 9: 읽기 전용 ERD 그래프 API.
 
 - **검증 분리 구현 계획 작성** — 스펙을 17개 태스크(백엔드 9 → /verify 2 → ERD 2 → 정리 4)로 분해, 태스크별 실제 코드·테스트 포함. 사전 정찰로 확정한 사실: `get_db`가 요청 성공 시 커밋이라 게이트 캐시는 flush만으로 지속, `runJoinPreview`/`fetchGraph`는 ErdCanvas 전용이라 삭제 안전. 계획: `docs/superpowers/plans/2026-08-07-verify-page-readonly-erd.md`.
 
