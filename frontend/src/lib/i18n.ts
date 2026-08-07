@@ -7,6 +7,8 @@ export const LANG_STORAGE_KEY = "dbv.lang";
 // 카테고리 라벨(생산·품질 등)은 도메인 데이터라 사전 대상에서 제외 / domain labels stay Korean
 export const MESSAGES = {
   "nav.tables": { ko: "테이블", en: "Tables" },
+  "nav.verify": { ko: "조인 검증", en: "Join Verify" },
+  "nav.erd": { ko: "ERD", en: "ERD" },
   "nav.parsing": { ko: "파싱 지표", en: "Parse Stats" },
   "nav.admin": { ko: "관리", en: "Admin" },
   "header.themeToggle": { ko: "다크/라이트 전환", en: "Toggle dark/light" },
@@ -194,6 +196,49 @@ export const MESSAGES = {
   },
 
   "panel.verify": { ko: "조인 검증", en: "Check join" },
+
+  // /verify — 게이트 → 포함률 → 미리보기 → 확정 4단계 화면 / the four-step verification page
+  "verify.startHint": {
+    ko: "왼쪽에서 테이블 두 개를 고르세요",
+    en: "Pick two tables on the left",
+  },
+  "verify.srcTitle": { ko: "출발 테이블", en: "Source table" },
+  "verify.tgtTitle": { ko: "대상 테이블", en: "Target table" },
+  "verify.searchPlaceholder": { ko: "테이블 검색 (2자+)", en: "Search tables (2+ chars)" },
+  "verify.clearSelection": { ko: "선택 해제", en: "Clear" },
+  "verify.candidates.title": { ko: "컬럼 페어 후보", en: "Column pair candidates" },
+  "verify.candidates.empty": {
+    ko: "후보 없음 — 아래에서 직접 고르세요",
+    en: "No candidates — pick the columns manually below",
+  },
+  "verify.candidates.manual": { ko: "직접 고르기", en: "Pick manually" },
+  "verify.gate.title": { ko: "1단계 · 사전 게이트", en: "Step 1 · Pre-gate" },
+  "verify.gate.run": { ko: "게이트 실행", en: "Run gate" },
+  "verify.gate.pass": { ko: "통과 — 검증할 수 있습니다", en: "Passed — ready to validate" },
+  "verify.gate.typeMismatch": {
+    ko: "타입 불일치 ({src} vs {tgt}) — 조인 불가",
+    en: "Type mismatch ({src} vs {tgt}) — cannot join",
+  },
+  "verify.gate.bothLowDistinct": {
+    ko: "양측 모두 중복 심함 (m:n 추정) — 다른 컬럼을 선택하세요",
+    en: "Both sides are highly duplicated (likely m:n) — pick another column",
+  },
+  "verify.gate.ratioLabel": { ko: "표본 유니크 비율", en: "Sample distinct ratio" },
+  "verify.containment.title": { ko: "2단계 · 포함률 검증", en: "Step 2 · Containment" },
+  "verify.containment.run": { ko: "포함률 검증", en: "Run containment" },
+  "verify.preview.title": { ko: "3단계 · 샘플 확인", en: "Step 3 · Sample check" },
+  "verify.preview.join": { ko: "조인 샘플 보기", en: "Show join sample" },
+  "verify.preview.sample": { ko: "Top 200 샘플", en: "Top 200 sample" },
+  "verify.preview.notAllowed": {
+    ko: "미리보기 허용 목록에 없는 스키마입니다 — 관리자에게 요청하세요",
+    en: "This schema is not on the preview allowlist — ask an admin to add it",
+  },
+  "verify.confirm.title": { ko: "4단계 · 확정", en: "Step 4 · Confirm" },
+  "verify.confirm.button": { ko: "키 확정", en: "Confirm key" },
+  "verify.confirm.done": { ko: "확정됨 — 관계 큐에서 내려갑니다", en: "Confirmed — removed from the queue" },
+  "verify.pending.title": { ko: "검증 대기 관계", en: "Pending relations" },
+  "verify.pending.empty": { ko: "대기 중인 관계 없음", en: "No pending relations" },
+  "verify.pending.aiSuggest": { ko: "AI 관계 제안", en: "AI relation suggestions" },
 
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
   "collect.hint": {
