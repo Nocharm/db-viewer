@@ -5,8 +5,6 @@ import type {
   CandidatesResponse,
   ContainmentResponse,
   ErdResponse,
-  GraphResponse,
-  JoinPreviewResponse,
   SearchResponse,
 } from "./types";
 
@@ -140,10 +138,6 @@ export function searchObjects(q: string, type?: "table" | "view"): Promise<Searc
   return getJson(`/api/objects?${params}`);
 }
 
-export function fetchGraph(objectId: number, depth = 1): Promise<GraphResponse> {
-  return getJson(`/api/objects/${objectId}/graph?depth=${depth}`);
-}
-
 /** confirmed+FK만 담은 읽기 전용 전체 그래프 — /erd 전용(앵커·검색 없음). */
 export function fetchErdGraph(): Promise<ErdResponse> {
   return getJson("/api/erd");
@@ -190,13 +184,6 @@ export interface GateResult {
 export function runGate(srcColumnId: number, tgtColumnId: number): Promise<GateResult> {
   return postJson("/api/validate/gate",
     { src_column_id: srcColumnId, tgt_column_id: tgtColumnId });
-}
-
-/** N-웨이 조인 미리보기 — 행과 실행 SQL을 함께 받는다 / rows plus the executed SQL. */
-export async function runJoinPreview(
-  steps: { left_column_id: number; right_column_id: number; join_type: string }[],
-): Promise<JoinPreviewResponse> {
-  return postJson("/api/join/preview", { steps, requested_by: "ui" });
 }
 
 export interface JoinSamplePreview {
