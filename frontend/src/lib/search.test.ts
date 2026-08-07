@@ -55,3 +55,36 @@ describe("matchTable", () => {
     expect(match.nameRange).toBeNull();
   });
 });
+
+describe("matchTable rank", () => {
+  it("ranks name matches by exact/prefix/contains", () => {
+    expect(matchTable("TB_QC_SAMPLE_RSLT", target).rank).toBe(0);
+    expect(matchTable("TB_QC", target).rank).toBe(1);
+    expect(matchTable("sample", target).rank).toBe(2);
+  });
+
+  it("falls back to order-similar name matching without a highlight range", () => {
+    // "TBRSLT" — TB_QC_SAMPLE_RSLT에 순서대로만 등장, 연속 부분문자열은 아님
+    const match = matchTable("TBRSLT", target);
+    expect(match.matched).toBe(true);
+    expect(match.rank).toBe(3);
+    expect(match.nameRange).toBeNull();
+  });
+
+  it("ranks column matches at 4", () => {
+    expect(matchTable("JUDGE", target).rank).toBe(4);
+  });
+
+  it("ranks category matches (plain and chosung) at 5", () => {
+    expect(matchTable("품질", target).rank).toBe(5);
+    expect(matchTable("ㅍㅈ", target).rank).toBe(5);
+  });
+
+  it("ranks an empty query at 0", () => {
+    expect(matchTable("  ", target).rank).toBe(0);
+  });
+
+  it("ranks non-matching queries at Infinity", () => {
+    expect(matchTable("ZZZZ", target).rank).toBe(Infinity);
+  });
+});

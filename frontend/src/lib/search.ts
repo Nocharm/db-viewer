@@ -1,5 +1,7 @@
 /** 테이블 검색 매처 — 초성·컬럼·카테고리 매칭 + 하이라이트 범위. / table search matcher. */
 
+import { getMatchRank } from "./search-rank";
+
 const CHOSUNG = [
   "ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ",
   "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ",
@@ -37,17 +39,19 @@ export interface SearchMatch {
   matchedColumn: string | null;
   /** 컬럼명 하이라이트 [시작, 끝) */
   columnRange: [number, number] | null;
+  /** 정렬용 등급 — 이름 0~3(정확·접두·포함·순서유사) < 컬럼 4 < 카테고리 5, 비매칭 Infinity */
+  rank: number;
 }
 
 const NO_MATCH: SearchMatch = {
-  matched: false, nameRange: null, matchedColumn: null, columnRange: null,
+  matched: false, nameRange: null, matchedColumn: null, columnRange: null, rank: Infinity,
 };
 
 /** 우선순위: 테이블명 → 컬럼명 → 카테고리(부분·초성) / name, then columns, then category. */
 export function matchTable(rawQuery: string, target: SearchTarget): SearchMatch {
   const query = rawQuery.trim();
   if (query === "") {
-    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null };
+    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 0 };
   }
   const upper = query.toUpperCase();
 
@@ -56,7 +60,15 @@ export function matchTable(rawQuery: string, target: SearchTarget): SearchMatch 
     return {
       matched: true, nameRange: [nameIndex, nameIndex + query.length],
       matchedColumn: null, columnRange: null,
+      // indexOf가 찾았다는 건 정확·접두·포함 중 하나 — getMatchRank로 등급만 산출
+      rank: getMatchRank(query, target.name),
     };
+  }
+
+  // 이름 부분 포함이 실패해도 순서 유사(rank 3)는 한 번 더 시도한다.
+  // 다만 순서 유사는 불연속 매칭이라 하이라이트 범위를 그릴 수 없어 nameRange는 null.
+  if (getMatchRank(query, target.name) === 3) {
+    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 3 };
   }
 
   for (const column of target.columns) {
@@ -65,15 +77,16 @@ export function matchTable(rawQuery: string, target: SearchTarget): SearchMatch 
       return {
         matched: true, nameRange: null,
         matchedColumn: column, columnRange: [columnIndex, columnIndex + query.length],
+        rank: 4,
       };
     }
   }
 
   if (target.categoryLabel.includes(query)) {
-    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null };
+    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 5 };
   }
   if (isChosungQuery(query) && toChosung(target.categoryLabel).includes(query)) {
-    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null };
+    return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 5 };
   }
   return NO_MATCH;
 }
