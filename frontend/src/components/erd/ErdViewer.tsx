@@ -167,19 +167,12 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     });
   }, []);
 
-  // 엣지 호버 = 양끝 펼침 + 컬럼 하이라이트. 펼침은 leave 후에도 유지한다 — 되접으면
-  // ELK가 다시 돌아 포인터 아래 그래프가 통째로 움직인다(스펙 §1.2 요동 방지).
-  // hovering an edge expands both ends; the expansion outlives the hover on purpose
+  // 엣지 호버 = 라벨·강조 + (이미 펼쳐진 노드에만) 컬럼 하이라이트. 펼침은 하지 않는다 —
+  // 호버만으로 레이아웃이 움직이면 포인터 아래 그래프가 요동친다. 펼침은 엣지 클릭이 담당.
+  // hover shows the label and highlights columns on already-expanded nodes only;
+  // expanding both ends moved to edge click so hovering never reflows the graph
   const handleEdgeMouseEnter = useCallback((_event: unknown, edge: Edge) => {
     setHoveredEdgeId(edge.id);
-    const ends = [Number(edge.source), Number(edge.target)];
-    setExpandedNodes((current) => {
-      // 이미 둘 다 펼쳐져 있으면 같은 Set을 돌려 재레이아웃 자체를 건너뛴다
-      if (ends.every((id) => current.has(id))) return current;
-      const next = new Set(current);
-      for (const id of ends) next.add(id);
-      return next;
-    });
   }, []);
 
   // 떠난 엣지가 지금 호버 중인 엣지일 때만 해제 — 엣지 재마운트로 leave가 늦게 도착하면
@@ -389,7 +382,19 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         // 노드 쪽 stopPropagation으로는 못 막는다 — 여기서 꺼야 줌이 같이 튀지 않는다
         // / d3 binds dblclick.zoom on the pane, so stopPropagation upstream cannot stop it
         zoomOnDoubleClick={false}
-        onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)}
+        onEdgeClick={(_event, edge) => {
+          setSelectedEdgeId(edge.id);
+          // 클릭이 펼침 담당 — 양끝을 펼쳐 컬럼 하이라이트·스크롤이 보이게 한다
+          // click owns expansion: open both ends so the highlighted columns show
+          const ends = [Number(edge.source), Number(edge.target)];
+          setExpandedNodes((current) => {
+            // 이미 둘 다 펼쳐져 있으면 같은 Set을 돌려 재레이아웃 자체를 건너뛴다
+            if (ends.every((id) => current.has(id))) return current;
+            const next = new Set(current);
+            for (const id of ends) next.add(id);
+            return next;
+          });
+        }}
         onEdgeMouseEnter={handleEdgeMouseEnter}
         onEdgeMouseLeave={handleEdgeMouseLeave}
         onPaneClick={() => setSelectedEdgeId(null)}

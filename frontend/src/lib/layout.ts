@@ -43,8 +43,10 @@ export async function layoutGraph(
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "80",
-      "elk.spacing.nodeNode": "32",
+      // 레이어 간 110px — 호버 라벨(컬럼 페어 필)이 노드에 안 눌리고 온전히 보이는 폭
+      // / 110px between layers keeps the hover pair label clear of both end nodes
+      "elk.layered.spacing.nodeNodeBetweenLayers": "110",
+      "elk.spacing.nodeNode": "44",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       // 꺾은선(React Flow smoothstep)이 지날 회랑을 확보하는 건 아래 spacing 둘이다.
       // edgeRouting은 layered의 기본값이라 실측상 배치를 바꾸지 않지만, 이 배치가 직교
