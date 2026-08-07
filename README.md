@@ -10,6 +10,16 @@ MSSQL 시스템 카탈로그에서 스키마를 수집하고, 뷰를 역추적�
 
 Phase 1~5 **무연결(fixture) 구현 완료** — 카탈로그 수집/lineage/ERD, sqlglot 파싱, T2 검증·confidence·확정, T3 탐색 스캔, AI 제안까지 Fake 어댑터 기반으로 전 기능 동작. 남은 것은 연결 단계(정지점 16~18): 정찰 쿼리 실행 → replay 덤프 → `MssqlJoinValidator` + live 전환(사내 보안 승인 필요). 로드맵·결정 이력은 `docs/step0-proposal.md`와 `PROGRESS.md` 참고.
 
+## 화면
+
+- **`/verify` — 조인 검증**: 좌/우 테이블을 고르면 컬럼 페어 후보(점수순 자동 + 수동 지정)가 뜬다. 값 조회 없는
+  **① 게이트**(타입 패밀리 + TOP `GATE_SAMPLE_TOP`행(기본 200)의 유니크니스가 `GATE_DISTINCT_RATIO`(기본 0.9)
+  이상인지, 컬럼 단위로 캐시) → **② 포함률(containment)** → **③ 조인 프리뷰**(미리보기 허용 스키마만) →
+  **④ 확정** 순으로 진행한다. 검증 대기 목록(AI 제안 버튼 포함)이 진입점.
+- **`/erd` — 읽기 전용 ERD**: 확정된 관계 + FK 전체 그래프를 연결요소(컴포넌트) 단위로 배치해 한 번에 보여준다.
+  앵커 검색·1-hop 확장·조인 빌더는 없다(뷰 계보는 테이블 상세의 lineage 패널이 담당). `/erd?focus=<object_id>`로
+  특정 테이블에 포커스한 딥링크 진입 가능.
+
 ## 개발
 
 ```bash
@@ -111,7 +121,7 @@ backend/       # FastAPI 백엔드
   app/models/  # 서비스 DB 스키마 (SQLAlchemy)
   alembic/     # 마이그레이션
   tests/
-frontend/      # Next.js ERD 뷰어 (React Flow + ELK)
+frontend/      # Next.js — 읽기 전용 ERD(React Flow + ELK) + 조인 검증(/verify)
 tools/         # fixture_gen.py — 합성 카탈로그 생성기 (회귀 자산)
                #   python tools/fixture_gen.py --out fixtures
 n8n/sql/       # 정기 수집용 T-SQL (n8n W1 워크플로가 실행)
