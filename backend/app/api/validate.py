@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.adapters import create_join_validator
 from app.config import get_settings
 from app.db import get_db
+from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
 from app.services.observations import record_observation
@@ -69,6 +70,84 @@ def ensure_not_hidden(*refs: ColumnRef) -> None:
                        "served and cannot be validated (HIDDEN_SCHEMAS)",
             "context": {"objects": blocked},
         })
+
+
+class GateRequest(BaseModel):
+    src_column_id: int
+    tgt_column_id: int
+
+
+def _build_gate_side(
+    ref: ColumnRef, col: CatalogColumn, family: str, cached: bool
+) -> dict:
+    ratio = None
+    if col.sample_rows is not None and col.sample_distinct is not None:
+        # 빈 표본은 중복의 증거가 없다 — 차단 근거로 쓰지 않는다 (ratio 1.0)
+        ratio = (col.sample_distinct / col.sample_rows) if col.sample_rows else 1.0
+    return {
+        "qname": ref.object_qname, "column": ref.column,
+        "data_type": col.data_type, "family": family,
+        "sample_rows": col.sample_rows, "sample_distinct": col.sample_distinct,
+        "ratio": ratio, "cached": cached,
+    }
+
+
+def _ensure_sample_stats(
+    col: CatalogColumn, ref: ColumnRef, validator: JoinValidator, top: int
+) -> bool:
+    """샘플 통계 확보 — 캐시 적중이면 True. 미스면 조회해 컬럼에 기록."""
+    if col.sample_rows is not None and col.sample_distinct is not None:
+        return True
+    col.sample_rows, col.sample_distinct = validator.sample_stats(ref, top)
+    col.sampled_at = datetime.now(UTC)
+    return False
+
+
+@router.post("/gate")
+def run_gate(
+    req: GateRequest,
+    db: Session = Depends(get_db),
+    validator: JoinValidator = Depends(get_join_validator),
+) -> dict:
+    """조인 사전 게이트 — 타입 패밀리(쿼리 0회) → TOP-N 유니크니스(캐시) 순 차단.
+
+    값 겹침은 판정하지 않는다: TOP-N은 클러스터드 인덱스 순서라 실제로 조인되는
+    페어도 표본끼리는 안 겹칠 수 있다 (스펙 §게이트). 원본 값 비노출 — 감사 대상 아님.
+    """
+    src_ref, src_col = resolve_column_ref(db, req.src_column_id)
+    tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
+    ensure_not_hidden(src_ref, tgt_ref)
+    settings = get_settings()
+
+    src_family = scoring.get_type_family(src_col.data_type)
+    tgt_family = scoring.get_type_family(tgt_col.data_type)
+    if src_family != tgt_family:
+        return {
+            "verdict": "blocked", "reason": "type_mismatch",
+            "threshold": settings.gate_distinct_ratio,
+            "src": _build_gate_side(src_ref, src_col, src_family, cached=False),
+            "tgt": _build_gate_side(tgt_ref, tgt_col, tgt_family, cached=False),
+        }
+
+    try:
+        src_cached = _ensure_sample_stats(src_col, src_ref, validator, settings.gate_sample_top)
+        tgt_cached = _ensure_sample_stats(tgt_col, tgt_ref, validator, settings.gate_sample_top)
+    except ValidationDataMissing as e:
+        raise HTTPException(
+            404, {"message": "no value data for column", "context": {"column": str(e.ref)}}
+        ) from e
+    db.flush()
+
+    src_side = _build_gate_side(src_ref, src_col, src_family, src_cached)
+    tgt_side = _build_gate_side(tgt_ref, tgt_col, tgt_family, tgt_cached)
+    threshold = settings.gate_distinct_ratio
+    both_low = src_side["ratio"] < threshold and tgt_side["ratio"] < threshold
+    return {
+        "verdict": "blocked" if both_low else "pass",
+        "reason": "both_low_distinct" if both_low else None,
+        "threshold": threshold,
+        "src": src_side, "tgt": tgt_side,
+    }
 
 
 @router.post("/containment")

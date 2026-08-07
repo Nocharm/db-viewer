@@ -1,5 +1,7 @@
 """T2 validation endpoint tests over fixture data. / T2 검증 엔드포인트 픽스처 테스트."""
 
+import json as _json
+
 import pytest
 import sqlalchemy as sa
 
@@ -168,3 +170,87 @@ def test_containment_on_column_without_data_is_404(vclient, migrated_engine, loa
     })
     assert res.status_code == 404
     assert "no value data" in res.json()["error"]["message"]
+
+
+def _gate_client(client, tmp_path, entries):
+    """게이트 전용 클라이언트 — 표본 프로필을 직접 쓴 value_sets로 Fake 주입."""
+    path = tmp_path / "gate_value_sets.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps({"columns": entries}))
+    client.app.dependency_overrides[get_join_validator] = (
+        lambda: FakeJoinValidator(path)
+    )
+    return client
+
+
+def _typed_column_id(engine, families: tuple[str, ...]) -> tuple[int, str, str]:
+    """지정 타입의 아무 테이블 컬럼 하나 — (column_id, qname, column)."""
+    obj_t, col_t = Base.metadata.tables["objects"], Base.metadata.tables["columns"]
+    with engine.connect() as conn:
+        row = conn.execute(
+            sa.select(col_t.c.id, obj_t.c.schema, obj_t.c.name, col_t.c.name)
+            .join(obj_t, col_t.c.object_id == obj_t.c.id)
+            .where(col_t.c.data_type.in_(families), obj_t.c.type == "table")
+            .limit(1)
+        ).one()
+    return row[0], f"{row[1]}.{row[2]}", row[3]
+
+
+def test_gate_blocks_type_mismatch_without_sampling(vclient, migrated_engine, load_fixture, tmp_path):
+    _seed(vclient, load_fixture)
+    int_id, _, _ = _typed_column_id(migrated_engine, ("int", "bigint"))
+    chr_id, _, _ = _typed_column_id(migrated_engine, ("varchar", "nvarchar", "char", "nchar"))
+    client = _gate_client(vclient, tmp_path, [])  # 값 집합 없음 — 샘플 조회가 없어야 통과
+
+    body = client.post("/api/validate/gate",
+                       json={"src_column_id": int_id, "tgt_column_id": chr_id}).json()
+
+    assert body["verdict"] == "blocked"
+    assert body["reason"] == "type_mismatch"
+    assert body["src"]["sample_rows"] is None  # n8n 도달 전 차단 — 샘플 미조회
+
+
+def test_gate_blocks_when_both_sides_are_dup_heavy(vclient, migrated_engine, load_fixture, tmp_path):
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
+    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
+    client = _gate_client(vclient, tmp_path, [
+        {"object": rel["src_object"], "column": rel["src_column"],
+         "values": [], "row_count": 500, "distinct_count": 4},
+        {"object": rel["tgt_object"], "column": rel["tgt_column"],
+         "values": [], "row_count": 500, "distinct_count": 9},
+    ])
+
+    body = client.post("/api/validate/gate",
+                       json={"src_column_id": src_id, "tgt_column_id": tgt_id}).json()
+
+    assert body["verdict"] == "blocked"
+    assert body["reason"] == "both_low_distinct"
+    assert body["src"]["ratio"] < 0.9 and body["tgt"]["ratio"] < 0.9
+
+
+def test_gate_passes_when_one_side_is_unique_and_caches(vclient, migrated_engine, load_fixture, tmp_path):
+    _seed(vclient, load_fixture)
+    rel = _pick_relation(load_fixture, kind="real_no_fk", orphan_count=0)
+    src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
+    tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
+    client = _gate_client(vclient, tmp_path, [
+        {"object": rel["src_object"], "column": rel["src_column"],
+         "values": [], "row_count": 500, "distinct_count": 4},     # 중복투성이
+        {"object": rel["tgt_object"], "column": rel["tgt_column"],
+         "values": [], "row_count": 150, "distinct_count": 150},   # 유니크(1:N의 1)
+    ])
+
+    first = client.post("/api/validate/gate",
+                        json={"src_column_id": src_id, "tgt_column_id": tgt_id}).json()
+    assert first["verdict"] == "pass"
+    assert first["reason"] is None
+    assert first["tgt"]["cached"] is False
+
+    # 두 번째 호출은 캐시 적중 — Fake를 빈 값 집합으로 갈아끼워도 성공해야 한다
+    recached = _gate_client(client, tmp_path / "empty", [])
+    second = recached.post("/api/validate/gate",
+                           json={"src_column_id": src_id, "tgt_column_id": tgt_id}).json()
+    assert second["verdict"] == "pass"
+    assert second["src"]["cached"] is True and second["tgt"]["cached"] is True
