@@ -58,6 +58,10 @@ def test_erd_serves_fk_and_confirmed_edges_only(vclient, migrated_engine, load_f
     kinds = {e["kind"] for e in after["edges"]}
     assert kinds <= {"fk", "confirmed"}
     assert "confirmed" in kinds
+    # ErdViewer 근거 카드가 이 두 필드를 직접 렌더한다 — containment를 이미 돌렸으니 비어 있으면 회귀
+    confirmed_edge = next(e for e in after["edges"] if e["kind"] == "confirmed")
+    assert confirmed_edge["last_verified_at"] is not None
+    assert confirmed_edge["confidence"] is not None
     # 노드는 엣지 참여 테이블만 — 뷰·고립 테이블 없음
     edge_ids = {e["src_object_id"] for e in after["edges"]} | {
         e["tgt_object_id"] for e in after["edges"]}
