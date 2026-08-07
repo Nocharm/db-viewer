@@ -173,7 +173,7 @@ export const MESSAGES = {
   },
   "verify.srcTitle": { ko: "출발 테이블", en: "Source table" },
   "verify.tgtTitle": { ko: "대상 테이블", en: "Target table" },
-  "verify.searchPlaceholder": { ko: "테이블 검색 (2자+)", en: "Search tables (2+ chars)" },
+  "verify.searchPlaceholder": { ko: "테이블 검색", en: "Search tables" },
   "verify.clearSelection": { ko: "선택 해제", en: "Clear" },
   "verify.candidates.title": { ko: "컬럼 페어 후보", en: "Column pair candidates" },
   "verify.candidates.empty": {
