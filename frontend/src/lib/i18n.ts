@@ -156,6 +156,7 @@ export const MESSAGES = {
   "erd.expandColumns": { ko: "컬럼 펼치기", en: "Expand columns" },
   "erd.collapseColumns": { ko: "접기", en: "Collapse" },
   "erd.expandNeighbors": { ko: "이웃 1-hop 확장", en: "Expand 1-hop neighbors" },
+  "erd.resetPositions": { ko: "노드 위치 초기화", en: "Reset node positions" },
   "erd.emptyReadOnly": {
     ko: "검증된 관계가 아직 없습니다 — 조인 검증에서 키를 확정하면 여기 그려집니다",
     en: "No verified relations yet — confirm a key in Join Verify and it shows up here",

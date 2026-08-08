@@ -6,12 +6,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  applyNodeChanges, Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow,
+  applyNodeChanges, Background, ControlButton, Controls, ReactFlow, ReactFlowProvider,
+  useReactFlow,
 } from "@xyflow/react";
 import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon, ResetIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { fetchErdGraph } from "@/lib/api";
@@ -200,6 +201,20 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     if (placedEntry) {
       placedRef.current.set(id, { ...placedEntry, x: node.position.x, y: node.position.y });
     }
+  }, []);
+
+  // 마지막 순수 ELK 배치를 그대로 복원 — ELK 재실행 없이 즉시, 카메라는 건드리지 않는다
+  // restore the cached pure-ELK placement; no ELK rerun, viewport untouched
+  const handleResetPositions = useCallback(() => {
+    if (movedRef.current.size === 0) return;
+    movedRef.current.clear();
+    setMovedCount(0);
+    const elkPlaced = elkPlacedRef.current;
+    placedRef.current = elkPlaced;
+    setFlowNodes((nodes) => nodes.map((n) => {
+      const base = elkPlaced.get(Number(n.id));
+      return base ? { ...n, position: { x: base.x, y: base.y } } : n;
+    }));
   }, []);
 
   const centerOn = useCallback((x: number, y: number) => {
@@ -441,7 +456,17 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         }}
       >
         <Background color="var(--hairline)" />
-        <Controls />
+        <Controls>
+          <ControlButton
+            onClick={handleResetPositions}
+            disabled={movedCount === 0}
+            title={t("erd.resetPositions")}
+            aria-label={t("erd.resetPositions")}
+            data-testid="ErdViewer-resetPositionsButton"
+          >
+            <ResetIcon size={12} />
+          </ControlButton>
+        </Controls>
       </ReactFlow>
       <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} loading={graph === null} />
 

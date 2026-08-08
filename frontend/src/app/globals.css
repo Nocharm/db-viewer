@@ -608,6 +608,11 @@ input::placeholder {
 .react-flow__node.dragging .erd-node__header {
   cursor: grabbing;
 }
+/* 초기화 버튼 비활성 — 프로젝트 disabled 관례(0.35)와 동일 톤 */
+.react-flow__controls-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 
 /* 컬럼 행 조인 그립 — 히트박스는 행 전체 높이(TableNode.tsx COLUMN_HANDLE_*_STYLE),
    눈에 보이는 건 행에 호버했을 때의 얇은 바뿐이다. 기본 .react-flow__handle의 6px 점과

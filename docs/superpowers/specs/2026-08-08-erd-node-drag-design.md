@@ -44,7 +44,9 @@ applyManualPositions(placed: Map<number, PlacedNode>, moved: Map<number, {x, y}>
 
 - React Flow `<Controls>` 자식으로 `<ControlButton>` 추가 — ↺ 아이콘, i18n 타이틀(`erd.resetPositions` 키 신설), `data-testid="ErdViewer-resetPositionsButton"`.
 - `movedCount === 0`이면 `disabled`.
-- 클릭 → `movedRef` 클리어 + `movedCount` 0 + `layoutVersion` state 범프(레이아웃 이펙트 deps에 추가) → ELK 재실행으로 자동 배치 복원. 카메라는 건드리지 않는다.
+- 클릭 → `movedRef` 클리어 + `movedCount` 0 + 마지막 순수 ELK 배치 캐시(`elkPlacedRef`)를
+  그대로 복원(`setFlowNodes` 좌표 재적용). ELK 재실행·이펙트 deps 변경 없이 즉시 복원되며,
+  카메라는 건드리지 않는다.
 
 ## 테스트·검증
 

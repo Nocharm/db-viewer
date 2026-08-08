@@ -10,6 +10,7 @@
 - **ERD 노드 드래그 구현** — Task 1: `applyManualPositions` 병합 순수 함수 구현, TDD (실패 테스트→구현→통과). 수동 이동 좌표를 ELK 배치에 덮어씌우고 크기는 유지하는 로직. PlacedNode 인터페이스 정의. 프론트 전체 테스트 75/75 통과, 타입체크·린트 clean.
   - Task 2: 헤더 grab 커서·호버 틴트 CSS — `.erd-node__header` grab/grabbing 커서 + hover 시 `rgba(0,0,0,0.05)` 배경색 전환, dragging 상태 커서 변환.
   - Task 3: 헤더 드래그 배선 — `dragHandle`로 그립을 헤더에 한정, position 전용 `onNodesChange`(dimension 변경은 measured 수동 관리와 충돌해 배제), `onNodeDragStop`이 movedRef에 기록하고 레이아웃 이펙트가 ELK 결과 위에 `applyManualPositions`로 병합.
+  - Task 4: 초기화 버튼 — Controls에 ControlButton 추가, 클릭 시 ELK 재실행 없이 `elkPlacedRef` 캐시를 그대로 복원(스펙의 `layoutVersion` 범프안보다 단순), README/스펙 동기화.
 
 - **ERD 노드 드래그 설계 확정** — 헤더 호버 + 헤더 드래그 이동 + 위치 초기화. 핵심 결정: 그립은 헤더만(컬럼 행 간섭 방지, 호버 효과가 그립을 가리킴), 수동 위치는 오버라이드 맵으로 재레이아웃에서 유지(ELK 파이프라인 무변경 — ref 저장이라 드래그가 ELK 재실행을 안 유발), 세션 한정(localStorage 없음). 스펙: `docs/superpowers/specs/2026-08-08-erd-node-drag-design.md`. 구현 계획 5태스크(병합 순수 함수 TDD → CSS → 드래그 배선 → 초기화 버튼 → 브라우저 실측): `docs/superpowers/plans/2026-08-08-erd-node-drag.md` — 초기화는 ELK 재실행 대신 마지막 배치 캐시 복원으로 단순화.
 
