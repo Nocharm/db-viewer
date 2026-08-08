@@ -596,7 +596,6 @@ input::placeholder {
 }
 
 /* ── React Flow 다크 대응 ── */
-/* nodesDraggable=false라 드래그 불가 — 더블클릭 펼침/접힘 어포던스로 pointer / not draggable; hints the dblclick toggle instead */
 /* 헤더 = 드래그 그립 — grab 커서·호버 틴트가 "여기를 잡으면 움직인다"를 알린다.
    틴트는 컬럼 행 호버(hover:bg-black/5)와 같은 계열 / grab affordance for the drag handle */
 .react-flow .erd-node__header {

@@ -6,9 +6,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow,
+  applyNodeChanges, Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow,
 } from "@xyflow/react";
-import type { Edge } from "@xyflow/react";
+import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { CloseIcon } from "@/components/icons";
@@ -18,7 +18,7 @@ import { fetchErdGraph } from "@/lib/api";
 import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
-import { groupConnectedComponents } from "@/lib/erd-graph";
+import { applyManualPositions, groupConnectedComponents, type PlacedNode } from "@/lib/erd-graph";
 import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
@@ -48,13 +48,6 @@ const GRADE_LABEL: Record<EdgeGrade, MessageKey> = {
   unresolved: "erd.legendUnresolvedGrade",
   lineage: "erd.legendLineageGrade",
 };
-
-interface PlacedNode {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 /** 컬럼 페어만 추린다 — /api/erd는 fk·confirmed만 주므로 실질적으로 전량이다.
  * GraphEdge.columns is a union; view lineage carries plain strings. */
@@ -149,6 +142,14 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const pendingFitViewRef = useRef(false);
   // 마지막으로 배치된 노드 좌표 — 맵 검색 픽이 레이아웃 이펙트 밖에서도 centerOn 좌표를 찾을 수 있게 한다
   const placedRef = useRef<Map<number, PlacedNode>>(new Map());
+  // 수동 이동 좌표 — ref인 이유: 레이아웃 이펙트 deps에 들어가면 드래그마다 ELK가 재실행된다
+  // (호버가 레이아웃을 안 흔드는 것과 같은 원칙) / manual positions live in a ref so
+  // dragging never re-triggers ELK
+  const movedRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  // 초기화 버튼 활성 판정 전용 — ELK와 무관한 가벼운 리렌더만 유발
+  const [movedCount, setMovedCount] = useState(0);
+  // 마지막 순수 ELK 배치 — 위치 초기화가 ELK 재실행 없이 이걸 그대로 복원한다
+  const elkPlacedRef = useRef<Map<number, PlacedNode>>(new Map());
   // 최초 레이아웃이 끝나기 전에 검색을 픽하면 placedRef가 아직 비어 있다 — 레이아웃 완료 후 처리하도록 대상만 남겨둔다
   const pendingCenterIdRef = useRef<number | null>(null);
 
@@ -179,6 +180,26 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   // 이미 시작된 다음 호버를 지워버린다 / only clear the session this leave belongs to
   const handleEdgeMouseLeave = useCallback((_event: unknown, edge: Edge) => {
     setHoveredEdgeId((current) => (current === edge.id ? null : current));
+  }, []);
+
+  // 드래그 중 position 변경만 반영 — dimension 변경까지 적용하면 measured 수동 관리와
+  // 충돌한다(위 displayNodes 주석 참조) / apply position changes only; dimension changes
+  // would fight our manual `measured` bookkeeping
+  const handleNodesChange = useCallback((changes: NodeChange<TableFlowNode>[]) => {
+    const positionChanges = changes.filter((c) => c.type === "position");
+    if (positionChanges.length === 0) return;
+    setFlowNodes((nodes) => applyNodeChanges(positionChanges, nodes));
+  }, []);
+
+  const handleNodeDragStop = useCallback((_event: unknown, node: TableFlowNode) => {
+    const id = Number(node.id);
+    movedRef.current.set(id, { x: node.position.x, y: node.position.y });
+    setMovedCount(movedRef.current.size);
+    // 검색 픽 센터링(placedRef 기반)이 옮긴 위치를 조준하도록 배치 기록도 갱신
+    const placedEntry = placedRef.current.get(id);
+    if (placedEntry) {
+      placedRef.current.set(id, { ...placedEntry, x: node.position.x, y: node.position.y });
+    }
   }, []);
 
   const centerOn = useCallback((x: number, y: number) => {
@@ -216,14 +237,19 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     if (!graph) return;
     let cancelled = false;
     const groups = groupConnectedComponents(graph.nodes, graph.edges);
-    void layoutGroups(groups, graph.edges, expandedNodes).then((placed) => {
+    void layoutGroups(groups, graph.edges, expandedNodes).then((elkPlaced) => {
       if (cancelled) return;
+      elkPlacedRef.current = elkPlaced;
+      // 수동 이동 좌표를 ELK 결과 위에 덮어쓴다 — 재레이아웃(펼침/접힘)에도 배치가 유지된다
+      const placed = applyManualPositions(elkPlaced, movedRef.current);
       placedRef.current = placed;
       setFlowNodes(graph.nodes.map((n) => {
         const expanded = expandedNodes.has(n.id);
         return {
           id: String(n.id),
           type: "tableNode" as const,
+          // 헤더만 드래그 그립 — 컬럼 행 클릭·스크롤·조인 핸들과 간섭하지 않는다
+          dragHandle: ".erd-node__header",
           position: { x: placed.get(n.id)?.x ?? 0, y: placed.get(n.id)?.y ?? 0 },
           // measured를 여기서부터 실어 보낸다 — 없으면 이 배열이 통째로 교체될 때(검색 픽
           // 이후 재레이아웃 등) React Flow가 모든 노드를 미측정으로 되돌려 handleBounds가
@@ -375,8 +401,9 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         nodes={displayNodes}
         edges={displayEdges}
         nodeTypes={nodeTypes}
-        nodesDraggable={false}
         nodesConnectable={false}
+        onNodesChange={handleNodesChange}
+        onNodeDragStop={handleNodeDragStop}
         edgesFocusable
         // 헤더 더블클릭 = 펼침/접힘 전용. d3의 dblclick.zoom은 캔버스 자체에 걸려 있어
         // 노드 쪽 stopPropagation으로는 못 막는다 — 여기서 꺼야 줌이 같이 튀지 않는다
