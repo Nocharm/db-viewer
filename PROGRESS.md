@@ -7,12 +7,7 @@
 
 ## 2026-08-08
 
-- **ERD 노드 드래그 구현** — Task 1: `applyManualPositions` 병합 순수 함수 구현, TDD (실패 테스트→구현→통과). 수동 이동 좌표를 ELK 배치에 덮어씌우고 크기는 유지하는 로직. PlacedNode 인터페이스 정의. 프론트 전체 테스트 75/75 통과, 타입체크·린트 clean.
-  - Task 2: 헤더 grab 커서·호버 틴트 CSS — `.erd-node__header` grab/grabbing 커서 + hover 시 `rgba(0,0,0,0.05)` 배경색 전환, dragging 상태 커서 변환.
-  - Task 3: 헤더 드래그 배선 — `dragHandle`로 그립을 헤더에 한정, position 전용 `onNodesChange`(dimension 변경은 measured 수동 관리와 충돌해 배제), `onNodeDragStop`이 movedRef에 기록하고 레이아웃 이펙트가 ELK 결과 위에 `applyManualPositions`로 병합.
-  - Task 4: 초기화 버튼 — Controls에 ControlButton 추가, 클릭 시 ELK 재실행 없이 `elkPlacedRef` 캐시를 그대로 복원(스펙의 `layoutVersion` 범프안보다 단순), README/스펙 동기화. 리뷰 fix: `placedRef.current = elkPlaced`가 같은 Map을 공유해 다음 드래그가 캐시를 오염시키던 앨리어싱 버그를 `new Map(elkPlaced)` 복사로 수정.
-
-- **ERD 노드 드래그 설계 확정** — 헤더 호버 + 헤더 드래그 이동 + 위치 초기화. 핵심 결정: 그립은 헤더만(컬럼 행 간섭 방지, 호버 효과가 그립을 가리킴), 수동 위치는 오버라이드 맵으로 재레이아웃에서 유지(ELK 파이프라인 무변경 — ref 저장이라 드래그가 ELK 재실행을 안 유발), 세션 한정(localStorage 없음). 스펙: `docs/superpowers/specs/2026-08-08-erd-node-drag-design.md`. 구현 계획 5태스크(병합 순수 함수 TDD → CSS → 드래그 배선 → 초기화 버튼 → 브라우저 실측): `docs/superpowers/plans/2026-08-08-erd-node-drag.md` — 초기화는 ELK 재실행 대신 마지막 배치 캐시 복원으로 단순화.
+- **ERD 노드 드래그 + 헤더 호버 + 위치 초기화 — 브랜치 머지 완료** (feature/erd-node-drag, 5커밋, 프론트 전용). 헤더만 드래그 그립(`dragHandle` — 컬럼 행 클릭·스크롤 비간섭, grab 커서·호버 틴트가 그립을 알림), 수동 위치는 `movedRef` + `applyManualPositions` 순수 함수로 ELK 재배치 위에 덮어써 펼침/접힘에도 유지(ref 저장이라 드래그가 ELK 재실행을 안 유발, 세션 한정), 초기화는 ELK 재실행 없이 `elkPlacedRef` 캐시 복원(카메라 불변, 이동 없으면 비활성). 핵심 제약: `onNodesChange`는 position 변경만 통과 — dimension까지 적용하면 기존 measured 수동 관리(엣지 플래시 방지)와 충돌. 리뷰 루프가 잡은 실결함: 초기화가 `placedRef`/`elkPlacedRef`를 같은 Map으로 앨리어싱해 다음 드래그가 순수 ELK 캐시를 오염(드래그→초기화→드래그→초기화 시 복원 실패) — `new Map` 복사로 수정, 헤드리스에서 멱등성 실증. 검증: vitest 75/75(+병합 함수 3케이스)·tsc·lint + 실브라우저 5항목 + 헤드리스 Playwright 12어서션. 검증 해프닝: Chrome 창 숨김 시 rAF 스로틀로 React Flow 초기화·카메라가 멈춰 회귀로 오인 — main A/B로 앱 무관 확증. 파킹: 비활성 초기화 버튼 툴팁이 xyflow 기본 `pointer-events:none`에 막힘(접근성 후속), 다크 테마 호버 틴트 미묘(행 호버 관례 동일 계열), ELK 완료가 드래그 도중 착지 시 순간 스냅백(자기 치유). 스펙/계획: `docs/superpowers/{specs,plans}/2026-08-08-erd-node-drag*.md`.
 
 ## 2026-08-07
 
