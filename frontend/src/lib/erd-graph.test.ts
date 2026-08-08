@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphEdge, GraphNode } from "./types";
-import { groupConnectedComponents } from "./erd-graph";
+import { applyManualPositions, groupConnectedComponents, type PlacedNode } from "./erd-graph";
 
 function makeNode(id: number): GraphNode {
   return {
@@ -37,5 +37,34 @@ describe("groupConnectedComponents", () => {
 
     expect(groups.map((g) => g.map((n) => n.id).sort((x, y) => x - y)))
       .toEqual([[1, 2]]); // 999 엣지는 무시, 1-2만 연결
+  });
+});
+
+describe("applyManualPositions", () => {
+  const makePlaced = (): Map<number, PlacedNode> => new Map([
+    [1, { x: 0, y: 0, width: 260, height: 40 }],
+    [2, { x: 300, y: 0, width: 260, height: 40 }],
+  ]);
+
+  it("overrides coordinates for moved nodes but keeps ELK sizes", () => {
+    const merged = applyManualPositions(makePlaced(), new Map([[1, { x: 50, y: 80 }]]));
+
+    expect(merged.get(1)).toEqual({ x: 50, y: 80, width: 260, height: 40 });
+    expect(merged.get(2)).toEqual({ x: 300, y: 0, width: 260, height: 40 }); // 미이동 노드 그대로
+  });
+
+  it("ignores moved ids that are absent from the placement", () => {
+    const merged = applyManualPositions(makePlaced(), new Map([[999, { x: 1, y: 2 }]]));
+
+    expect(merged.size).toBe(2);
+    expect(merged.has(999)).toBe(false);
+  });
+
+  it("returns a new Map and leaves inputs untouched", () => {
+    const placed = makePlaced();
+    const merged = applyManualPositions(placed, new Map([[1, { x: 50, y: 80 }]]));
+
+    expect(merged).not.toBe(placed);
+    expect(placed.get(1)).toEqual({ x: 0, y: 0, width: 260, height: 40 });
   });
 });
