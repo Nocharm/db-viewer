@@ -210,7 +210,11 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     movedRef.current.clear();
     setMovedCount(0);
     const elkPlaced = elkPlacedRef.current;
-    placedRef.current = elkPlaced;
+    // 복사본을 대입 — 같은 Map을 공유하면 다음 드래그의 handleNodeDragStop이
+    // placedRef를 통해 elkPlacedRef까지 오염시켜 재초기화가 깨진다
+    // copy, not alias: sharing the Map would let the next drag's handleNodeDragStop
+    // corrupt elkPlacedRef via placedRef, breaking idempotent reset
+    placedRef.current = new Map(elkPlaced);
     setFlowNodes((nodes) => nodes.map((n) => {
       const base = elkPlaced.get(Number(n.id));
       return base ? { ...n, position: { x: base.x, y: base.y } } : n;
