@@ -286,12 +286,6 @@ export function TableDetail({
         >
           {previewLoading ? t("detail.loading") : t("detail.preview")}
         </button>
-        {!previewAllowed && (
-          <span className="self-center text-xs" style={{ color: "var(--muted)" }}
-                data-testid="TableDetail-previewNotAllowed">
-            {t("preview.notAllowed")}
-          </span>
-        )}
         <button
           className="btn-secondary"
           onClick={onOpenErd}
@@ -299,6 +293,14 @@ export function TableDetail({
         >
           {t("detail.openErd")}
         </button>
+        {/* 잠금 사유는 버튼 그룹 뒤 — 버튼 사이에 끼우면 그룹이 시각적으로 끊긴다
+            / the lock reason trails the button group instead of splitting it */}
+        {!previewAllowed && (
+          <span className="self-center text-xs" style={{ color: "var(--muted)" }}
+                data-testid="TableDetail-previewNotAllowed">
+            {t("preview.notAllowed")}
+          </span>
+        )}
       </div>
 
       <div className="flex max-w-4xl flex-col gap-5">
