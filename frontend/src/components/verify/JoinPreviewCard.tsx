@@ -107,7 +107,8 @@ export function JoinPreviewCard({
               style={{ color: "var(--muted)" }}>
           {t("verify.preview.title")}
         </span>
-        <button className="btn-secondary ml-auto !py-1 text-xs"
+        {/* 버튼 군은 라벨 옆 — ml-auto 우측 밀착은 라벨과의 거리만 벌린다 (GateCard와 동일) */}
+        <button className="btn-secondary !py-1 text-xs"
                 disabled={!allowed || busy} onClick={handleJoin}
                 data-testid="JoinPreviewCard-joinButton">
           {t("verify.preview.join")}

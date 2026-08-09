@@ -72,8 +72,10 @@ export function GateCard({ gate, busy, onRun }: GateCardProps) {
               style={{ color: "var(--muted)" }}>
           {t("verify.gate.title")}
         </span>
+        {/* 버튼은 라벨 옆 — ml-auto로 카드 오른쪽 끝에 두면 넓은 화면에서 라벨과
+            ~900px 떨어져 시선·마우스가 왕복한다 / button hugs the label, not the far edge */}
         <button
-          className="btn-secondary ml-auto !py-1 text-xs"
+          className="btn-secondary !py-1 text-xs"
           disabled={busy}
           onClick={onRun}
           data-testid="GateCard-runButton"

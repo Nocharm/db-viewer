@@ -12,6 +12,8 @@ interface PendingListProps {
   onPick: (rel: PendingRelation) => void;
   /** 값이 바뀌면 목록을 다시 읽는다 — 확정 직후 큐에서 내려간 것을 반영 */
   refreshToken?: number;
+  /** 지금 검증 중인 큐 항목 — 홈 목록과 같은 선택 문법(옐로 좌보더)으로 표시 */
+  selectedId?: number | null;
 }
 
 /** 컬럼·오브젝트 id가 다 있어야 검증 화면으로 옮길 수 있다 / a pick needs every id resolved. */
@@ -20,7 +22,7 @@ function isPickable(rel: PendingRelation): boolean {
     && rel.tgt_object_id !== null && rel.tgt_column_id !== null;
 }
 
-export function PendingList({ onPick, refreshToken = 0 }: PendingListProps) {
+export function PendingList({ onPick, refreshToken = 0, selectedId = null }: PendingListProps) {
   const { t } = useI18n();
   const [items, setItems] = useState<PendingRelation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -110,8 +112,13 @@ export function PendingList({ onPick, refreshToken = 0 }: PendingListProps) {
       <ul className="scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="PendingList-items">
         {items.map((rel) => (
           <li key={rel.id}>
+            {/* 좌보더는 항상 그린다(투명) — 선택 시에만 칠해 내용이 밀리지 않게 (.list-row 관용) */}
             <button
-              className="w-full rounded px-2 py-1.5 text-left hover:bg-[var(--soft-stone)] disabled:opacity-40"
+              className={`w-full rounded border-l-2 px-2 py-1.5 text-left hover:bg-[var(--soft-stone)] disabled:opacity-40 ${
+                rel.id === selectedId
+                  ? "border-[var(--primary)] bg-[var(--surface-elevated)]"
+                  : "border-transparent"
+              }`}
               disabled={!isPickable(rel)}
               title={rel.reason ?? undefined}
               onClick={() => onPick(rel)}

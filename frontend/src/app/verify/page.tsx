@@ -74,6 +74,9 @@ function VerifyPageInner() {
   const [error, setError] = useState<string | null>(null);
   // 확정하면 대기 큐에서 내려간다 — 값을 올려 PendingList에 재조회를 지시
   const [pendingRefresh, setPendingRefresh] = useState(0);
+  // 대기 큐에서 골라 온 항목 — 목록에 "지금 작업 중인 항목" 표시용. 수동 조작으로
+  // 페어가 바뀌면 큐 항목과 어긋나므로 함께 해제한다
+  const [pickedPendingId, setPickedPendingId] = useState<number | null>(null);
 
   // 인플라이트 응답을 적용할지 가리는 기준 — 늦게 온 이전 페어의 결과는 버린다
   // the yardstick for late results: anything from a pair we've left is dropped
@@ -93,6 +96,7 @@ function VerifyPageInner() {
     setPair(next);
     setState(resetForNewPair());
     setError(null);
+    setPickedPendingId(null); // 수동 페어 선택은 큐 항목과의 연결을 끊는다
     clearBusy();
   }, [clearBusy]);
 
@@ -104,6 +108,7 @@ function VerifyPageInner() {
     setPair(null);
     setState(resetForNewPair());
     setError(null);
+    setPickedPendingId(null);
     clearBusy();
   };
 
@@ -165,6 +170,8 @@ function VerifyPageInner() {
       tgt_column_id: rel.tgt_column_id, tgt_column: rel.tgt_column, tgt_data_type: "",
       tgt_is_pk: false, score: rel.confidence ?? 0, signals: {},
     });
+    // handlePickPair의 해제보다 나중에 설정 — 같은 배치에서 마지막 값이 남는다
+    setPickedPendingId(rel.id);
   };
 
   const handleRunGate = () => {
@@ -232,13 +239,16 @@ function VerifyPageInner() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
+      {/* 시작 안내는 본문 중앙(startHint)에만 — 헤더에 한 번 더 띄우면 행동 지점(좌측 패널)의
+          정반대 코너에서 같은 문구가 중복된다. 헤더는 선택된 페어 요약만 담는다.
+          / the start hint lives in the content area only; the header carries the pair summary */}
       <AppHeader>
-        <span className="font-mono text-sm" style={{ color: "var(--muted)" }}
-              data-testid="VerifyPage-pairLabel">
-          {pair && src && tgt
-            ? `${src.schema}.${src.name}.${pair.src_column} = ${tgt.schema}.${tgt.name}.${pair.tgt_column}`
-            : t("verify.startHint")}
-        </span>
+        {pair && src && tgt && (
+          <span className="font-mono text-sm" style={{ color: "var(--muted)" }}
+                data-testid="VerifyPage-pairLabel">
+            {`${src.schema}.${src.name}.${pair.src_column} = ${tgt.schema}.${tgt.name}.${pair.tgt_column}`}
+          </span>
+        )}
       </AppHeader>
 
       <main className="grid min-h-0 flex-1 gap-3 p-3"
@@ -298,7 +308,7 @@ function VerifyPageInner() {
                     {t("verify.confirm.title")}
                   </span>
                   <button
-                    className="btn-primary ml-auto !py-1.5 text-xs"
+                    className="btn-primary !py-1.5 text-xs"
                     disabled={!canConfirm(state) || confirmBusy}
                     onClick={handleConfirm}
                     data-testid="VerifyPage-confirmButton"
@@ -317,7 +327,8 @@ function VerifyPageInner() {
           )}
         </div>
 
-        <PendingList onPick={handlePickPending} refreshToken={pendingRefresh} />
+        <PendingList onPick={handlePickPending} refreshToken={pendingRefresh}
+                     selectedId={pickedPendingId} />
       </main>
     </div>
   );
