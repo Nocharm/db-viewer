@@ -1,7 +1,7 @@
 "use client";
 
-/** 읽기 전용 ERD — 확정된 관계 전체를 연결요소별로 적층해 보여준다.
- * Read-only whole-graph ERD; connected components are laid out and stacked top-down. */
+/** 읽기 전용 ERD — 확정된 관계 전체를 연결요소별로 배치해 행 단위로 패킹한다.
+ * Read-only whole-graph ERD; connected components are laid out and packed into rows. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -19,7 +19,9 @@ import { fetchErdGraph } from "@/lib/api";
 import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
-import { applyManualPositions, groupConnectedComponents, type PlacedNode } from "@/lib/erd-graph";
+import {
+  applyManualPositions, groupConnectedComponents, packGroupRows, type PlacedNode,
+} from "@/lib/erd-graph";
 import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
@@ -29,7 +31,7 @@ import { TableNode, type TableFlowNode } from "./TableNode";
 
 const nodeTypes = { tableNode: TableNode };
 
-/** 연결요소 사이 세로 간격(px) — 그룹 경계를 알아보게 하는 유일한 단서라 여백이 넉넉해야 한다 */
+/** 연결요소 사이 간격(px, 가로·세로 공통) — 그룹 경계를 알아보게 하는 유일한 단서라 여백이 넉넉해야 한다 */
 const GROUP_GAP = 120;
 
 /** 호버 세션 중 나머지 엣지 투명도 — 등급별 기본 톤(0.5~1.0)보다 확실히 낮아야 대비가 선다 */
@@ -67,8 +69,9 @@ function formatColumnPairLabel(edge: GraphEdge): string | undefined {
   return `${first.src_column} → ${first.tgt_column}${rest > 0 ? ` +${rest}` : ""}`;
 }
 
-/** 연결요소별로 ELK를 독립 실행해 세로로 적층한다 — 한 번에 돌리면 ELK가 무관한 그룹을
- * 같은 레이어에 섞어 배치가 뒤엉킨다 / one ELK run per component, stacked vertically. */
+/** 연결요소별로 ELK를 독립 실행한 뒤 행 단위로 패킹한다 — 한 번에 돌리면 ELK가 무관한
+ * 그룹을 같은 레이어에 섞고, 세로 일렬 적층은 그래프를 좁고 긴 스트립으로 만들어 초기
+ * fitView가 minZoom(0.1)까지 떨어졌다(실측) / one ELK run per component, then row packing. */
 async function layoutGroups(
   groups: GraphNode[][],
   edges: GraphEdge[],
@@ -85,22 +88,33 @@ async function layoutGroups(
     return { sized, positions: await layoutGraph(sized, groupEdges) };
   }));
 
-  const placed = new Map<number, PlacedNode>();
-  let offsetY = 0;
-  for (const { sized, positions } of laid) {
+  const boxes = laid.map(({ sized, positions }) => {
     const sizeById = new Map(sized.map((s) => [s.id, s]));
-    let bottom = 0;
+    let width = 0;
+    let height = 0;
+    for (const position of positions) {
+      const size = sizeById.get(position.id);
+      if (!size) continue;
+      width = Math.max(width, position.x + size.width);
+      height = Math.max(height, position.y + size.height);
+    }
+    return { width, height };
+  });
+  const offsets = packGroupRows(boxes, GROUP_GAP);
+
+  const placed = new Map<number, PlacedNode>();
+  laid.forEach(({ sized, positions }, groupIndex) => {
+    const sizeById = new Map(sized.map((s) => [s.id, s]));
+    const offset = offsets[groupIndex];
     for (const position of positions) {
       const size = sizeById.get(position.id);
       if (!size) continue;
       placed.set(position.id, {
-        x: position.x, y: position.y + offsetY,
+        x: position.x + offset.x, y: position.y + offset.y,
         width: size.width, height: size.height,
       });
-      bottom = Math.max(bottom, position.y + size.height);
     }
-    offsetY += bottom + GROUP_GAP;
-  }
+  });
   return placed;
 }
 
