@@ -213,7 +213,8 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
                 key={col.id}
                 data-column-name={col.name}
                 className={[
-                  "erd-node__row relative cursor-pointer hover:bg-black/5",
+                  // 호버 틴트는 globals.css .erd-node__row:hover — black/5는 다크에서 안 보였다
+                  "erd-node__row relative cursor-pointer",
                   col.is_pk ? "erd-node__row--pk" : "",
                   highlight?.has(col.name) ? "erd-node__row--hl" : "",
                 ].join(" ")}
