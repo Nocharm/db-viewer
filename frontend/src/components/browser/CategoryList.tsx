@@ -31,13 +31,15 @@ interface Props {
   onAssignCategory: (schema: string, category: string) => void;
   /** 미리보기 허용 스키마 — 미허용 행에 잠금 아이콘 / preview allowlist for lock markers */
   previewAllowed: Set<string>;
+  /** 리사이저가 정하는 폭(px) — 없으면 기본 w-44 / resizer-driven width, w-44 default */
+  width?: number;
 }
 
 type Tab = "category" | "db";
 
 export function CategoryList({
   categories, selected, totalCount, onSelect,
-  schemas, dbFilter, onDbFilter, onAssignCategory, previewAllowed,
+  schemas, dbFilter, onDbFilter, onAssignCategory, previewAllowed, width,
 }: Props) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("category");
@@ -69,8 +71,10 @@ export function CategoryList({
   };
 
   return (
+    // 인라인 width가 w-44를 덮는다 — 리사이저 미사용 시엔 기본 폭 유지
     <aside
       className="card scroll-area scroll-area--y max-h-[60vh] w-44 shrink-0 pb-3 lg:max-h-none"
+      style={width !== undefined ? { width } : undefined}
       data-testid="CategoryList-root"
     >
       {/* 탭 헤더는 스크롤해도 남는다 — 목록이 길어도 탭 전환이 항상 손에 닿게 */}

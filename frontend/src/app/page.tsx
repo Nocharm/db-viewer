@@ -30,7 +30,7 @@ import {
 } from "@/lib/api";
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
-import { matchTable } from "@/lib/search";
+import { matchTable, type SearchMode } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
@@ -58,6 +58,8 @@ function HomeInner() {
   const [dbFilter, setDbFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "table" | "view">("all");
   const [query, setQuery] = useState("");
+  // 검색 모드 — 포함(유사)·정확히. 정확히는 입력 그대로의 부분 문자열만 잡는다
+  const [searchMode, setSearchMode] = useState<SearchMode>("fuzzy");
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -193,7 +195,7 @@ function HomeInner() {
         name: table.name,
         categoryLabel: code,
         columns: columnsIndex.get(table.id) ?? [],
-      });
+      }, searchMode);
       if (match.matched) items.push({ table, match });
     }
     // 검색어가 있을 때만 등급 정렬 — 빈 검색어의 기본 목록은 백엔드 (schema, name) 순서를 보존한다
@@ -202,7 +204,7 @@ function HomeInner() {
         || a.table.name.localeCompare(b.table.name));
     }
     return items;
-  }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
+  }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex, searchMode]);
 
   // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
   const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
@@ -229,7 +231,7 @@ function HomeInner() {
     if (!exists) {
       setPreviewTabs((cur) => [...cur, {
         id, qname: `${selected.schema}.${selected.name}`,
-        data: null, loading: true, hidden: [], sort: null,
+        data: null, loading: true, hidden: [], sort: null, order: [],
       }]);
       refetchPreview(id, {});
     }
@@ -260,7 +262,7 @@ function HomeInner() {
   }, []);
 
   const patchPreview = useCallback(
-    (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort">>) => {
+    (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort" | "order">>) => {
       setPreviewTabs((cur) => cur.map((tab) =>
         tab.id === id ? { ...tab, ...patch } : tab));
     }, []);
@@ -269,6 +271,28 @@ function HomeInner() {
     if (!selected) return;
     router.push(`/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`);
   }, [router, selected]);
+
+  // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
+  // 상한: 카테고리는 행 라벨+카운트, 목록은 검색줄+타입 칩이 min을 정하고, max는 상세가
+  // 유효 폭을 잃지 않는 선 (상세 자체는 lg:min-w-80으로 최후 방어)
+  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320 });
+  const startPaneResize = (pane: "rail" | "list") => (event: React.PointerEvent) => {
+    event.preventDefault();
+    const limits = pane === "rail" ? { min: 150, max: 300 } : { min: 260, max: 520 };
+    const startX = event.clientX;
+    const startWidth = paneWidths[pane];
+    // PreviewTable 컬럼 리사이즈와 같은 window 리스너 관용구 / same idiom as the column resize
+    const onMove = (e: PointerEvent) => {
+      const next = Math.min(Math.max(startWidth + (e.clientX - startX), limits.min), limits.max);
+      setPaneWidths((cur) => ({ ...cur, [pane]: Math.round(next) }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   // 컬럼 클릭 → 조인 검증 페이지로 직행 — 소스 테이블·컬럼 프리필, target이 실려 오면
   // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다
@@ -314,7 +338,12 @@ function HomeInner() {
             onDbFilter={changeDbFilter}
             onAssignCategory={assignCategory}
             previewAllowed={previewAllowed}
+            width={paneWidths.rail}
           />
+          {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
+          <div className="pane-resize hidden lg:block"
+               onPointerDown={startPaneResize("rail")}
+               data-testid="Home-railResizeHandle" />
           <TableList
             items={listItems}
             selectedId={selected?.id ?? null}
@@ -323,8 +352,14 @@ function HomeInner() {
             onQuery={setQuery}
             onTypeFilter={setTypeFilter}
             onSelect={selectTable}
+            searchMode={searchMode}
+            onSearchMode={setSearchMode}
+            width={paneWidths.list}
           />
-          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0">
+          <div className="pane-resize hidden lg:block"
+               onPointerDown={startPaneResize("list")}
+               data-testid="Home-listResizeHandle" />
+          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
             <TableDetail
               detail={detail}
               loading={detailLoading}

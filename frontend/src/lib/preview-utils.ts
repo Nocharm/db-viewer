@@ -150,3 +150,26 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
     area.remove();
   }
 }
+
+/** 저장된 순서를 컬럼 목록에 적용 — 순서에 없는 컬럼(재조회로 새로 온 것)은 뒤에 원래
+ * 순서대로 붙는다. 빈 순서는 원본 그대로 / apply a saved order; unknown columns append. */
+export function applyColumnOrder(columns: string[], order: string[]): string[] {
+  if (order.length === 0) return columns;
+  const present = new Set(columns);
+  const known = order.filter((column) => present.has(column));
+  const knownSet = new Set(known);
+  return [...known, ...columns.filter((column) => !knownSet.has(column))];
+}
+
+/** 드래그한 컬럼을 대상 앞(또는 뒤)으로 — 결과가 새 저장 순서가 된다.
+ * 대상이 없거나 자기 자신이면 원본 반환 / move dragged before/after target. */
+export function moveColumn(
+  columns: string[], dragged: string, target: string, after: boolean,
+): string[] {
+  if (dragged === target) return columns;
+  const without = columns.filter((column) => column !== dragged);
+  const targetIndex = without.indexOf(target);
+  if (targetIndex < 0 || !columns.includes(dragged)) return columns;
+  const insertAt = after ? targetIndex + 1 : targetIndex;
+  return [...without.slice(0, insertAt), dragged, ...without.slice(insertAt)];
+}

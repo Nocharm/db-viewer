@@ -569,6 +569,32 @@ mark.hl {
   background: var(--primary);
 }
 
+/* ── 3열 리사이저 — 홈 카드 사이 세로 그립. col-resize 핸들과 같은 시각 언어 ── */
+.pane-resize {
+  flex-shrink: 0;
+  width: 8px;
+  /* gap-4(16px) 안에 파묻는다 — 간격 16 - 12 + 8 - 12 + 16 = 16px로 시각 간격 불변 */
+  margin: 0 -12px;
+  cursor: col-resize;
+  position: relative;
+}
+.pane-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--hairline-strong);
+  transition: background-color 0.15s ease-in-out;
+}
+.pane-resize:hover::after {
+  width: 2px;
+  margin-left: -1px;
+  background: var(--primary);
+}
+
 /* ── PK 마크 — 이모지 대신 플랫 모노 라벨 / flat PK marker replacing the key emoji ── */
 .pk-mark {
   margin-right: 4px;

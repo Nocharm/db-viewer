@@ -239,6 +239,10 @@ export const MESSAGES = {
   "verify.confirm.done": { ko: "확정됨 — 관계 큐에서 내려갑니다", en: "Confirmed — removed from the queue" },
   "verify.pending.title": { ko: "검증 대기 관계", en: "Pending relations" },
   "verify.pending.empty": { ko: "대기 중인 관계 없음", en: "No pending relations" },
+  "verify.pending.emptyFiltered": {
+    ko: "선택한 테이블 관련 대기 항목이 없습니다",
+    en: "No pending items involve the selected tables",
+  },
   "verify.pending.aiSuggest": { ko: "AI 관계 제안", en: "AI relation suggestions" },
 
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
@@ -302,6 +306,18 @@ export const MESSAGES = {
   "db.categoryPlaceholder": { ko: "카테고리명 (비우면 DB명)", en: "Category (empty = DB name)" },
   // 미지정 DB의 고스트 칩 — 스키마명 반복 대신 지정 유도 / ghost chip for unmapped DBs
   "db.addCategory": { ko: "+ 분류", en: "+ Category" },
+
+  // 검색 모드 — 포함(유사)·정확히 / search mode chips
+  "search.modeContains": { ko: "포함", en: "Fuzzy" },
+  "search.modeExact": { ko: "정확히", en: "Exact" },
+  "search.modeContainsHint": {
+    ko: "유사 매칭까지 — 초성, 글자 순서 유사 포함",
+    en: "Fuzzy matching — chosung and in-order similarity included",
+  },
+  "search.modeExactHint": {
+    ko: "입력 그대로 포함된 이름·컬럼·카테고리만",
+    en: "Only literal substring matches on name, column or category",
+  },
   "tip.dbFilter": {
     ko: "체크한 DB만 목록·카테고리에 표시됩니다. 선택은 이 브라우저에 저장됩니다. DB명을 눌러 카테고리를 바꾸면 그 DB의 테이블이 통째로 이동합니다 (전원 공용).",
     en: "Only checked DBs appear. The selection is stored in this browser; category changes are shared with everyone.",
