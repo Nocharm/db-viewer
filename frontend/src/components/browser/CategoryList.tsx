@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { PencilIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewLockMarks } from "@/components/PreviewLockMarks";
 import type { SchemaCategoryItem } from "@/lib/api";
@@ -142,40 +143,76 @@ export function CategoryList({
 
       {tab === "db" && (
         <>
+          {/* 밑줄 링크 대신 버튼 — "보기/선택"이 형제 워딩이라 컨트롤 형태로 구분한다 */}
           <div className="flex items-center gap-1 px-3 pb-1.5">
-            <button className="pressable text-[11px] underline"
-                    style={{ color: "var(--slate)" }}
+            <button className="icon-button text-[11px]"
                     onClick={() => onDbFilter([])}
                     data-testid="CategoryList-dbFilterClear">
               {t("db.showAll")}
             </button>
-            <button className="pressable text-[11px] underline"
-                    style={{ color: "var(--slate)" }}
+            <button className="icon-button text-[11px]"
                     onClick={() => onDbFilter(schemas.map((s) => s.schema))}
                     data-testid="CategoryList-dbFilterAll">
               {t("db.checkAll")}
             </button>
           </div>
           {schemas.map((item) => (
-            <div key={item.schema} className="px-3 py-1"
+            // 한 줄 행 — 필터(체크박스+이름)와 분류 편집(칩)을 같은 줄에서 역할별로 나눈다.
+            // 칩은 label 밖 — label 안에 두면 칩 클릭이 체크까지 토글한다
+            // / one-line row: the chip sits outside the label so editing never toggles the filter
+            <div key={item.schema} className="group px-3 py-1"
                  data-testid={`CategoryList-dbRow-${item.schema}`}>
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={dbFilter.includes(item.schema)}
-                  onChange={() => toggleSchema(item.schema)}
-                  data-testid={`CategoryList-dbCheck-${item.schema}`}
-                />
-                <span className="min-w-0 flex-1 truncate font-mono">{item.schema}</span>
-                {/* 허용/미허용을 목록에서 바로 알린다 — 스키마 단위라 둘 중 하나만 켜진다 */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    className="checkbox"
+                    checked={dbFilter.includes(item.schema)}
+                    onChange={() => toggleSchema(item.schema)}
+                    data-testid={`CategoryList-dbCheck-${item.schema}`}
+                  />
+                  <span className="min-w-0 truncate font-mono">{item.schema}</span>
+                </label>
+                {item.mapped ? (
+                  <button
+                    className="pressable inline-flex max-w-20 items-center gap-1 rounded-full px-2 py-0.5 text-[10px]"
+                    style={{ background: "var(--surface-elevated)", color: "var(--slate)" }}
+                    onClick={() => {
+                      setDraft(item.category);
+                      setEditing(item.schema);
+                    }}
+                    title={t("db.editCategory")}
+                    data-testid={`CategoryList-dbCategoryButton-${item.schema}`}
+                  >
+                    <span className="truncate">{item.category}</span>
+                    {/* 연필은 행 호버에만 — opacity라 자리가 흔들리지 않는다 */}
+                    <PencilIcon size={10}
+                                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                ) : (
+                  // 미지정 — 스키마명을 반복하는 대신 지정을 유도하는 고스트 칩
+                  <button
+                    className="pressable rounded-full border border-dashed px-2 py-0.5 text-[10px]"
+                    style={{ borderColor: "var(--hairline-strong)", color: "var(--muted)" }}
+                    onClick={() => {
+                      setDraft("");
+                      setEditing(item.schema);
+                    }}
+                    title={t("db.editCategory")}
+                    data-testid={`CategoryList-dbCategoryButton-${item.schema}`}
+                  >
+                    {t("db.addCategory")}
+                  </button>
+                )}
                 <PreviewLockMarks hasAllowed={previewAllowed.has(item.schema)}
                                   hasLocked={!previewAllowed.has(item.schema)}
                                   allowedTitle={t("preview.schemaAllowed")}
                                   lockedTitle={t("preview.schemaLocked")}
                                   testidPrefix={`CategoryList-db-${item.schema}`} />
                 <span style={{ color: "var(--muted)" }}>{item.object_count}</span>
-              </label>
-              {editing === item.schema ? (
+              </div>
+              {/* 편집 중에만 임시 2줄 — 입력이 끝나면 한 줄로 복귀 */}
+              {editing === item.schema && (
                 <input
                   className="mt-1 w-full rounded border px-1.5 py-0.5 text-[11px] outline-none focus:border-[var(--focus-blue)]"
                   style={{ borderColor: "var(--border-light)" }}
@@ -190,20 +227,6 @@ export function CategoryList({
                   }}
                   data-testid={`CategoryList-dbCategoryInput-${item.schema}`}
                 />
-              ) : (
-                <button
-                  className="pressable mt-0.5 block w-full truncate text-left text-[11px]"
-                  // 지정값은 진하게, 기본값(스키마명)은 흐리게 — 한눈에 구분
-                  style={{ color: item.mapped ? "var(--slate)" : "var(--muted)" }}
-                  onClick={() => {
-                    setDraft(item.mapped ? item.category : "");
-                    setEditing(item.schema);
-                  }}
-                  title={t("db.editCategory")}
-                  data-testid={`CategoryList-dbCategoryButton-${item.schema}`}
-                >
-                  {item.category}
-                </button>
               )}
             </div>
           ))}

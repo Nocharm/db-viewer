@@ -300,6 +300,8 @@ export const MESSAGES = {
   "db.checkAll": { ko: "전체 선택", en: "Select all" },
   "db.editCategory": { ko: "카테고리 변경 — 이 DB의 테이블이 함께 이동", en: "Change category — moves the whole DB" },
   "db.categoryPlaceholder": { ko: "카테고리명 (비우면 DB명)", en: "Category (empty = DB name)" },
+  // 미지정 DB의 고스트 칩 — 스키마명 반복 대신 지정 유도 / ghost chip for unmapped DBs
+  "db.addCategory": { ko: "+ 분류", en: "+ Category" },
   "tip.dbFilter": {
     ko: "체크한 DB만 목록·카테고리에 표시됩니다. 선택은 이 브라우저에 저장됩니다. DB명을 눌러 카테고리를 바꾸면 그 DB의 테이블이 통째로 이동합니다 (전원 공용).",
     en: "Only checked DBs appear. The selection is stored in this browser; category changes are shared with everyone.",

@@ -149,3 +149,12 @@ export function LockOpenIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 연필 — 카테고리 칩의 편집 어포던스 / edit affordance on the category chip */}
+      <path d="M4 20l1.2-4.2L16.7 4.3a2.1 2.1 0 0 1 3 3L8.2 18.8 4 20z" />
+    </Svg>
+  );
+}
