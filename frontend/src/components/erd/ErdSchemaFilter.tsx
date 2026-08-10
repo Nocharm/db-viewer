@@ -6,8 +6,9 @@
 
 import { useMemo, useState } from "react";
 
-import { CaretDownIcon, CaretRightIcon, LockIcon } from "@/components/icons";
+import { CaretDownIcon, CaretRightIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
+import { PreviewLockMarks } from "@/components/PreviewLockMarks";
 import type { GraphNode } from "@/lib/types";
 
 interface ErdSchemaFilterProps {
@@ -76,12 +77,12 @@ export function ErdSchemaFilter({
               data-testid={`ErdSchemaFilter-item-${schema}`}
             >
               <span className="min-w-0 flex-1 truncate font-mono text-xs">{schema}</span>
-              {!previewAllowed.has(schema) && (
-                <span title={t("preview.schemaLocked")} style={{ color: "var(--muted)" }}
-                      data-testid={`ErdSchemaFilter-lock-${schema}`}>
-                  <LockIcon size={12} />
-                </span>
-              )}
+              {/* 허용/미허용 양쪽 다 표시 — 홈 DB 탭과 같은 문법 / same marks as the home DB tab */}
+              <PreviewLockMarks hasAllowed={previewAllowed.has(schema)}
+                                hasLocked={!previewAllowed.has(schema)}
+                                allowedTitle={t("preview.schemaAllowed")}
+                                lockedTitle={t("preview.schemaLocked")}
+                                testidPrefix={`ErdSchemaFilter-${schema}`} />
               <span className="text-xs" style={{ color: "var(--muted)" }}>{count}</span>
             </button>
           ))}

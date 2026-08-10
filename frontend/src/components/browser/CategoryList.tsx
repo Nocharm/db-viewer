@@ -3,12 +3,13 @@
 /** 좌측 1열 — 카테고리 탭 / DB 탭 (스키마 필터·카테고리 편집).
  * Left rail: category tab plus a DB tab that filters and re-categorizes schemas. */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { LockIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
+import { PreviewLockMarks } from "@/components/PreviewLockMarks";
 import type { SchemaCategoryItem } from "@/lib/api";
+import { getCategoryLockStates } from "@/lib/category";
 
 export interface CategoryEntry {
   code: string;
@@ -44,6 +45,14 @@ export function CategoryList({
   const [draft, setDraft] = useState("");
 
   const filterActive = dbFilter.length > 0;
+
+  // 카테고리별 허용/미허용 집계 — DB가 혼재한 카테고리는 풀림·잠김을 같이 띄운다
+  const lockStates = useMemo(
+    () => getCategoryLockStates(schemas, previewAllowed), [schemas, previewAllowed]);
+  const totalLock = useMemo(() => ({
+    hasAllowed: schemas.some((s) => previewAllowed.has(s.schema)),
+    hasLocked: schemas.some((s) => !previewAllowed.has(s.schema)),
+  }), [schemas, previewAllowed]);
 
   const toggleSchema = (schema: string) => {
     onDbFilter(
@@ -101,19 +110,33 @@ export function CategoryList({
             data-testid="CategoryList-all"
           >
             <span className="flex-1">{t("category.all")}</span>
+            <PreviewLockMarks {...totalLock}
+                              allowedTitle={t("preview.categoryHasAllowed")}
+                              lockedTitle={t("preview.categoryHasLocked")}
+                              testidPrefix="CategoryList-all" />
             <span className="text-xs" style={{ color: "var(--muted)" }}>{totalCount}</span>
           </button>
-          {categories.map((category) => (
-            <button
-              key={category.code}
-              className={`pressable list-row ${selected === category.code ? "list-row--selected" : ""}`}
-              onClick={() => onSelect(category.code)}
-              data-testid={`CategoryList-item-${category.code}`}
-            >
-              <span className="flex-1 truncate">{category.label}</span>
-              <span className="text-xs" style={{ color: "var(--muted)" }}>{category.count}</span>
-            </button>
-          ))}
+          {categories.map((category) => {
+            const lockState = lockStates.get(category.code);
+            return (
+              <button
+                key={category.code}
+                className={`pressable list-row ${selected === category.code ? "list-row--selected" : ""}`}
+                onClick={() => onSelect(category.code)}
+                data-testid={`CategoryList-item-${category.code}`}
+              >
+                <span className="flex-1 truncate">{category.label}</span>
+                {lockState && (
+                  <PreviewLockMarks hasAllowed={lockState.hasAllowed}
+                                    hasLocked={lockState.hasLocked}
+                                    allowedTitle={t("preview.categoryHasAllowed")}
+                                    lockedTitle={t("preview.categoryHasLocked")}
+                                    testidPrefix={`CategoryList-cat-${category.code}`} />
+                )}
+                <span className="text-xs" style={{ color: "var(--muted)" }}>{category.count}</span>
+              </button>
+            );
+          })}
         </>
       )}
 
@@ -144,13 +167,12 @@ export function CategoryList({
                   data-testid={`CategoryList-dbCheck-${item.schema}`}
                 />
                 <span className="min-w-0 flex-1 truncate font-mono">{item.schema}</span>
-                {/* 미리보기 미허용 스키마 표시 — 값이 안 열리는 이유를 목록에서 바로 알린다 */}
-                {!previewAllowed.has(item.schema) && (
-                  <span title={t("preview.schemaLocked")} style={{ color: "var(--muted)" }}
-                        data-testid={`CategoryList-dbLock-${item.schema}`}>
-                    <LockIcon size={12} />
-                  </span>
-                )}
+                {/* 허용/미허용을 목록에서 바로 알린다 — 스키마 단위라 둘 중 하나만 켜진다 */}
+                <PreviewLockMarks hasAllowed={previewAllowed.has(item.schema)}
+                                  hasLocked={!previewAllowed.has(item.schema)}
+                                  allowedTitle={t("preview.schemaAllowed")}
+                                  lockedTitle={t("preview.schemaLocked")}
+                                  testidPrefix={`CategoryList-db-${item.schema}`} />
                 <span style={{ color: "var(--muted)" }}>{item.object_count}</span>
               </label>
               {editing === item.schema ? (
