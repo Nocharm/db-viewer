@@ -282,6 +282,8 @@ def get_object_preview(
     object_id: int,
     filter_column: str | None = None,
     filter_value: str | None = Query(None, max_length=100),
+    # contains = LIKE '%v%'(기본), exact = 정확 일치 — 값 재검색의 매칭 방식
+    filter_mode: Literal["contains", "exact"] = "contains",
     limit: int = Query(TABLE_PREVIEW_LIMIT, ge=1, le=TABLE_PREVIEW_MAX),
     db: Session = Depends(get_db),
     login_id: str = Depends(get_current_user),
@@ -329,6 +331,7 @@ def get_object_preview(
     rows = preview.rows(
         qname, column_specs, limit,
         filter_column=filter_column, filter_value=filter_value,
+        filter_mode=filter_mode,
     )
 
     masked = [c.name for c in columns if c.masking_policy]
@@ -340,7 +343,9 @@ def get_object_preview(
         ]
 
     now = datetime.now(UTC)
-    filter_note = f" filter {filter_column}~'{filter_value}'" if filter_column else ""
+    # 감사엔 매칭 방식까지 — ~ 는 부분, = 는 정확 / audit notes the match operator
+    filter_op = "=" if filter_mode == "exact" else "~"
+    filter_note = f" filter {filter_column}{filter_op}'{filter_value}'" if filter_column else ""
     db.add(AuditLog(action="table_preview",
                     detail=f"{qname} ({len(rows)} rows){filter_note}",
                     requested_by=login_id, requested_at=now))
@@ -353,7 +358,8 @@ def get_object_preview(
         "source": "live" if settings.source_mode == "live" else "fixture",
         "limit": limit,
         "filter": (
-            {"column": filter_column, "value": filter_value} if filter_column else None
+            {"column": filter_column, "value": filter_value, "mode": filter_mode}
+            if filter_column else None
         ),
         "observed_at": now.isoformat(),
     }

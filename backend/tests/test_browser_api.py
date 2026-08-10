@@ -80,13 +80,47 @@ def test_preview_filter_by_column_value(client, load_fixture, allow_preview):
     body = client.get(f"/api/objects/{object_id}/preview", params={
         "filter_column": rel["src_column"], "filter_value": sample_value,
     }).json()
-    assert body["filter"] == {"column": rel["src_column"], "value": sample_value}
+    assert body["filter"] == {
+        "column": rel["src_column"], "value": sample_value, "mode": "contains",
+    }
     assert body["rows"]
     assert all(sample_value in str(row[rel["src_column"]]) for row in body["rows"])
 
     res = client.get(f"/api/objects/{object_id}/preview",
                      params={"filter_column": "NOPE_COL", "filter_value": "x"})
     assert res.status_code == 400
+
+
+def test_preview_filter_exact_mode(client, load_fixture, allow_preview):
+    """exact는 부분일치가 아니라 정확 일치만 — 값의 접두 부분 문자열로 대비한다."""
+    _seed(client, load_fixture)
+    rel = load_fixture("expected/relations.json")["rows"][0]
+    allow_preview(rel["src_object"])
+    object_id = _object_id(client, rel["src_object"])
+
+    plain = client.get(f"/api/objects/{object_id}/preview").json()
+    sample_value = str(plain["rows"][0][rel["src_column"]])
+
+    exact = client.get(f"/api/objects/{object_id}/preview", params={
+        "filter_column": rel["src_column"], "filter_value": sample_value,
+        "filter_mode": "exact",
+    }).json()
+    assert exact["filter"]["mode"] == "exact"
+    assert exact["rows"]
+    assert all(str(row[rel["src_column"]]) == sample_value for row in exact["rows"])
+
+    # 부분 문자열(접두)은 contains에선 잡히지만 exact에선 0행이어야 한다
+    prefix = sample_value[:-1]
+    if prefix and not any(str(r[rel["src_column"]]) == prefix for r in plain["rows"]):
+        contains = client.get(f"/api/objects/{object_id}/preview", params={
+            "filter_column": rel["src_column"], "filter_value": prefix,
+        }).json()
+        assert contains["rows"]
+        exact_prefix = client.get(f"/api/objects/{object_id}/preview", params={
+            "filter_column": rel["src_column"], "filter_value": prefix,
+            "filter_mode": "exact",
+        }).json()
+        assert all(str(row[rel["src_column"]]) == prefix for row in exact_prefix["rows"])
 
 
 def test_columns_index_covers_tables(client, load_fixture):

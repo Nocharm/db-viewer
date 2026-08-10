@@ -74,6 +74,7 @@ def test_table_preview_sends_filter_params(captured):
     assert body == {
         "kind": "table_preview", "schema": "dbo", "table": "HR_EMP",
         "limit": 50, "filter_column": "EMP_NM", "filter_value": "샘플",
+        "filter_mode": "contains",
     }
     assert rows == [{"EMP_NO": 1000, "EMP_NM": "샘플"}]
 

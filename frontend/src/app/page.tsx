@@ -30,7 +30,7 @@ import {
 } from "@/lib/api";
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
-import { matchTable, type SearchMode } from "@/lib/search";
+import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
@@ -58,8 +58,6 @@ function HomeInner() {
   const [dbFilter, setDbFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "table" | "view">("all");
   const [query, setQuery] = useState("");
-  // 검색 모드 — 포함(유사)·정확히. 정확히는 입력 그대로의 부분 문자열만 잡는다
-  const [searchMode, setSearchMode] = useState<SearchMode>("fuzzy");
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -195,7 +193,7 @@ function HomeInner() {
         name: table.name,
         categoryLabel: code,
         columns: columnsIndex.get(table.id) ?? [],
-      }, searchMode);
+      });
       if (match.matched) items.push({ table, match });
     }
     // 검색어가 있을 때만 등급 정렬 — 빈 검색어의 기본 목록은 백엔드 (schema, name) 순서를 보존한다
@@ -204,14 +202,14 @@ function HomeInner() {
         || a.table.name.localeCompare(b.table.name));
     }
     return items;
-  }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex, searchMode]);
+  }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
   // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
   const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
     setPreviewTabs((cur) => cur.map((tab) =>
       tab.id === id ? { ...tab, loading: true } : tab));
     const filter = opts.filterColumn && opts.filterValue
-      ? { column: opts.filterColumn, value: opts.filterValue }
+      ? { column: opts.filterColumn, value: opts.filterValue, mode: opts.filterMode }
       : undefined;
     fetchObjectPreview(id, filter, opts.limit)
       .then((res) => setPreviewTabs((cur) => cur.map((tab) =>
@@ -352,8 +350,6 @@ function HomeInner() {
             onQuery={setQuery}
             onTypeFilter={setTypeFilter}
             onSelect={selectTable}
-            searchMode={searchMode}
-            onSearchMode={setSearchMode}
             width={paneWidths.list}
           />
           <div className="pane-resize hidden lg:block"

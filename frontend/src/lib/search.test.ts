@@ -88,26 +88,3 @@ describe("matchTable rank", () => {
     expect(matchTable("ZZZZ", target).rank).toBe(Infinity);
   });
 });
-
-describe("matchTable — exact mode", () => {
-  const target = {
-    name: "TB_QC_SAMPLE_RSLT",
-    categoryLabel: "품질",
-    columns: ["JUDGE_CD"],
-  };
-
-  it("keeps literal substring matches on name, column and category", () => {
-    expect(matchTable("SAMPLE", target, "exact").matched).toBe(true);
-    expect(matchTable("JUDGE", target, "exact").rank).toBe(4);
-    expect(matchTable("품질", target, "exact").rank).toBe(5);
-  });
-
-  it("drops order-similar name matches", () => {
-    // fuzzy에선 rank 3으로 잡히던 불연속 매칭 / the rank-3 subsequence hit
-    expect(matchTable("TBRSLT", target, "exact").matched).toBe(false);
-  });
-
-  it("drops chosung category expansion", () => {
-    expect(matchTable("ㅍㅈ", target, "exact").matched).toBe(false);
-  });
-});

@@ -45,11 +45,15 @@ class FakeTablePreview:
     def rows(
         self, qname: str, columns: list[dict], limit: int,
         filter_column: str | None = None, filter_value: str | None = None,
+        filter_mode: str = "contains",
     ) -> list[dict]:
         """필터가 있으면 큰 풀에서 생성 후 걸러 limit 적용 — live의 WHERE 절 대응.
 
+        contains는 LIKE '%v%', exact는 = 'v'에 대응한다 (둘 다 대소문자 무시 —
+        MSSQL 기본 collation이 case-insensitive라 live와 결이 같다).
         With a filter we synthesize a larger pool then filter, mirroring what a
-        live WHERE clause would return.
+        live WHERE clause would return; both modes are case-insensitive like the
+        default MSSQL collation.
         """
         pool = limit if not (filter_column and filter_value) else max(limit * 10, 200)
         needle = (filter_value or "").upper()
@@ -65,7 +69,11 @@ class FakeTablePreview:
                         column["name"], column["data_type"], row_index
                     )
             if filter_column and needle:
-                if needle not in str(row.get(filter_column, "")).upper():
+                cell = str(row.get(filter_column, "")).upper()
+                if filter_mode == "exact":
+                    if cell != needle:
+                        continue
+                elif needle not in cell:
                     continue
             out.append(row)
             if len(out) >= limit:

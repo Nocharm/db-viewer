@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
-import type { SearchMatch, SearchMode } from "@/lib/search";
+import type { SearchMatch } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 import { useHiddenSchemas } from "@/lib/use-hidden-schemas";
 
@@ -23,9 +23,6 @@ interface Props {
   onQuery: (value: string) => void;
   onTypeFilter: (value: "all" | "table" | "view") => void;
   onSelect: (table: ObjectSummary) => void;
-  /** 검색 모드 — 포함(유사 포함) vs 정확히(입력 그대로만) / fuzzy vs literal substring */
-  searchMode: SearchMode;
-  onSearchMode: (mode: SearchMode) => void;
   /** 리사이저가 정하는 폭(px) — 없으면 기본 w-80 / resizer-driven width, w-80 default */
   width?: number;
 }
@@ -52,8 +49,7 @@ const TYPE_FILTERS = [
 ] as const;
 
 export function TableList({
-  items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect,
-  searchMode, onSearchMode, width,
+  items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect, width,
 }: Props) {
   const { t } = useI18n();
   const hiddenSchemas = useHiddenSchemas();
@@ -108,26 +104,6 @@ export function TableList({
               {t(labelKey)}
             </button>
           ))}
-          {/* 검색 모드 — 포함(유사·초성까지) vs 정확히(입력 그대로만). 타입 칩과 분리된
-              구획임을 알리는 세로 구분선 / mode toggle, separated from the type chips */}
-          <span aria-hidden className="mx-0.5 h-4 w-px shrink-0"
-                style={{ background: "var(--hairline-strong)" }} />
-          <button
-            className={`pressable key-chip ${searchMode === "fuzzy" ? "key-chip--selected" : ""}`}
-            title={t("search.modeContainsHint")}
-            onClick={() => onSearchMode("fuzzy")}
-            data-testid="TableList-modeChip-fuzzy"
-          >
-            {t("search.modeContains")}
-          </button>
-          <button
-            className={`pressable key-chip ${searchMode === "exact" ? "key-chip--selected" : ""}`}
-            title={t("search.modeExactHint")}
-            onClick={() => onSearchMode("exact")}
-            data-testid="TableList-modeChip-exact"
-          >
-            {t("search.modeExact")}
-          </button>
           <InfoTip text={t("tip.tableList")} />
         </div>
         {/* 전체 개수 표기 — 목록이 잘려 보이는지 아닌지를 화면에서 판별할 수 있어야 한다 */}

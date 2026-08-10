@@ -69,7 +69,11 @@ export const MESSAGES = {
   "preview.maskedSuffix": { ko: "컬럼", en: "cols" },
   "preview.rowsSuffix": { ko: "건", en: "rows" },
   "preview.selectColumn": { ko: "필터 컬럼 선택", en: "Select filter column" },
-  "preview.valuePlaceholder": { ko: "값 (부분 일치)", en: "Value (partial match)" },
+  // 매칭 방식은 옆 셀렉트가 말한다 — 플레이스홀더는 값 자체만 / the mode select owns the wording
+  "preview.valuePlaceholder": { ko: "값", en: "Value" },
+  "preview.matchContains": { ko: "부분 일치", en: "Contains" },
+  "preview.matchExact": { ko: "정확 일치", en: "Exact" },
+  "preview.matchModeTitle": { ko: "값 매칭 방식 — 소스 쿼리 WHERE로 내려간다", en: "Value match mode, pushed into the source WHERE clause" },
   "preview.requery": { ko: "조건으로 재조회", en: "Re-query with filter" },
   "preview.requeryHint": {
     ko: "원본에 새 질의를 보냅니다 (로컬은 합성 데이터)",
@@ -306,18 +310,6 @@ export const MESSAGES = {
   "db.categoryPlaceholder": { ko: "카테고리명 (비우면 DB명)", en: "Category (empty = DB name)" },
   // 미지정 DB의 고스트 칩 — 스키마명 반복 대신 지정 유도 / ghost chip for unmapped DBs
   "db.addCategory": { ko: "+ 분류", en: "+ Category" },
-
-  // 검색 모드 — 포함(유사)·정확히 / search mode chips
-  "search.modeContains": { ko: "포함", en: "Fuzzy" },
-  "search.modeExact": { ko: "정확히", en: "Exact" },
-  "search.modeContainsHint": {
-    ko: "유사 매칭까지 — 초성, 글자 순서 유사 포함",
-    en: "Fuzzy matching — chosung and in-order similarity included",
-  },
-  "search.modeExactHint": {
-    ko: "입력 그대로 포함된 이름·컬럼·카테고리만",
-    en: "Only literal substring matches on name, column or category",
-  },
   "tip.dbFilter": {
     ko: "체크한 DB만 목록·카테고리에 표시됩니다. 선택은 이 브라우저에 저장됩니다. DB명을 눌러 카테고리를 바꾸면 그 DB의 테이블이 통째로 이동합니다 (전원 공용).",
     en: "Only checked DBs appear. The selection is stored in this browser; category changes are shared with everyone.",
