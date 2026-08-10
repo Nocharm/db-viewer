@@ -165,6 +165,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
                        className="erd-menu__item flex cursor-pointer items-center gap-2 font-mono text-xs">
                   <input
                     type="checkbox"
+                    className="checkbox"
                     checked={!tab.hidden.includes(column)}
                     onChange={() => onPatch(tab.id, {
                       hidden: tab.hidden.includes(column)

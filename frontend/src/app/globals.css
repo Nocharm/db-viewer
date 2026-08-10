@@ -638,6 +638,42 @@ input, select, textarea {
   background: var(--surface-card);
   color: var(--ink);
 }
+
+/* ── 체크박스 — 토큰 기반 커스텀 컨트롤. 네이티브는 OS마다 모양·색이 제각각이라
+   다크 테마·옐로 액센트와 어긋난다 / token-styled checkbox replacing the native look ── */
+input[type="checkbox"].checkbox {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 4px;
+  background: var(--surface-card);
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+input[type="checkbox"].checkbox:hover {
+  border-color: var(--muted);
+}
+input[type="checkbox"].checkbox:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+/* 체크 표시 — 좌·하 보더 L자를 회전 (별도 아이콘 에셋 불필요) */
+input[type="checkbox"].checkbox:checked::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid var(--on-primary);
+  border-bottom: 2px solid var(--on-primary);
+  transform: translateY(-1px) rotate(-45deg);
+}
+input[type="checkbox"].checkbox:focus-visible {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 2px;
+}
 input::placeholder {
   color: var(--muted);
 }
