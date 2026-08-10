@@ -735,6 +735,14 @@ input::placeholder {
 .erd-menu__item:hover {
   background: var(--soft-stone);
 }
+/* 비활성 항목 — 버튼 공통 비활성 문법(0.35)과 동일, hover 반응도 죽인다 */
+.erd-menu__item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.erd-menu__item:disabled:hover {
+  background: transparent;
+}
 .erd-menu__label {
   padding: 4px 10px;
   font-size: 11px;

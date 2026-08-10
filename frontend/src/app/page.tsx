@@ -238,6 +238,18 @@ function HomeInner() {
       { behavior: "smooth", block: "start" }), 60);
   }, [selected, previewTabs, refetchPreview]);
 
+  // ERD 우클릭 메뉴의 「미리보기」 딥링크(?table=&preview=1) — 선택이 잡히면 한 번 열고
+  // 파라미터를 소진한다(남기면 새로고침·뒤로가기마다 재발동). 미허용 스키마면 열지 않고
+  // 소진만 — 상세의 잠긴 버튼과 사유 문구가 상태를 설명한다
+  // / one-shot auto-preview for the ERD context-menu deep link; the param is consumed
+  //   either way so refresh/back never re-triggers it
+  const previewParam = params.get("preview");
+  useEffect(() => {
+    if (previewParam !== "1" || !selected) return;
+    if (previewAllowed.has(selected.schema)) openPreview();
+    router.replace(`/?table=${selected.id}`, { scroll: false });
+  }, [previewParam, selected, previewAllowed, openPreview, router]);
+
   const closePreview = useCallback((id: number) => {
     setPreviewTabs((cur) => {
       const next = cur.filter((tab) => tab.id !== id);
@@ -301,6 +313,7 @@ function HomeInner() {
             dbFilter={dbFilter}
             onDbFilter={changeDbFilter}
             onAssignCategory={assignCategory}
+            previewAllowed={previewAllowed}
           />
           <TableList
             items={listItems}

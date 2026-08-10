@@ -128,3 +128,13 @@ export function LogoMark({ size = 40, className }: { size?: number; className?: 
     </svg>
   );
 }
+
+export function LockIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 자물쇠 — 미리보기 미허용 스키마 표시 / preview-locked schema marker */}
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    </Svg>
+  );
+}

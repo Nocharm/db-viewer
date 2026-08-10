@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { GraphEdge, GraphNode } from "./types";
 import {
-  applyManualPositions, groupConnectedComponents, packGroupRows, type PlacedNode,
+  applyManualPositions, clampMenuPosition, filterGraphBySchema, groupConnectedComponents,
+  packGroupRows, type PlacedNode,
 } from "./erd-graph";
 
-function makeNode(id: number): GraphNode {
+function makeNode(id: number, schema = "dbo"): GraphNode {
   return {
-    id, schema: "dbo", name: `T${id}`, type: "table", row_count: 0,
+    id, schema, name: `T${id}`, type: "table", row_count: 0,
     dmv_unresolved: false, lineage_flag: null, unresolved_dep_count: 0, columns: [],
   } as GraphNode;
 }
@@ -18,7 +19,7 @@ function makeEdge(id: string, src: number, tgt: number): GraphEdge {
 
 describe("groupConnectedComponents", () => {
   it("splits disconnected clusters and sorts big-first, then by min id", () => {
-    const nodes = [1, 2, 3, 4, 5, 6].map(makeNode);
+    const nodes = [1, 2, 3, 4, 5, 6].map((id) => makeNode(id));
     const edges = [makeEdge("a", 5, 6), makeEdge("b", 1, 2), makeEdge("c", 2, 3)];
 
     const groups = groupConnectedComponents(nodes, edges);
@@ -32,7 +33,7 @@ describe("groupConnectedComponents", () => {
   });
 
   it("ignores edges referencing absent nodes", () => {
-    const nodes = [1, 2].map(makeNode);
+    const nodes = [1, 2].map((id) => makeNode(id));
     const edges = [makeEdge("a", 1, 2), makeEdge("b", 2, 999)]; // 999는 없음
 
     const groups = groupConnectedComponents(nodes, edges);
@@ -113,5 +114,46 @@ describe("packGroupRows", () => {
     ];
 
     expect(packGroupRows(boxes, 30)).toEqual(packGroupRows(boxes, 30));
+  });
+});
+
+describe("filterGraphBySchema", () => {
+  const nodes = [makeNode(1, "dbo"), makeNode(2, "dbo"), makeNode(3, "hr")];
+  const edges = [makeEdge("a", 1, 2), makeEdge("b", 2, 3)]; // b는 스키마 경계를 넘는다
+
+  it("returns the original references when no filter is set", () => {
+    const result = filterGraphBySchema(nodes, edges, null);
+
+    expect(result.nodes).toBe(nodes);
+    expect(result.edges).toBe(edges);
+  });
+
+  it("keeps only the schema's nodes and drops boundary-crossing edges", () => {
+    const result = filterGraphBySchema(nodes, edges, "dbo");
+
+    expect(result.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect(result.edges.map((e) => e.id)).toEqual(["a"]); // 2-3 엣지는 hr 쪽 끝이 잘려 제외
+  });
+
+  it("returns empty sets for a schema with no nodes", () => {
+    const result = filterGraphBySchema(nodes, edges, "absent");
+
+    expect(result.nodes).toEqual([]);
+    expect(result.edges).toEqual([]);
+  });
+});
+
+describe("clampMenuPosition", () => {
+  it("keeps an interior position unchanged", () => {
+    expect(clampMenuPosition(100, 100, 200, 180, 1440, 900)).toEqual({ x: 100, y: 100 });
+  });
+
+  it("pulls a menu opened near the bottom-right corner inside", () => {
+    expect(clampMenuPosition(1400, 880, 200, 180, 1440, 900))
+      .toEqual({ x: 1240, y: 720 }); // viewport - menu 크기까지 안쪽으로
+  });
+
+  it("never returns negative coordinates on tiny viewports", () => {
+    expect(clampMenuPosition(5, 5, 400, 400, 300, 300)).toEqual({ x: 0, y: 0 });
   });
 });
