@@ -77,6 +77,34 @@ export function packGroupRows(
   return offsets;
 }
 
+/** 스키마 필터 — 노드는 스키마 일치만 남기고, 엣지는 양끝이 모두 남은 것만 유지한다.
+ * null은 필터 없음(원본 참조 그대로 반환 — 불필요한 재레이아웃 방지).
+ * / keep nodes of one schema and only the edges whose both ends survive;
+ *   null returns the original references so downstream memo deps stay stable. */
+export function filterGraphBySchema(
+  nodes: GraphNode[], edges: GraphEdge[], schema: string | null,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  if (schema === null) return { nodes, edges };
+  const kept = nodes.filter((n) => n.schema === schema);
+  const ids = new Set(kept.map((n) => n.id));
+  return {
+    nodes: kept,
+    edges: edges.filter((e) => ids.has(e.src_object_id) && ids.has(e.tgt_object_id)),
+  };
+}
+
+/** fixed 좌표 메뉴가 뷰포트 밖으로 나가지 않게 안쪽으로 민다 — 우클릭이 화면 가장자리에서
+ * 일어나면 메뉴가 잘린다 / clamp a fixed-position context menu inside the viewport. */
+export function clampMenuPosition(
+  x: number, y: number, menuWidth: number, menuHeight: number,
+  viewportWidth: number, viewportHeight: number,
+): { x: number; y: number } {
+  return {
+    x: Math.max(0, Math.min(x, viewportWidth - menuWidth)),
+    y: Math.max(0, Math.min(y, viewportHeight - menuHeight)),
+  };
+}
+
 /** ELK 배치 좌표 + 추정 크기 — ErdViewer의 배치 기록 단위 */
 export interface PlacedNode {
   x: number;

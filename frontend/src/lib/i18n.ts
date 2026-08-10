@@ -100,6 +100,11 @@ export const MESSAGES = {
     ko: "이 테이블의 스키마가 미리보기 허용 목록에 없습니다 — 관리자에게 요청하세요",
     en: "This table's schema is not on the preview allowlist — ask an admin to add it",
   },
+  // 스키마 행의 잠금 아이콘 툴팁 / lock-icon tooltip on schema rows
+  "preview.schemaLocked": {
+    ko: "미리보기 미허용 스키마 — 관리자에게 요청하세요",
+    en: "Schema not on the preview allowlist — ask an admin to add it",
+  },
   "preview.csv": { ko: "CSV 다운로드", en: "Download CSV" },
   "preview.limitTitle": { ko: "표시 행수", en: "Row limit" },
   "preview.columnsMenu": { ko: "컬럼", en: "Columns" },
@@ -169,6 +174,15 @@ export const MESSAGES = {
     ko: "그래프에 없는 테이블입니다 — 검증된 테이블만 그려집니다",
     en: "Not in the graph — only verified tables are drawn",
   },
+  // 좌측 스키마 필터 / left-rail schema filter
+  "erd.schemaFilter": { ko: "스키마", en: "Schemas" },
+  "erd.filterAll": { ko: "전체", en: "All" },
+  // 노드 우클릭 메뉴 / node context menu
+  "erd.menuPreview": { ko: "미리보기", en: "Preview" },
+  "erd.menuDetail": { ko: "테이블 상세로", en: "Open table detail" },
+  "erd.menuVerify": { ko: "조인 검증하기", en: "Verify a join" },
+  "erd.menuCopyName": { ko: "테이블명 복사", en: "Copy table name" },
+  "erd.menuCopied": { ko: "복사됨", en: "Copied" },
 
   "panel.verify": { ko: "조인 검증", en: "Check join" },
 

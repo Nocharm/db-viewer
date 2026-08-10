@@ -6,6 +6,7 @@
 import { useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { LockIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import type { SchemaCategoryItem } from "@/lib/api";
 
@@ -26,13 +27,15 @@ interface Props {
   dbFilter: string[];
   onDbFilter: (schemas: string[]) => void;
   onAssignCategory: (schema: string, category: string) => void;
+  /** 미리보기 허용 스키마 — 미허용 행에 잠금 아이콘 / preview allowlist for lock markers */
+  previewAllowed: Set<string>;
 }
 
 type Tab = "category" | "db";
 
 export function CategoryList({
   categories, selected, totalCount, onSelect,
-  schemas, dbFilter, onDbFilter, onAssignCategory,
+  schemas, dbFilter, onDbFilter, onAssignCategory, previewAllowed,
 }: Props) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("category");
@@ -141,6 +144,13 @@ export function CategoryList({
                   data-testid={`CategoryList-dbCheck-${item.schema}`}
                 />
                 <span className="min-w-0 flex-1 truncate font-mono">{item.schema}</span>
+                {/* 미리보기 미허용 스키마 표시 — 값이 안 열리는 이유를 목록에서 바로 알린다 */}
+                {!previewAllowed.has(item.schema) && (
+                  <span title={t("preview.schemaLocked")} style={{ color: "var(--muted)" }}
+                        data-testid={`CategoryList-dbLock-${item.schema}`}>
+                    <LockIcon size={12} />
+                  </span>
+                )}
                 <span style={{ color: "var(--muted)" }}>{item.object_count}</span>
               </label>
               {editing === item.schema ? (

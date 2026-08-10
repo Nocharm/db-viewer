@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   applyNodeChanges, Background, ControlButton, Controls, ReactFlow, ReactFlowProvider,
   useReactFlow,
@@ -20,8 +21,11 @@ import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
 import {
-  applyManualPositions, groupConnectedComponents, packGroupRows, type PlacedNode,
+  applyManualPositions, clampMenuPosition, filterGraphBySchema, groupConnectedComponents,
+  packGroupRows, type PlacedNode,
 } from "@/lib/erd-graph";
+import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
+import { ErdSchemaFilter } from "./ErdSchemaFilter";
 import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
@@ -43,6 +47,40 @@ const EDGE_LABEL_BG_STYLE = {
   fill: "var(--surface-card)", stroke: "var(--hairline-strong)", strokeWidth: 1,
 } as const;
 const EDGE_LABEL_BG_PADDING: [number, number] = [6, 3];
+
+/** 우클릭 메뉴 추정 크기(px) — 뷰포트 클램프용. 렌더 전이라 실측 대신 여유 있는 상한 */
+const NODE_MENU_WIDTH = 230;
+const NODE_MENU_HEIGHT = 210;
+
+/** 노드 우클릭 메뉴 상태 — 화면(fixed) 좌표 / node context-menu state at pointer coords. */
+interface NodeMenuState {
+  nodeId: number;
+  qname: string;
+  schema: string;
+  x: number;
+  y: number;
+  copied: boolean;
+}
+
+/** 클립보드 복사 — 사내 배포는 http(비보안 컨텍스트)라 clipboard API가 없을 수 있어
+ * execCommand 폴백을 유지한다 / clipboard write with a non-secure-context fallback. */
+function copyText(text: string): void {
+  const fallback = () => {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(fallback);
+  } else {
+    fallback();
+  }
+}
 
 /** 엣지 등급 → 범례와 같은 문구 / edge grade to the same wording the legend uses */
 const GRADE_LABEL: Record<EdgeGrade, MessageKey> = {
@@ -134,7 +172,14 @@ export function ErdViewer(props: Props) {
 
 function ErdViewerInner({ focusId, focusLabel }: Props) {
   const { t } = useI18n();
+  const router = useRouter();
+  const previewAllowed = usePreviewAllowlist();
   const [graph, setGraph] = useState<ErdResponse | null>(null);
+  // 좌측 스키마 필터 — null이면 전체. 필터된 그래프가 레이아웃·검색의 입력이 된다
+  const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
+  // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
+  const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -181,6 +226,60 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
       else next.add(id);
       return next;
     });
+  }, []);
+
+  // 바깥 클릭으로 메뉴 닫기 — mousedown 기준 (PreviewTable 헤더 메뉴와 동일)
+  useEffect(() => {
+    if (!nodeMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!nodeMenuRef.current?.contains(e.target as Node)) setNodeMenu(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [nodeMenu]);
+
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: TableFlowNode) => {
+      event.preventDefault(); // 브라우저 기본 메뉴 대신 노드 액션 메뉴
+      const graphNode = node.data.node;
+      const pos = clampMenuPosition(
+        event.clientX, event.clientY, NODE_MENU_WIDTH, NODE_MENU_HEIGHT,
+        window.innerWidth, window.innerHeight);
+      setNodeMenu({
+        nodeId: graphNode.id,
+        qname: `${graphNode.schema}.${graphNode.name}`,
+        schema: graphNode.schema,
+        ...pos,
+        copied: false,
+      });
+    }, []);
+
+  /** 메뉴 항목 → 다른 페이지 이동 — 닫고 이동 (이동 지연 중 메뉴 잔상 방지) */
+  const menuNavigate = useCallback((href: string) => {
+    setNodeMenu(null);
+    router.push(href);
+  }, [router]);
+
+  const handleSchemaFilter = useCallback((schema: string | null) => {
+    setSchemaFilter(schema);
+    // 그래프 구성이 바뀌었다 — 1회 가드를 풀어 재레이아웃 후 남은 그래프에 다시 전체 맞춤
+    fitViewDoneRef.current = false;
+  }, []);
+
+  // 필터 적용 그래프 — 레이아웃·검색·엣지 전부 이걸 입력으로 쓴다 (null 필터는 원본 참조)
+  const visibleGraph = useMemo(
+    () => (graph ? filterGraphBySchema(graph.nodes, graph.edges, schemaFilter) : null),
+    [graph, schemaFilter],
+  );
+
+  const handleMenuCopy = useCallback(() => {
+    setNodeMenu((current) => {
+      if (!current) return current;
+      copyText(current.qname);
+      return { ...current, copied: true };
+    });
+    // 짧게 「복사됨」을 보여주고 닫는다 — 눌렀는데 아무 일도 없어 보이면 안 된다
+    setTimeout(() => setNodeMenu(null), 700);
   }, []);
 
   // 엣지 호버 = 라벨·강조 + (이미 펼쳐진 노드에만) 컬럼 하이라이트. 펼침은 하지 않는다 —
@@ -265,18 +364,18 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     void fitView({ duration: 300 });
   }, [fitView]);
 
-  // 그래프·접힘 변경 → 그룹별 ELK 재배치 / re-layout on graph or collapse changes
+  // 그래프·스키마 필터·접힘 변경 → 그룹별 ELK 재배치 / re-layout on graph, filter or collapse
   useEffect(() => {
-    if (!graph) return;
+    if (!visibleGraph) return;
     let cancelled = false;
-    const groups = groupConnectedComponents(graph.nodes, graph.edges);
-    void layoutGroups(groups, graph.edges, expandedNodes).then((elkPlaced) => {
+    const groups = groupConnectedComponents(visibleGraph.nodes, visibleGraph.edges);
+    void layoutGroups(groups, visibleGraph.edges, expandedNodes).then((elkPlaced) => {
       if (cancelled) return;
       elkPlacedRef.current = elkPlaced;
       // 수동 이동 좌표를 ELK 결과 위에 덮어쓴다 — 재레이아웃(펼침/접힘)에도 배치가 유지된다
       const placed = applyManualPositions(elkPlaced, movedRef.current);
       placedRef.current = placed;
-      setFlowNodes(graph.nodes.map((n) => {
+      setFlowNodes(visibleGraph.nodes.map((n) => {
         const expanded = expandedNodes.has(n.id);
         return {
           id: String(n.id),
@@ -303,7 +402,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
           },
         };
       }));
-      setFlowEdges(graph.edges.map((e) => {
+      setFlowEdges(visibleGraph.edges.map((e) => {
         const visual = getEdgeVisual(e.kind, e.confidence ?? undefined);
         const ends = getCardinalityEnds(e.cardinality);
         return {
@@ -347,7 +446,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     };
     // highlightedId는 여기서 안 쓴다 — 검색 픽은 displayNodes의 isAnchor만 갈아 끼우고
     // ELK 재레이아웃은 건드리지 않는다 / search picks skip this effect on purpose
-  }, [graph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
+  }, [visibleGraph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -457,7 +556,13 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
         }}
         onEdgeMouseEnter={handleEdgeMouseEnter}
         onEdgeMouseLeave={handleEdgeMouseLeave}
-        onPaneClick={() => setSelectedEdgeId(null)}
+        onPaneClick={() => {
+          setSelectedEdgeId(null);
+          setNodeMenu(null);
+        }}
+        onNodeContextMenu={handleNodeContextMenu}
+        // 팬·줌이 시작되면 메뉴를 닫는다 — fixed 좌표 메뉴가 노드와 어긋난 채 떠 있지 않게
+        onMoveStart={() => setNodeMenu(null)}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {
@@ -486,7 +591,60 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
           </ControlButton>
         </Controls>
       </ReactFlow>
-      <ErdSearch nodes={graph?.nodes ?? []} onPick={handleSearchPick} loading={graph === null} />
+      {/* 좌측 레일 — 검색 아래 스키마 필터 (홈 좌측 레일과 같은 자리). DOM상 검색보다 먼저
+          두어 같은 z-index에서 검색 드롭다운이 위에 그려지게 한다 */}
+      <div className="absolute left-3 top-[3.75rem] z-10">
+        <ErdSchemaFilter
+          nodes={graph?.nodes ?? []}
+          selected={schemaFilter}
+          onSelect={handleSchemaFilter}
+          previewAllowed={previewAllowed}
+        />
+      </div>
+      <ErdSearch nodes={visibleGraph?.nodes ?? []} onPick={handleSearchPick}
+                 loading={graph === null} />
+
+      {/* 노드 우클릭 메뉴 — 화면 좌표 고정, 미리보기는 허용 스키마에서만 활성 */}
+      {nodeMenu && (
+        <div ref={nodeMenuRef} className="erd-menu !fixed z-50 max-w-72"
+             style={{ left: nodeMenu.x, top: nodeMenu.y }}
+             data-testid="ErdViewer-nodeMenu">
+          <div className="erd-menu__label truncate font-mono">{nodeMenu.qname}</div>
+          <button className="pressable erd-menu__item"
+                  disabled={!previewAllowed.has(nodeMenu.schema)}
+                  title={previewAllowed.has(nodeMenu.schema)
+                    ? undefined : t("preview.notAllowedHint")}
+                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}&preview=1`)}
+                  data-testid="ErdViewer-nodeMenuPreview">
+            {t("erd.menuPreview")}
+          </button>
+          <button className="pressable erd-menu__item"
+                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}`)}
+                  data-testid="ErdViewer-nodeMenuDetail">
+            {t("erd.menuDetail")}
+          </button>
+          <button className="pressable erd-menu__item"
+                  onClick={() => menuNavigate(
+                    `/verify?src=${nodeMenu.nodeId}&srcLabel=${encodeURIComponent(nodeMenu.qname)}`)}
+                  data-testid="ErdViewer-nodeMenuVerify">
+            {t("erd.menuVerify")}
+          </button>
+          <button className="pressable erd-menu__item"
+                  onClick={() => {
+                    toggleNode(nodeMenu.nodeId);
+                    setNodeMenu(null);
+                  }}
+                  data-testid="ErdViewer-nodeMenuToggle">
+            {expandedNodes.has(nodeMenu.nodeId)
+              ? t("erd.collapseColumns") : t("erd.expandColumns")}
+          </button>
+          <button className="pressable erd-menu__item"
+                  onClick={handleMenuCopy}
+                  data-testid="ErdViewer-nodeMenuCopy">
+            {nodeMenu.copied ? `✓ ${t("erd.menuCopied")}` : t("erd.menuCopyName")}
+          </button>
+        </div>
+      )}
 
       {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다.
           컨테이너는 클릭을 통과시키고(폭이 다른 두 자식 사이 빈 여백이 캔버스 pan/zoom을 가로채지 않도록),
