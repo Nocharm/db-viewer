@@ -88,8 +88,9 @@ export function HiddenSchemaPanel() {
       {!passwordConfigured ? (
         <p className="mb-3 text-sm" style={{ color: "var(--error)" }}
            data-testid="AdminPage-hiddenSchemaNoPassword">
-          PREVIEW_ADMIN_PASSWORD가 설정되지 않아 토글을 바꿀 수 없습니다 — 서버 .env에
-          값을 넣고 백엔드를 재기동하세요.
+          {/* 같은 원인의 상세 안내(.env 설정)는 위 미리보기 섹션 경고가 담당 — 반복하지 않는다 */}
+          PREVIEW_ADMIN_PASSWORD가 설정되지 않아 토글이 잠겨 있습니다 (설정 안내는 위
+          미리보기 허용 섹션 참고).
         </p>
       ) : (
         <div className="mb-3 flex items-center gap-2">

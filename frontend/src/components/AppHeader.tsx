@@ -71,8 +71,9 @@ function UserMenu() {
 
   return (
     <div ref={rootRef} className="relative">
+      {/* rounded-lg — 유틸 클러스터의 icon-button(8px radius)과 모서리를 맞춘다 */}
       <button
-        className="pressable rounded px-2 py-1 text-sm"
+        className="pressable rounded-lg px-2 py-1 text-sm"
         style={{ color: "var(--slate)" }}
         onClick={() => setOpen((cur) => !cur)}
         data-testid="AppHeader-userMenuButton"

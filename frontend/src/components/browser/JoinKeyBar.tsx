@@ -35,29 +35,35 @@ export function JoinKeyBar({ items, selected, onSelect }: Props) {
         <span className="erd-node__type">JOIN KEYS</span>
         <InfoTip text={t("tip.joinKeys")} align="right" />
       </span>
-      <div className={`flex items-center gap-1.5 ${expanded ? "flex-wrap" : "scroll-area overflow-x-auto pb-0.5"}`}>
-        <button
-          className={`pressable key-chip ${selected === null ? "key-chip--selected" : ""}`}
-          onClick={() => onSelect(null)}
-          data-testid="JoinKeyBar-allChip"
-        >
-          {t("joinkeys.all")}
-        </button>
-        {[...pinned, ...visible].map((item) => (
+      {/* 더보기 버튼은 스트립 밖 형제 — 스트립 안에 두면 좁은 화면에서 칩들과 함께
+          숨은 가로 스크롤 뒤로 밀려, 나머지 키가 있다는 단서 자체가 사라진다(1440px 실측)
+          / the fold toggle lives outside the strip: inside it scrolls out of view with
+            the chips, hiding the only cue that more keys exist */}
+      <div className="flex min-w-0 flex-1 items-start gap-1.5">
+        <div className={`flex items-center gap-1.5 ${expanded ? "flex-wrap" : "scroll-area min-w-0 overflow-x-auto pb-0.5"}`}>
           <button
-            key={item.key}
-            className={`pressable key-chip ${selected?.key === item.key ? "key-chip--selected" : ""}`}
-            onClick={() => onSelect(selected?.key === item.key ? null : item)}
-            title={`${item.table_count}개 테이블 · 근거 ${item.usage}건`}
-            data-testid={`JoinKeyBar-chip-${item.key}`}
+            className={`pressable key-chip ${selected === null ? "key-chip--selected" : ""}`}
+            onClick={() => onSelect(null)}
+            data-testid="JoinKeyBar-allChip"
           >
-            {item.key}
-            <span className="key-chip__count">{item.table_count}</span>
+            {t("joinkeys.all")}
           </button>
-        ))}
+          {[...pinned, ...visible].map((item) => (
+            <button
+              key={item.key}
+              className={`pressable key-chip ${selected?.key === item.key ? "key-chip--selected" : ""}`}
+              onClick={() => onSelect(selected?.key === item.key ? null : item)}
+              title={`${item.table_count}개 테이블 · 근거 ${item.usage}건`}
+              data-testid={`JoinKeyBar-chip-${item.key}`}
+            >
+              {item.key}
+              <span className="key-chip__count">{item.table_count}</span>
+            </button>
+          ))}
+        </div>
         {hiddenCount > 0 && (
           <button
-            className="pressable key-chip"
+            className="pressable key-chip shrink-0"
             style={{ color: "var(--muted)" }}
             onClick={() => setExpanded((cur) => !cur)}
             data-testid="JoinKeyBar-moreButton"

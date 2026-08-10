@@ -5,6 +5,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-10
+
+- **UX 감사 → 일괄 폴리시** (feature/ux-polish) — "게으른 마우스·통일성 결벽" 디자이너 관점으로 전 화면을 헤드리스 실측(스크린샷 + computed style 전수)해 15건을 수정. 실측으로만 잡힌 대표: 조인키 **+N 더보기 버튼이 1440px에서 화면 밖**(x=1443, 스크롤바는 hover 전 투명이라 단서 0) → 스트립 밖 형제로 이동, **비활성 secondary/icon 버튼이 opacity 1**로 활성과 동일(`.btn-primary:disabled`만 존재) → 비활성 문법 전 버튼 통일, **ERD 초기 뷰 minZoom 0.1 스트립** — 원인은 ELK가 아니라 layoutGroups의 연결요소 세로 일렬 적층 → `packGroupRows` 행 패킹(순수 함수+테스트 5케이스)으로 0.17에 뷰포트형 그리드, **다크 그립 틴트 rgba(0,0,0,.05)가 #1a1a1a 위에서 식별 불가** → `--ink` 기반 color-mix(컬럼 행 호버 동일). 나머지: primary/secondary 2px 높이 차(투명 보더), 헤더 유틸 26/28px·radius 혼재 고정(header 스코프 — ERD 노드 헤더는 HEADER_H=36 산식이라 제외), `:focus-visible` 브랜드 링(UA 블루 → `--focus-blue`), 전역 reduced-motion 가드, verify 스텝 버튼 라벨 옆 재배치(ml-auto 우측 밀착 제거)+헤더 중복 안내 제거+대기열 선택 표시(옐로 좌보더 관례 통일), 챗패널 트리거 아래 앵커(ERD 범례 가림 해소), 파싱 격리 뷰 → `/?table=` 딥링크(막다른 목록 해소)+그리드 직사각화(row-span-3), admin 수집 버튼 위계 통일·비밀번호 경고 중복 축약, ERD 검색어 유지·노드 토글 히트박스 ::after 확장. 검증: vitest 80/80·tsc·eslint 클린 + 수정 전후 같은 항목 헤드리스 재실측으로 전건 개선 확인.
+
 ## 2026-08-08
 
 - **ERD 노드 드래그 + 헤더 호버 + 위치 초기화 — 브랜치 머지 완료** (feature/erd-node-drag, 5커밋, 프론트 전용). 헤더만 드래그 그립(`dragHandle` — 컬럼 행 클릭·스크롤 비간섭, grab 커서·호버 틴트가 그립을 알림), 수동 위치는 `movedRef` + `applyManualPositions` 순수 함수로 ELK 재배치 위에 덮어써 펼침/접힘에도 유지(ref 저장이라 드래그가 ELK 재실행을 안 유발, 세션 한정), 초기화는 ELK 재실행 없이 `elkPlacedRef` 캐시 복원(카메라 불변, 이동 없으면 비활성). 핵심 제약: `onNodesChange`는 position 변경만 통과 — dimension까지 적용하면 기존 measured 수동 관리(엣지 플래시 방지)와 충돌. 리뷰 루프가 잡은 실결함: 초기화가 `placedRef`/`elkPlacedRef`를 같은 Map으로 앨리어싱해 다음 드래그가 순수 ELK 캐시를 오염(드래그→초기화→드래그→초기화 시 복원 실패) — `new Map` 복사로 수정, 헤드리스에서 멱등성 실증. 검증: vitest 75/75(+병합 함수 3케이스)·tsc·lint + 실브라우저 5항목 + 헤드리스 Playwright 12어서션. 검증 해프닝: Chrome 창 숨김 시 rAF 스로틀로 React Flow 초기화·카메라가 멈춰 회귀로 오인 — main A/B로 앱 무관 확증. 파킹: 비활성 초기화 버튼 툴팁이 xyflow 기본 `pointer-events:none`에 막힘(접근성 후속), 다크 테마 호버 틴트 미묘(행 호버 관례 동일 계열), ELK 완료가 드래그 도중 착지 시 순간 스냅백(자기 치유). 스펙/계획: `docs/superpowers/{specs,plans}/2026-08-08-erd-node-drag*.md`.

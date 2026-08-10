@@ -68,7 +68,11 @@ export function ChatPanel() {
         <ChatIcon />
       </button>
       {open && (
-        <div className="fixed bottom-4 right-4 z-50 flex h-[480px] w-96 flex-col rounded-lg border shadow-lg"
+        // 헤더의 토글 버튼 바로 아래에 앵커 — 우하단에 띄우면 트리거와 패널이 화면
+        // 대각선으로 단절되고 ERD 범례(우하단 고정)를 가린다
+        // / anchored under its header trigger; bottom-right detached it from the
+        //   trigger and covered the ERD legend
+        <div className="fixed right-4 top-14 z-50 flex h-[480px] max-h-[calc(100vh-4.5rem)] w-96 flex-col rounded-lg border shadow-lg"
              style={{ borderColor: "var(--hairline)", background: "var(--surface-card)" }}
              data-testid="ChatPanel-root">
           <div className="flex items-center gap-2 border-b px-3 py-2"

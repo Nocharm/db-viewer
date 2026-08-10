@@ -120,8 +120,11 @@ export function CollectPanel() {
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* 세 버튼 모두 secondary — 단계 순서는 라벨(1단계/2단계/전체)이 이미 말한다.
+            하나만 옐로면 관리 페이지의 다른 CTA(인덱싱)와 위계가 충돌한다
+            / uniform secondaries; the labels carry the ordering, yellow stays scarce */}
         <button
-          className="btn-primary"
+          className="btn-secondary"
           disabled={busy || running}
           onClick={() => act(triggerCollectCatalog)}
           data-testid="CollectPanel-catalogButton"

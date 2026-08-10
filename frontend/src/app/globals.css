@@ -244,12 +244,24 @@ h1, h2, h3 {
   transform: scale(0.96);
 }
 
+/* 앱 헤더 유틸 클러스터 — 내용물 높이(아이콘 16px vs "EN" 텍스트)에 따라 26/28px로
+   요동하던 것을 고정한다. ERD 노드 헤더의 icon-button은 노드 높이 산식(layout.ts
+   HEADER_H=36)에 묶여 있어 전역이 아닌 header 스코프로만 건다. */
+header .icon-button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 옐로 프라이머리 버튼 — ClickHouse button-primary */
 .btn-primary {
   background: var(--primary);
   color: var(--on-primary);
   font-size: 14px;
   font-weight: 600;
+  /* 투명 보더 — secondary(1px 보더)와 나란히 설 때 2px 높이 차를 없앤다 */
+  border: 1px solid transparent;
   border-radius: 8px;
   padding: 10px 20px;
   cursor: pointer;
@@ -265,6 +277,24 @@ h1, h2, h3 {
 .btn-primary:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* 비활성 문법 통일 — primary만 흐려지고 secondary·icon-button은 멀쩡해 보여
+   "죽은 버튼"이 되던 구멍을 막는다. 아래 row-action 감춤 규칙보다 반드시 앞에 —
+   같은 (0,2,0) 특이도라 순서가 뒤집히면 감춰야 할 행 액션이 0.35로 떠 버린다. */
+.btn-secondary:disabled,
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.btn-secondary:disabled:hover {
+  background: var(--surface-card);
+  border-color: var(--hairline-strong);
+}
+.icon-button:disabled:hover {
+  background: var(--surface-card);
+  border-color: var(--hairline-strong);
+  color: var(--body-text);
 }
 
 /* 관리 표의 행 액션 버튼 — 좁은 열에서 라벨("허용 해제")이 줄바꿈되며 버튼과 행 높이를
@@ -362,6 +392,16 @@ tr:hover .row-action:disabled {
 }
 
 /* ── 인터랙션 공통 ── */
+/* 키보드 포커스 링 — UA 기본(블루)이 아니라 토큰을 쓴다. 인풋은 각자 focus:border 처리가
+   있어 제외 / keyboard focus ring on the brand token; inputs keep their border treatment */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 2px;
+}
+
 .pressable {
   cursor: pointer;
   transition: background-color 0.18s ease-in-out, color 0.18s ease-in-out,
@@ -481,9 +521,16 @@ mark.hl {
   overflow: hidden;
   transition: max-height 0.28s ease-in-out;
 }
+
+/* 모션 최소화 — 개별 opt-out 대신 전역으로 애니메이션·트랜지션을 끈다
+   (skeleton-pulse 등 가드 누락이 반복되지 않게) / one global reduced-motion guard */
 @media (prefers-reduced-motion: reduce) {
-  .collapsible {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -597,16 +644,28 @@ input::placeholder {
 
 /* ── React Flow 다크 대응 ── */
 /* 헤더 = 드래그 그립 — grab 커서·호버 틴트가 "여기를 잡으면 움직인다"를 알린다.
-   틴트는 컬럼 행 호버(hover:bg-black/5)와 같은 계열 / grab affordance for the drag handle */
+   틴트는 --ink 기반 color-mix — 검정 고정(rgba(0,0,0,.05))은 다크 카드(#1a1a1a) 위에서
+   실측 식별 불가였다. 컬럼 행 호버(.erd-node__row)와 같은 계열
+   / grab affordance; ink-based mix so the tint survives the dark theme */
 .react-flow .erd-node__header {
   cursor: grab;
   transition: background-color 0.15s ease-in-out;
 }
 .react-flow .erd-node__header:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 .react-flow__node.dragging .erd-node__header {
   cursor: grabbing;
+}
+/* 헤더 안 토글·이웃확장 버튼 — 노드 높이 산식(HEADER_H=36)을 건드리지 않고
+   히트박스만 4px씩 넓힌다. 줌아웃(0.75 이하)에서 실클릭 크기가 20px대로 떨어지던 것 보완 */
+.react-flow .erd-node__header .icon-button {
+  position: relative;
+}
+.react-flow .erd-node__header .icon-button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 /* 초기화 버튼 비활성 — 프로젝트 disabled 관례(0.35)와 동일 톤 */
 .react-flow__controls-button:disabled {
@@ -647,6 +706,11 @@ input::placeholder {
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--stat-ink);
   font-weight: 600;
+}
+/* 컬럼 행 호버 — 헤더 그립과 같은 ink 계열 틴트 (기존 hover:bg-black/5는 다크에서 안 보였다).
+   --hl 강조가 항상 이기도록 :not으로 비켜 간다 / ink tint; --hl keeps priority */
+.erd-node__row:not(.erd-node__row--hl):hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 /* 컨텍스트 메뉴 (숨기기·복원) / node and pane context menus */

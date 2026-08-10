@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphEdge, GraphNode } from "./types";
-import { applyManualPositions, groupConnectedComponents, type PlacedNode } from "./erd-graph";
+import {
+  applyManualPositions, groupConnectedComponents, packGroupRows, type PlacedNode,
+} from "./erd-graph";
 
 function makeNode(id: number): GraphNode {
   return {
@@ -66,5 +68,50 @@ describe("applyManualPositions", () => {
 
     expect(merged).not.toBe(placed);
     expect(placed.get(1)).toEqual({ x: 0, y: 0, width: 260, height: 40 });
+  });
+});
+
+describe("packGroupRows", () => {
+  it("keeps an empty input empty", () => {
+    expect(packGroupRows([], 10)).toEqual([]);
+  });
+
+  it("places a single box at the origin", () => {
+    expect(packGroupRows([{ width: 300, height: 100 }], 10)).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it("wraps into rows instead of one column", () => {
+    // 동일 박스 9개 — 세로 일렬(예전 동작)이라면 y가 8단계로 늘어난다.
+    // 패킹은 여러 행으로 접어 행 수 < 박스 수가 되어야 한다.
+    const boxes = Array.from({ length: 9 }, () => ({ width: 300, height: 100 }));
+
+    const offsets = packGroupRows(boxes, 20);
+
+    const rows = new Set(offsets.map((o) => o.y)).size;
+    expect(rows).toBeGreaterThan(1); // 한 행에 다 넣지도 않고
+    expect(rows).toBeLessThan(9); // 한 열로 쌓지도 않는다
+    // 같은 행 안에서는 gap만큼 띄워 겹치지 않는다
+    expect(offsets[1]).toEqual({ x: 320, y: 0 });
+  });
+
+  it("never wraps a box wider than the computed target width", () => {
+    const boxes = [
+      { width: 5000, height: 100 }, // 목표 폭보다 넓은 그룹
+      { width: 300, height: 100 },
+    ];
+
+    const offsets = packGroupRows(boxes, 20);
+
+    expect(offsets[0]).toEqual({ x: 0, y: 0 }); // 첫 박스는 항상 원점
+    // 넓은 박스 옆이 아니라 다음 행으로 — 목표 폭이 widest로 클램프되므로
+    expect(offsets[1].y).toBeGreaterThan(0);
+  });
+
+  it("is deterministic for the same input", () => {
+    const boxes = [
+      { width: 400, height: 120 }, { width: 200, height: 80 }, { width: 350, height: 90 },
+    ];
+
+    expect(packGroupRows(boxes, 30)).toEqual(packGroupRows(boxes, 30));
   });
 });

@@ -3,6 +3,7 @@
 /** 파싱 지표·실패 목록 관리 화면 (계획 §2.2) / parse-rate metrics and failure list. */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useI18n } from "@/components/i18n";
@@ -65,8 +66,9 @@ export default function ParsingPage() {
             <span style={{ color: "var(--muted)" }}>— {t("parsing.snapshot")} #{stats.snapshot_id}</span>
           </h1>
       <div className="mb-6 grid grid-cols-4 gap-3">
-        {/* 히어로 스탯 — 성공률이 첫 시선 / success rate leads the eye in yellow */}
-        <div className="card col-span-2 row-span-2 flex flex-col justify-center p-5"
+        {/* 히어로 스탯 — 성공률이 첫 시선. row-span-3 = 타일 6개(2열×3행)와 맞물려
+            빈 칸 없는 직사각 그리드가 된다 / success rate hero; 3 rows complete the grid */}
+        <div className="card col-span-2 row-span-3 flex flex-col justify-center p-5"
              data-testid="ParsingPage-successRateTile">
           <div className="mb-2 text-xs font-semibold uppercase tracking-widest"
                style={{ color: "var(--muted)" }}>
@@ -100,7 +102,16 @@ export default function ParsingPage() {
           {stats.failed_views.map((v) => (
             <tr key={v.id} className="border-b" style={{ borderColor: "var(--border-light)" }}
                 data-testid={`ParsingPage-failedRow-${v.id}`}>
-              <td className="py-1.5 font-mono text-xs">{v.name}</td>
+              {/* 이름 → 테이블 브라우저 딥링크 — 문제를 본 자리에서 바로 조사하러 갈 수
+                  있어야 한다(막다른 목록 금지) / dead-end list fixed with a browser link */}
+              <td className="py-1.5 font-mono text-xs">
+                <Link href={`/?table=${v.id}`}
+                      className="pressable -mx-1 rounded px-1 underline-offset-2 hover:underline"
+                      style={{ color: "var(--action-blue)" }}
+                      data-testid={`ParsingPage-failedLink-${v.id}`}>
+                  {v.name}
+                </Link>
+              </td>
               <td><span className="badge badge--unresolved">{v.status}</span></td>
               <td className="text-xs" style={{ color: "var(--slate)" }}>{v.error ?? "—"}</td>
             </tr>

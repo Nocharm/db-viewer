@@ -45,7 +45,8 @@ export function ErdSearch({ nodes, onPick, loading = false }: ErdSearchProps) {
 
   const pick = (node: GraphNode) => {
     onPick(node.id);
-    setQ("");
+    // 검색어는 남긴다 — 같은 접두어의 다른 결과를 이어 볼 때 재타이핑 없이
+    // 포커스만으로 목록이 다시 열린다 / keep the query so refocusing reopens the list
     setOpen(false);
   };
 

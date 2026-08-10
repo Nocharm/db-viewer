@@ -35,8 +35,9 @@ export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCar
               style={{ color: "var(--muted)" }}>
           {t("verify.containment.title")}
         </span>
+        {/* 버튼은 라벨 옆 — GateCard와 같은 이유 / same near-label placement as GateCard */}
         <button
-          className="btn-secondary ml-auto !py-1 text-xs"
+          className="btn-secondary !py-1 text-xs"
           disabled={busy || !enabled}
           onClick={onRun}
           data-testid="ContainmentCard-runButton"
