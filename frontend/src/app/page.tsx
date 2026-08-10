@@ -270,6 +270,28 @@ function HomeInner() {
     router.push(`/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`);
   }, [router, selected]);
 
+  // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
+  // 상한: 카테고리는 행 라벨+카운트, 목록은 검색줄+타입 칩이 min을 정하고, max는 상세가
+  // 유효 폭을 잃지 않는 선 (상세 자체는 lg:min-w-80으로 최후 방어)
+  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320 });
+  const startPaneResize = (pane: "rail" | "list") => (event: React.PointerEvent) => {
+    event.preventDefault();
+    const limits = pane === "rail" ? { min: 150, max: 300 } : { min: 260, max: 520 };
+    const startX = event.clientX;
+    const startWidth = paneWidths[pane];
+    // PreviewTable 컬럼 리사이즈와 같은 window 리스너 관용구 / same idiom as the column resize
+    const onMove = (e: PointerEvent) => {
+      const next = Math.min(Math.max(startWidth + (e.clientX - startX), limits.min), limits.max);
+      setPaneWidths((cur) => ({ ...cur, [pane]: Math.round(next) }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   // 컬럼 클릭 → 조인 검증 페이지로 직행 — 소스 테이블·컬럼 프리필, target이 실려 오면
   // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다
   const handleOpenColumn = useCallback(
@@ -314,7 +336,12 @@ function HomeInner() {
             onDbFilter={changeDbFilter}
             onAssignCategory={assignCategory}
             previewAllowed={previewAllowed}
+            width={paneWidths.rail}
           />
+          {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
+          <div className="pane-resize hidden lg:block"
+               onPointerDown={startPaneResize("rail")}
+               data-testid="Home-railResizeHandle" />
           <TableList
             items={listItems}
             selectedId={selected?.id ?? null}
@@ -323,8 +350,12 @@ function HomeInner() {
             onQuery={setQuery}
             onTypeFilter={setTypeFilter}
             onSelect={selectTable}
+            width={paneWidths.list}
           />
-          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0">
+          <div className="pane-resize hidden lg:block"
+               onPointerDown={startPaneResize("list")}
+               data-testid="Home-listResizeHandle" />
+          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
             <TableDetail
               detail={detail}
               loading={detailLoading}

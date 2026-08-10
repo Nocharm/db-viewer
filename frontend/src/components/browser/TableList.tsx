@@ -23,6 +23,8 @@ interface Props {
   onQuery: (value: string) => void;
   onTypeFilter: (value: "all" | "table" | "view") => void;
   onSelect: (table: ObjectSummary) => void;
+  /** 리사이저가 정하는 폭(px) — 없으면 기본 w-80 / resizer-driven width, w-80 default */
+  width?: number;
 }
 
 function Highlight({ text, range }: { text: string; range: [number, number] | null }) {
@@ -47,7 +49,7 @@ const TYPE_FILTERS = [
 ] as const;
 
 export function TableList({
-  items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect,
+  items, selectedId, query, typeFilter, onQuery, onTypeFilter, onSelect, width,
 }: Props) {
   const { t } = useI18n();
   const hiddenSchemas = useHiddenSchemas();
@@ -75,8 +77,10 @@ export function TableList({
   const shown = items.slice(0, visibleCount);
 
   return (
+    // 인라인 width가 w-80을 덮는다 — 좁은 화면(wrap 모드)에선 grow가 이어받아 안 깨진다
     <aside
       className="card flex max-h-[60vh] w-80 min-w-0 grow flex-col lg:max-h-none lg:grow-0"
+      style={width !== undefined ? { width } : undefined}
       data-testid="TableList-root"
     >
       <div className="p-3 pb-2">
