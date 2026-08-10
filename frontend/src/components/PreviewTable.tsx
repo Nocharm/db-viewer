@@ -7,14 +7,19 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
-import { countUniqueValues, sortRows, type SortSpec } from "@/lib/preview-utils";
+import {
+  applyColumnOrder, countUniqueValues, moveColumn, sortRows, type SortSpec,
+} from "@/lib/preview-utils";
 
 interface Props {
   data: TablePreview;
   hidden: string[];
   sort: SortSpec | null;
+  /** 드래그로 정한 컬럼 순서 — 빈 배열이면 원본 순서 / drag-defined order, empty = natural */
+  order: string[];
   onToggleHidden: (column: string) => void;
   onSort: (sort: SortSpec | null) => void;
+  onReorder: (order: string[]) => void;
 }
 
 interface HeaderMenu {
@@ -27,10 +32,15 @@ interface HeaderMenu {
 const MIN_COL_WIDTH = 48;
 const MAX_COL_WIDTH = 800;
 
-export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Props) {
+export function PreviewTable({
+  data, hidden, sort, order, onToggleHidden, onSort, onReorder,
+}: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
   const [uniqueColumn, setUniqueColumn] = useState<string | null>(null);
+  // 헤더 드래그 순서 변경 — 드래그 중인 컬럼과 드롭 위치(대상 앞/뒤) 표시
+  const [dragColumn, setDragColumn] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ column: string; after: boolean } | null>(null);
   // 세로선 드래그로 지정한 폭 — 더블클릭이 지우면 내용 맞춤(자연 폭)으로 복귀
   // dragged widths; double-click clears back to natural (content-fit) width
   const [widths, setWidths] = useState<Record<string, number>>({});
@@ -77,7 +87,10 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
   }, [menu]);
 
   const hiddenSet = new Set(hidden);
-  const columns = data.columns.filter((column) => !hiddenSet.has(column));
+  // 순서는 숨김 컬럼까지 포함한 전체에 적용 — 드롭 결과를 저장할 때 숨김 컬럼의 상대
+  // 위치가 보존된다 / the order spans hidden columns so their relative slots survive
+  const orderedAll = applyColumnOrder(data.columns, order);
+  const columns = orderedAll.filter((column) => !hiddenSet.has(column));
   const rows = sortRows(data.rows, sort);
   const uniqueItems = uniqueColumn ? countUniqueValues(data.rows, uniqueColumn) : [];
 
@@ -92,10 +105,45 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
         <thead>
           <tr className="sticky top-0 text-left" style={{ background: "var(--surface-card)" }}>
             {columns.map((column) => (
+              // 헤더 드래그 = 순서 변경. 드롭 위치는 마우스가 대상의 좌/우 절반 어디에
+              // 있는지로 앞/뒤를 정한다 — 앞 삽입만으로는 맨 끝으로 못 보낸다
+              // / drag to reorder; the target's midpoint decides before/after,
+              //   since before-only insertion can never reach the last slot
               <th
                 key={column}
+                draggable
                 className="relative cursor-context-menu whitespace-nowrap px-3 py-1.5 font-mono font-medium"
-                style={cellStyle(column)}
+                style={{
+                  ...cellStyle(column),
+                  ...(dragColumn === column ? { opacity: 0.4 } : undefined),
+                  ...(dropTarget?.column === column
+                    ? { boxShadow: `inset ${dropTarget.after ? -2 : 2}px 0 0 var(--primary)` }
+                    : undefined),
+                }}
+                onDragStart={(e) => {
+                  setDragColumn(column);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  if (dragColumn === null || dragColumn === column) return;
+                  e.preventDefault(); // drop 허용 / required to allow dropping
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const after = e.clientX > rect.x + rect.width / 2;
+                  setDropTarget((cur) =>
+                    cur?.column === column && cur.after === after ? cur : { column, after });
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragColumn !== null && dropTarget !== null) {
+                    onReorder(moveColumn(orderedAll, dragColumn, dropTarget.column, dropTarget.after));
+                  }
+                  setDragColumn(null);
+                  setDropTarget(null);
+                }}
+                onDragEnd={() => {
+                  setDragColumn(null);
+                  setDropTarget(null);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ column, x: e.clientX, y: e.clientY });
@@ -112,6 +160,7 @@ export function PreviewTable({ data, hidden, sort, onToggleHidden, onSort }: Pro
                 {/* 세로선 핸들 — 드래그 폭 조절, 더블클릭 내용 맞춤 / drag to size, dbl-click to fit */}
                 <span
                   className="col-resize"
+                  draggable={false}
                   onPointerDown={(e) => startColumnResize(e, column)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();

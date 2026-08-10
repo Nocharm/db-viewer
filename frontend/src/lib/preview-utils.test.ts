@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyColumnOrder,
   buildCsv,
   buildPreviewSql,
+  moveColumn,
   countUniqueValues,
   sortRows,
   tokenizeSql,
@@ -78,5 +80,35 @@ describe("buildCsv", () => {
     const csv = buildCsv(["A", "B"], [{ A: 'say "hi", ok', B: 1 }]);
     expect(csv.startsWith("﻿")).toBe(true); // 엑셀 한글 인코딩 대응
     expect(csv).toContain('"say ""hi"", ok",1');
+  });
+});
+
+describe("applyColumnOrder", () => {
+  it("returns the original list when no order is saved", () => {
+    const columns = ["a", "b", "c"];
+    expect(applyColumnOrder(columns, [])).toBe(columns);
+  });
+
+  it("applies the saved order and appends unknown columns", () => {
+    // 재조회로 새로 온 d는 뒤에, 사라진 x는 무시 / new columns append, stale ones drop
+    expect(applyColumnOrder(["a", "b", "c", "d"], ["c", "x", "a"]))
+      .toEqual(["c", "a", "b", "d"]);
+  });
+});
+
+describe("moveColumn", () => {
+  const columns = ["a", "b", "c", "d"];
+
+  it("inserts before the target by default", () => {
+    expect(moveColumn(columns, "d", "b", false)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("inserts after the target — the only way to become last", () => {
+    expect(moveColumn(columns, "a", "d", true)).toEqual(["b", "c", "d", "a"]);
+  });
+
+  it("keeps the list for self-drops or unknown targets", () => {
+    expect(moveColumn(columns, "b", "b", false)).toEqual(columns);
+    expect(moveColumn(columns, "b", "zzz", false)).toEqual(columns);
   });
 });

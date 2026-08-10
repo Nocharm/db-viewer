@@ -10,7 +10,7 @@ import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
 import type { TablePreview } from "@/lib/api";
-import { buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
+import { applyColumnOrder, buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 
 // 행수 선택지 — 서버 상한 500과 일치 / matches the server-side hard cap
 const LIMIT_OPTIONS = [20, 50, 100, 200, 500];
@@ -22,6 +22,8 @@ export interface PreviewTabState {
   loading: boolean;
   hidden: string[];
   sort: SortSpec | null;
+  /** 헤더 드래그로 정한 컬럼 순서 — 빈 배열이면 원본 순서 / drag-defined column order */
+  order: string[];
 }
 
 export interface RefetchOptions {
@@ -38,7 +40,7 @@ interface Props {
   onClose: (id: number) => void;
   onSplitPick: (id: number | null) => void;
   onRefetch: (id: number, opts: RefetchOptions) => void;
-  onPatch: (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort">>) => void;
+  onPatch: (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort" | "order">>) => void;
 }
 
 function PreviewPane({ tab, onRefetch, onPatch }: {
@@ -76,7 +78,9 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
 
   const downloadCsv = () => {
     if (!data) return;
-    const visible = data.columns.filter((column) => !tab.hidden.includes(column));
+    // 화면과 같은 순서로 내려받는다 — 드래그 순서가 CSV에도 반영 / CSV mirrors the drag order
+    const visible = applyColumnOrder(data.columns, tab.order)
+      .filter((column) => !tab.hidden.includes(column));
     const blob = new Blob([buildCsv(visible, sortRows(data.rows, tab.sort))],
       { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -215,12 +219,14 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             data={data}
             hidden={tab.hidden}
             sort={tab.sort}
+            order={tab.order}
             onToggleHidden={(column) => onPatch(tab.id, {
               hidden: tab.hidden.includes(column)
                 ? tab.hidden.filter((c) => c !== column)
                 : [...tab.hidden, column],
             })}
             onSort={(sort) => onPatch(tab.id, { sort })}
+            onReorder={(order) => onPatch(tab.id, { order })}
           />
         ) : (
           <div className="p-4">
