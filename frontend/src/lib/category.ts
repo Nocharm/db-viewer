@@ -11,3 +11,26 @@ export type SchemaCategoryMap = Map<string, string>;
 export function resolveCategory(schema: string, mapping: SchemaCategoryMap): string {
   return mapping.get(schema) ?? schema;
 }
+
+/** 카테고리의 미리보기 잠금 집계 — 허용/미허용 스키마 포함 여부.
+ * 여러 DB가 혼재한 카테고리는 둘 다 true가 되어 풀림·잠김 자물쇠를 같이 띄운다.
+ * / per-category preview-lock aggregate; a mixed category raises both flags
+ *   so the row shows an open and a closed lock side by side. */
+export interface CategoryLockState {
+  hasAllowed: boolean;
+  hasLocked: boolean;
+}
+
+export function getCategoryLockStates(
+  schemas: { schema: string; category: string }[],
+  previewAllowed: Set<string>,
+): Map<string, CategoryLockState> {
+  const states = new Map<string, CategoryLockState>();
+  for (const { schema, category } of schemas) {
+    const state = states.get(category) ?? { hasAllowed: false, hasLocked: false };
+    if (previewAllowed.has(schema)) state.hasAllowed = true;
+    else state.hasLocked = true;
+    states.set(category, state);
+  }
+  return states;
+}

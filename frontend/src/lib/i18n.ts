@@ -100,10 +100,22 @@ export const MESSAGES = {
     ko: "이 테이블의 스키마가 미리보기 허용 목록에 없습니다 — 관리자에게 요청하세요",
     en: "This table's schema is not on the preview allowlist — ask an admin to add it",
   },
-  // 스키마 행의 잠금 아이콘 툴팁 / lock-icon tooltip on schema rows
+  // 스키마·카테고리 행의 자물쇠 툴팁 / lock-icon tooltips on schema and category rows
   "preview.schemaLocked": {
     ko: "미리보기 미허용 스키마 — 관리자에게 요청하세요",
     en: "Schema not on the preview allowlist — ask an admin to add it",
+  },
+  "preview.schemaAllowed": {
+    ko: "미리보기 허용 스키마",
+    en: "Schema on the preview allowlist",
+  },
+  "preview.categoryHasAllowed": {
+    ko: "미리보기 허용 스키마 포함",
+    en: "Contains preview-allowed schemas",
+  },
+  "preview.categoryHasLocked": {
+    ko: "미리보기 미허용 스키마 포함",
+    en: "Contains schemas not on the preview allowlist",
   },
   "preview.csv": { ko: "CSV 다운로드", en: "Download CSV" },
   "preview.limitTitle": { ko: "표시 행수", en: "Row limit" },

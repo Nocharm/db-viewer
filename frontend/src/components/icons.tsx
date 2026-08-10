@@ -138,3 +138,14 @@ export function LockIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function LockOpenIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 풀린 자물쇠 — 미리보기 허용 스키마 표시. 고리가 오른쪽 위로 열려 있다
+          / open lock for preview-allowed schemas, shackle lifted to the right */}
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7.5a4 4 0 0 1 7.7-1.5" />
+    </Svg>
+  );
+}
