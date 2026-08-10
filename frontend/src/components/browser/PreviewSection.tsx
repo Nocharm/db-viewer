@@ -9,7 +9,7 @@ import { CaretDownIcon, CloseIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
-import type { TablePreview } from "@/lib/api";
+import type { PreviewFilterMode, TablePreview } from "@/lib/api";
 import { applyColumnOrder, buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
 
 // 행수 선택지 — 서버 상한 500과 일치 / matches the server-side hard cap
@@ -29,6 +29,8 @@ export interface PreviewTabState {
 export interface RefetchOptions {
   filterColumn?: string;
   filterValue?: string;
+  /** 값 매칭 방식 — 생략 시 contains / value match mode, contains when omitted */
+  filterMode?: PreviewFilterMode;
   limit?: number;
 }
 
@@ -51,6 +53,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
   const { t } = useI18n();
   const [filterColumn, setFilterColumn] = useState(tab.data?.filter?.column ?? "");
   const [filterValue, setFilterValue] = useState(tab.data?.filter?.value ?? "");
+  const [filterMode, setFilterMode] = useState<PreviewFilterMode>(
+    tab.data?.filter?.mode ?? "contains");
   const [columnsOpen, setColumnsOpen] = useState(false);
   const columnsRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,6 +62,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
   useEffect(() => {
     setFilterColumn(tab.data?.filter?.column ?? "");
     setFilterValue(tab.data?.filter?.value ?? "");
+    setFilterMode(tab.data?.filter?.mode ?? "contains");
   }, [tab.id, tab.data?.filter]);
 
   useEffect(() => {
@@ -73,7 +78,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
   const limit = data?.limit ?? 20;
   const canSearch = filterColumn !== "" && filterValue.trim() !== "" && !tab.loading;
   const currentFilter: RefetchOptions = data?.filter
-    ? { filterColumn: data.filter.column, filterValue: data.filter.value ?? undefined }
+    ? { filterColumn: data.filter.column, filterValue: data.filter.value ?? undefined,
+        filterMode: data.filter.mode }
     : {};
 
   const downloadCsv = () => {
@@ -115,15 +121,27 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
           onChange={(e) => setFilterValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && canSearch) {
-              onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), limit });
+              onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), filterMode, limit });
             }
           }}
           data-testid="PreviewSection-filterValueInput"
         />
+        {/* 매칭 방식 — 부분(LIKE)·정확(=). 소스 쿼리 WHERE로 내려가므로 재질의 시 적용 */}
+        <select
+          className="h-10 rounded-lg border px-2 text-sm"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
+          title={t("preview.matchModeTitle")}
+          value={filterMode}
+          onChange={(e) => setFilterMode(e.target.value === "exact" ? "exact" : "contains")}
+          data-testid="PreviewSection-filterModeSelect"
+        >
+          <option value="contains">{t("preview.matchContains")}</option>
+          <option value="exact">{t("preview.matchExact")}</option>
+        </select>
         <button
           className="btn-primary"
           disabled={!canSearch}
-          onClick={() => onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), limit })}
+          onClick={() => onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), filterMode, limit })}
           data-testid="PreviewSection-searchButton"
         >
           {tab.loading ? t("detail.loading") : t("preview.requery")}

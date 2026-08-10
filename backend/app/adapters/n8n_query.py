@@ -254,6 +254,7 @@ class N8nTablePreview:
     def rows(
         self, qname: str, columns: list[dict], limit: int,
         filter_column: str | None = None, filter_value: str | None = None,
+        filter_mode: str = "contains",
     ) -> list[dict]:
         schema, table = qname.split(".", 1)
         body: dict = {"kind": "table_preview", "schema": schema, "table": table,
@@ -261,5 +262,7 @@ class N8nTablePreview:
         if filter_column and filter_value:
             body["filter_column"] = filter_column
             body["filter_value"] = filter_value
+            # W2가 LIKE(기본)와 = 를 가른다 — 구버전 W2는 필드를 무시하고 LIKE로 동작
+            body["filter_mode"] = filter_mode
         rows, _ = _post_query(self._base, body, self._timeout)
         return rows

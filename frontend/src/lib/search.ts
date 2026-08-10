@@ -47,14 +47,8 @@ const NO_MATCH: SearchMatch = {
   matched: false, nameRange: null, matchedColumn: null, columnRange: null, rank: Infinity,
 };
 
-/** 검색 모드 — fuzzy는 현행(순서 유사·초성까지), exact는 입력 그대로 포함된 것만.
- * / fuzzy keeps the current behavior; exact restricts to literal substrings. */
-export type SearchMode = "fuzzy" | "exact";
-
 /** 우선순위: 테이블명 → 컬럼명 → 카테고리(부분·초성) / name, then columns, then category. */
-export function matchTable(
-  rawQuery: string, target: SearchTarget, mode: SearchMode = "fuzzy",
-): SearchMatch {
+export function matchTable(rawQuery: string, target: SearchTarget): SearchMatch {
   const query = rawQuery.trim();
   if (query === "") {
     return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 0 };
@@ -71,9 +65,9 @@ export function matchTable(
     };
   }
 
-  // 이름 부분 포함이 실패해도 순서 유사(rank 3)는 한 번 더 시도한다 — fuzzy 한정.
+  // 이름 부분 포함이 실패해도 순서 유사(rank 3)는 한 번 더 시도한다.
   // 다만 순서 유사는 불연속 매칭이라 하이라이트 범위를 그릴 수 없어 nameRange는 null.
-  if (mode === "fuzzy" && getMatchRank(query, target.name) === 3) {
+  if (getMatchRank(query, target.name) === 3) {
     return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 3 };
   }
 
@@ -91,8 +85,7 @@ export function matchTable(
   if (target.categoryLabel.includes(query)) {
     return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 5 };
   }
-  // 초성 확장도 유사 매칭이다 — exact에선 입력 그대로만 / chosung expansion is fuzzy-only
-  if (mode === "fuzzy" && isChosungQuery(query) && toChosung(target.categoryLabel).includes(query)) {
+  if (isChosungQuery(query) && toChosung(target.categoryLabel).includes(query)) {
     return { matched: true, nameRange: null, matchedColumn: null, columnRange: null, rank: 5 };
   }
   return NO_MATCH;

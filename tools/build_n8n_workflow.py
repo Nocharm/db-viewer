@@ -152,7 +152,10 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
   const tbl = esc(b.schema) + '.' + esc(b.table);
   query = `SELECT TOP ${limit} * FROM ${tbl}`;
   if (b.filter_column && b.filter_value) {
-    query += ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;
+    // filter_mode: contains(기본) = LIKE 부분일치, exact = 정확 일치
+    query += b.filter_mode === 'exact'
+      ? ` WHERE ${esc(b.filter_column)} = N'${lit(b.filter_value)}'`
+      : ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;
   }
 } else {
   throw new Error('unknown kind: ' + b.kind);
