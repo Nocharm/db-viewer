@@ -327,8 +327,11 @@ function VerifyPageInner() {
           )}
         </div>
 
+        {/* filterQnames — 피커에 고른 테이블(출발·대상)이 걸린 항목만 남는 반응형 필터 */}
         <PendingList onPick={handlePickPending} refreshToken={pendingRefresh}
-                     selectedId={pickedPendingId} />
+                     selectedId={pickedPendingId}
+                     filterQnames={[src, tgt].filter((o) => o !== null)
+                       .map((o) => `${o.schema}.${o.name}`)} />
       </main>
     </div>
   );

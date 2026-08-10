@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyManualSelection, buildManualPair, isSamePair, toManualSelection,
+  applyManualSelection, buildManualPair, filterPendingRelations, isSamePair,
+  toManualSelection,
 } from "./verify-pair";
 
 const srcColumns = [
@@ -86,5 +87,28 @@ describe("buildManualPair", () => {
   it("stays null when the picked column is not in the loaded list", () => {
     expect(buildManualPair({ srcColumnId: 99, tgtColumnId: 11 }, srcColumns, tgtColumns))
       .toBeNull();
+  });
+});
+
+describe("filterPendingRelations", () => {
+  const items = [
+    { src_object: "dbo.A", tgt_object: "dbo.B" },
+    { src_object: "dbo.C", tgt_object: "dbo.A" },
+    { src_object: "dbo.C", tgt_object: "dbo.D" },
+  ];
+
+  it("returns the original reference when nothing is picked", () => {
+    expect(filterPendingRelations(items, [])).toBe(items);
+  });
+
+  it("matches a picked table on either end", () => {
+    // dbo.A가 출발(1번)이든 대상(2번)이든 관련 항목이다
+    expect(filterPendingRelations(items, ["dbo.A"]))
+      .toEqual([items[0], items[1]]);
+  });
+
+  it("requires every picked table to be involved", () => {
+    expect(filterPendingRelations(items, ["dbo.C", "dbo.A"])).toEqual([items[1]]);
+    expect(filterPendingRelations(items, ["dbo.A", "dbo.D"])).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { fetchAiJob, fetchPendingRelations, startAiSuggest, type PendingRelation } from "@/lib/api";
+import { filterPendingRelations } from "@/lib/verify-pair";
 
 interface PendingListProps {
   onPick: (rel: PendingRelation) => void;
@@ -14,6 +15,8 @@ interface PendingListProps {
   refreshToken?: number;
   /** 지금 검증 중인 큐 항목 — 홈 목록과 같은 선택 문법(옐로 좌보더)으로 표시 */
   selectedId?: number | null;
+  /** 피커에서 고른 테이블 qname들 — 고르면 관련 항목만 남는다 (빈 배열 = 전체) */
+  filterQnames?: string[];
 }
 
 /** 컬럼·오브젝트 id가 다 있어야 검증 화면으로 옮길 수 있다 / a pick needs every id resolved. */
@@ -22,7 +25,9 @@ function isPickable(rel: PendingRelation): boolean {
     && rel.tgt_object_id !== null && rel.tgt_column_id !== null;
 }
 
-export function PendingList({ onPick, refreshToken = 0, selectedId = null }: PendingListProps) {
+export function PendingList({
+  onPick, refreshToken = 0, selectedId = null, filterQnames = [],
+}: PendingListProps) {
   const { t } = useI18n();
   const [items, setItems] = useState<PendingRelation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -70,12 +75,20 @@ export function PendingList({ onPick, refreshToken = 0, selectedId = null }: Pen
     return () => clearInterval(timer);
   }, [aiJobId, loadPending, t]);
 
+  // 피커 선택에 반응하는 클라이언트 필터 — 목록은 이미 전량 로드되어 있어 재조회가 없다
+  const visible = filterPendingRelations(items, filterQnames);
+  const isFiltered = visible.length !== items.length;
+
   return (
     <section className="card flex min-h-0 flex-col p-3" data-testid="PendingList-root">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--muted)" }}>
-          {t("verify.pending.title")} ({items.length})
+          {t("verify.pending.title")}{" "}
+          <span data-testid="PendingList-count">
+            {/* 필터 중엔 "관련 n / 전체 m" — 목록이 왜 짧은지 화면이 설명한다 */}
+            ({isFiltered ? `${visible.length} / ${items.length}` : items.length})
+          </span>
         </span>
         <button
           className="icon-button ml-auto"
@@ -110,7 +123,7 @@ export function PendingList({ onPick, refreshToken = 0, selectedId = null }: Pen
       )}
 
       <ul className="scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="PendingList-items">
-        {items.map((rel) => (
+        {visible.map((rel) => (
           <li key={rel.id}>
             {/* 좌보더는 항상 그린다(투명) — 선택 시에만 칠해 내용이 밀리지 않게 (.list-row 관용) */}
             <button
@@ -146,10 +159,11 @@ export function PendingList({ onPick, refreshToken = 0, selectedId = null }: Pen
             </button>
           </li>
         ))}
-        {items.length === 0 && !error && (
+        {visible.length === 0 && !error && (
           <li className="px-2 py-1.5 text-xs" style={{ color: "var(--muted)" }}
               data-testid="PendingList-emptyState">
-            {t("verify.pending.empty")}
+            {/* 필터로 비었으면 "큐가 빈 것"과 구분해 말한다 / filtered-empty ≠ queue-empty */}
+            {t(items.length > 0 ? "verify.pending.emptyFiltered" : "verify.pending.empty")}
           </li>
         )}
       </ul>

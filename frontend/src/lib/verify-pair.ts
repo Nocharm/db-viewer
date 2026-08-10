@@ -29,6 +29,19 @@ export function isSamePair(a: PairKey | null, b: PairKey | null): boolean {
   return a.src_column_id === b.src_column_id && a.tgt_column_id === b.tgt_column_id;
 }
 
+/** 대기 큐를 선택된 테이블로 거른다 — 테이블은 어느 쪽 끝에 있어도 관련 항목이고
+ * (큐 항목이 방향을 갖고 있어 클릭 시 그 방향대로 실리므로 안전), 여러 테이블을
+ * 골랐으면 전부 걸려 있어야 한다. 빈 선택은 필터 없음(원본 참조 반환).
+ * / filter the queue by picked tables: a table matches on either end, and every
+ *   picked table must match. An empty pick returns the original reference. */
+export function filterPendingRelations<T extends { src_object: string; tgt_object: string }>(
+  items: T[], qnames: string[],
+): T[] {
+  if (qnames.length === 0) return items;
+  return items.filter((item) =>
+    qnames.every((qname) => item.src_object === qname || item.tgt_object === qname));
+}
+
 /** 선택된 페어를 드롭다운 초기값으로 / seeds the selects from the current pair. */
 export function toManualSelection(pair: PairKey | null): ManualSelection {
   return {

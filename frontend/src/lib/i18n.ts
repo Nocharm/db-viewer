@@ -239,6 +239,10 @@ export const MESSAGES = {
   "verify.confirm.done": { ko: "확정됨 — 관계 큐에서 내려갑니다", en: "Confirmed — removed from the queue" },
   "verify.pending.title": { ko: "검증 대기 관계", en: "Pending relations" },
   "verify.pending.empty": { ko: "대기 중인 관계 없음", en: "No pending relations" },
+  "verify.pending.emptyFiltered": {
+    ko: "선택한 테이블 관련 대기 항목이 없습니다",
+    en: "No pending items involve the selected tables",
+  },
   "verify.pending.aiSuggest": { ko: "AI 관계 제안", en: "AI relation suggestions" },
 
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
