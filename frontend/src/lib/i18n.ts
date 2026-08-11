@@ -93,11 +93,12 @@ export const MESSAGES = {
   },
   "preview.addFilter": { ko: "필터 추가", en: "Add filter" },
   "preview.removeFilter": { ko: "조건 제거", en: "Remove condition" },
+  "preview.runQuery": { ko: "조회", en: "Query" },
   // 서버 MAX_PREVIEW_FILTERS와 같은 숫자 / mirrors the server-side cap
   "preview.maxFilters": { ko: "조건은 최대 5개", en: "Up to 5 conditions" },
   "preview.requeryHint": {
-    ko: "조건은 AND로 결합, 추가·제거 즉시 원본에 재질의 (로컬은 합성 데이터)",
-    en: "Conditions AND together; add/remove re-queries the source (local: synthetic data)",
+    ko: "조건은 AND로 결합 — [조회]가 원본에 재질의 (로컬은 합성 데이터)",
+    en: "Conditions AND together; [Query] re-queries the source (local: synthetic data)",
   },
   "preview.quickFilterHint": {
     ko: "셀 더블클릭 = 그 값으로 필터",
