@@ -209,6 +209,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             // 드래그 순서까지 화면과 동일하게 — SQL 보기는 화면의 재현이다
             visibleColumns={applyColumnOrder(data.columns, tab.order)
               .filter((column) => !tab.hidden.includes(column))}
+            allColumns={applyColumnOrder(data.columns, tab.order)}
             sort={tab.sort}
             onApplyColumns={(visible) => {
               const keep = new Set(visible);
