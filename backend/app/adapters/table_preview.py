@@ -44,19 +44,17 @@ class FakeTablePreview:
 
     def rows(
         self, qname: str, columns: list[dict], limit: int,
-        filter_column: str | None = None, filter_value: str | None = None,
-        filter_mode: str = "contains",
+        filters: list[dict] | None = None,
     ) -> list[dict]:
-        """필터가 있으면 큰 풀에서 생성 후 걸러 limit 적용 — live의 WHERE 절 대응.
+        """조건이 있으면 큰 풀에서 생성 후 전부(AND) 걸러 limit 적용 — live WHERE 대응.
 
-        contains는 LIKE '%v%', exact는 = 'v'에 대응한다 (둘 다 대소문자 무시 —
-        MSSQL 기본 collation이 case-insensitive라 live와 결이 같다).
-        With a filter we synthesize a larger pool then filter, mirroring what a
-        live WHERE clause would return; both modes are case-insensitive like the
-        default MSSQL collation.
+        문자 비교 조건은 대소문자 무시 — MSSQL 기본 collation이 case-insensitive라
+        live와 결이 같다. is_null은 진짜 None만 — 빈 문자열은 NULL이 아니다.
+        With filters we synthesize a larger pool then AND-filter, mirroring a live
+        WHERE clause; string ops are case-insensitive like the default collation.
         """
-        pool = limit if not (filter_column and filter_value) else max(limit * 10, 200)
-        needle = (filter_value or "").upper()
+        filters = filters or []
+        pool = limit if not filters else max(limit * 10, 200)
         out: list[dict] = []
         for row_index in range(pool):
             row = {}
@@ -68,14 +66,27 @@ class FakeTablePreview:
                     row[column["name"]] = self._sample(
                         column["name"], column["data_type"], row_index
                     )
-            if filter_column and needle:
-                cell = str(row.get(filter_column, "")).upper()
-                if filter_mode == "exact":
-                    if cell != needle:
-                        continue
-                elif needle not in cell:
-                    continue
-            out.append(row)
+            if all(_matches_cond(row, cond) for cond in filters):
+                out.append(row)
             if len(out) >= limit:
                 break
         return out
+
+
+def _matches_cond(row: dict, cond: dict) -> bool:
+    """조건 하나 평가 — op 의미는 W2 템플릿의 WHERE 절과 1:1 / one condition, W2-parity."""
+    cell = row.get(cond["column"])
+    op = cond.get("op", "contains")
+    if op == "is_null":
+        return cell is None
+    if op == "not_null":
+        return cell is not None
+    needle = (cond.get("value") or "").upper()
+    text = "" if cell is None else str(cell).upper()
+    if op == "eq":
+        return text == needle
+    if op == "neq":
+        return text != needle
+    if op == "not_contains":
+        return needle not in text
+    return needle in text

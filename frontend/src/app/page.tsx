@@ -208,10 +208,7 @@ function HomeInner() {
   const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
     setPreviewTabs((cur) => cur.map((tab) =>
       tab.id === id ? { ...tab, loading: true } : tab));
-    const filter = opts.filterColumn && opts.filterValue
-      ? { column: opts.filterColumn, value: opts.filterValue, mode: opts.filterMode }
-      : undefined;
-    fetchObjectPreview(id, filter, opts.limit)
+    fetchObjectPreview(id, opts.filters, opts.limit)
       .then((res) => setPreviewTabs((cur) => cur.map((tab) =>
         tab.id === id ? { ...tab, data: res, loading: false } : tab)))
       .catch((e) => {

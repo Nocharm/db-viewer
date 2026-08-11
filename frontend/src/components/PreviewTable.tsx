@@ -20,6 +20,8 @@ interface Props {
   onToggleHidden: (column: string) => void;
   onSort: (sort: SortSpec | null) => void;
   onReorder: (order: string[]) => void;
+  /** 셀 더블클릭 = 그 값으로 필터 — 미지정이면 비활성 / cell double-click quick filter */
+  onQuickFilter?: (column: string, value: unknown) => void;
 }
 
 interface HeaderMenu {
@@ -33,7 +35,7 @@ const MIN_COL_WIDTH = 48;
 const MAX_COL_WIDTH = 800;
 
 export function PreviewTable({
-  data, hidden, sort, order, onToggleHidden, onSort, onReorder,
+  data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter,
 }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
@@ -213,7 +215,8 @@ export function PreviewTable({
               {columns.map((column) => (
                 <td key={column} className="whitespace-nowrap px-3 py-1"
                     style={cellStyle(column)}
-                    title={String(row[column] ?? "")}>
+                    title={String(row[column] ?? "")}
+                    onDoubleClick={() => onQuickFilter?.(column, row[column])}>
                   {String(row[column] ?? "")}
                 </td>
               ))}
@@ -224,7 +227,7 @@ export function PreviewTable({
               <td className="px-3 py-4" style={{ color: "var(--muted)" }}
                   colSpan={Math.max(columns.length, 1)} data-testid="PreviewTable-emptyState">
                 {/* 필터가 없는데도 0행이면 원본이 비었다는 뜻 — 실행기 문제와 구분해 말한다 */}
-                {data.filter || data.source !== "live"
+                {data.filters.length > 0 || data.source !== "live"
                   ? t("preview.empty")
                   : t("preview.emptyLive")}
               </td>

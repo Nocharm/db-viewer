@@ -1,9 +1,11 @@
 """Object search, detail, and preview. / 객체 검색 + 상세 + 미리보기."""
 
+import json
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
@@ -251,6 +253,60 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
 # default 20; client may raise it, but the hard server cap stays
 TABLE_PREVIEW_LIMIT = 20
 TABLE_PREVIEW_MAX = 500
+# 조건 수 상한 — 화면 MAX_FILTERS와 일치 / matches the client-side cap
+MAX_PREVIEW_FILTERS = 5
+
+PreviewFilterOp = Literal["contains", "eq", "not_contains", "neq", "is_null", "not_null"]
+# 감사 로그용 기호 — 칩 표기와 동일 / audit-log notation, mirrors the filter chips
+FILTER_OP_NOTATION = {"contains": "~", "eq": "=", "not_contains": "!~", "neq": "!="}
+NULL_OPS = ("is_null", "not_null")
+
+
+class PreviewFilterCond(BaseModel):
+    """미리보기 조건 하나 — AND로 결합된다 / one AND-combined preview condition."""
+
+    column: str
+    op: PreviewFilterOp = "contains"
+    value: str | None = Field(None, max_length=100)
+
+
+_FILTER_LIST_ADAPTER = TypeAdapter(list[PreviewFilterCond])
+
+
+def parse_preview_filters(raw: str | None, column_names: set[str]) -> list[PreviewFilterCond]:
+    """`filters` JSON 파라미터 검증 — 형태·op·컬럼 실재·값 필수·개수 상한."""
+    if not raw:
+        return []
+    try:
+        conds = _FILTER_LIST_ADAPTER.validate_python(json.loads(raw))
+    except (json.JSONDecodeError, ValidationError) as e:
+        raise HTTPException(400, {"message": "invalid filters parameter",
+                                  "context": {"error": str(e)[:200]}}) from e
+    if len(conds) > MAX_PREVIEW_FILTERS:
+        raise HTTPException(400, {"message": "too many filter conditions",
+                                  "context": {"count": len(conds),
+                                              "max": MAX_PREVIEW_FILTERS}})
+    for cond in conds:
+        if cond.column not in column_names:
+            raise HTTPException(400, {"message": "unknown filter column",
+                                      "context": {"filter_column": cond.column}})
+        if cond.op not in NULL_OPS and not cond.value:
+            raise HTTPException(400, {"message": "filter value is required for this op",
+                                      "context": {"column": cond.column, "op": cond.op}})
+    return conds
+
+
+def format_filter_note(conds: list[PreviewFilterCond]) -> str:
+    """감사 로그의 조건 표기 — ~ 부분, = 정확, !~/!= 제외 / audit note for filters."""
+    if not conds:
+        return ""
+    parts = [
+        f"{c.column} IS NULL" if c.op == "is_null"
+        else f"{c.column} IS NOT NULL" if c.op == "not_null"
+        else f"{c.column}{FILTER_OP_NOTATION[c.op]}'{c.value}'"
+        for c in conds
+    ]
+    return f" filter {' AND '.join(parts)}"
 
 
 @router.get("/preview-allowlist")
@@ -280,10 +336,8 @@ def get_hidden_schema_list(db: Session = Depends(get_db)) -> dict:
 @router.get("/{object_id}/preview")
 def get_object_preview(
     object_id: int,
-    filter_column: str | None = None,
-    filter_value: str | None = Query(None, max_length=100),
-    # contains = LIKE '%v%'(기본), exact = 정확 일치 — 값 재검색의 매칭 방식
-    filter_mode: Literal["contains", "exact"] = "contains",
+    # AND 결합 조건 목록의 JSON — [{column, op, value}] (parse_preview_filters가 검증)
+    filters: str | None = Query(None, max_length=2000),
     limit: int = Query(TABLE_PREVIEW_LIMIT, ge=1, le=TABLE_PREVIEW_MAX),
     db: Session = Depends(get_db),
     login_id: str = Depends(get_current_user),
@@ -316,10 +370,7 @@ def get_object_preview(
         select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
         .order_by(CatalogColumn.ordinal)
     ).scalars().all()
-    column_names = {c.name for c in columns}
-    if filter_column is not None and filter_column not in column_names:
-        raise HTTPException(400, {"message": "unknown filter column",
-                                  "context": {"filter_column": filter_column}})
+    conds = parse_preview_filters(filters, {c.name for c in columns})
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
     # live는 n8n W2 실행기, 그 외는 픽스처 합성 — 팩토리가 게이트 (docs/connect.md)
@@ -330,8 +381,7 @@ def get_object_preview(
                                   "context": {"source_mode": settings.source_mode}}) from e
     rows = preview.rows(
         qname, column_specs, limit,
-        filter_column=filter_column, filter_value=filter_value,
-        filter_mode=filter_mode,
+        filters=[c.model_dump() for c in conds],
     )
 
     masked = [c.name for c in columns if c.masking_policy]
@@ -343,11 +393,8 @@ def get_object_preview(
         ]
 
     now = datetime.now(UTC)
-    # 감사엔 매칭 방식까지 — ~ 는 부분, = 는 정확 / audit notes the match operator
-    filter_op = "=" if filter_mode == "exact" else "~"
-    filter_note = f" filter {filter_column}{filter_op}'{filter_value}'" if filter_column else ""
     db.add(AuditLog(action="table_preview",
-                    detail=f"{qname} ({len(rows)} rows){filter_note}",
+                    detail=f"{qname} ({len(rows)} rows){format_filter_note(conds)}",
                     requested_by=login_id, requested_at=now))
     return {
         "object": qname,
@@ -357,10 +404,8 @@ def get_object_preview(
         # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값
         "source": "live" if settings.source_mode == "live" else "fixture",
         "limit": limit,
-        "filter": (
-            {"column": filter_column, "value": filter_value, "mode": filter_mode}
-            if filter_column else None
-        ),
+        # 화면 칩·SQL 보기가 그대로 쓰는 서버 echo / server-echoed conditions
+        "filters": [c.model_dump() for c in conds],
         "observed_at": now.isoformat(),
     }
 

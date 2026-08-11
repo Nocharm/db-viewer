@@ -71,8 +71,13 @@ export const MESSAGES = {
   "preview.selectColumn": { ko: "필터 컬럼 선택", en: "Select filter column" },
   // 매칭 방식은 옆 셀렉트가 말한다 — 플레이스홀더는 값 자체만 / the mode select owns the wording
   "preview.valuePlaceholder": { ko: "값", en: "Value" },
-  "preview.matchContains": { ko: "부분 일치", en: "Contains" },
-  "preview.matchExact": { ko: "정확 일치", en: "Exact" },
+  // 조건 연산자 — key 접미어는 PreviewFilterOp 값과 일치 / suffixes mirror PreviewFilterOp
+  "preview.op.contains": { ko: "부분 일치", en: "Contains" },
+  "preview.op.eq": { ko: "정확 일치", en: "Equals" },
+  "preview.op.not_contains": { ko: "부분 제외", en: "Not contains" },
+  "preview.op.neq": { ko: "정확 제외 (≠)", en: "Not equal (≠)" },
+  "preview.op.is_null": { ko: "비어 있음 (NULL)", en: "Is NULL" },
+  "preview.op.not_null": { ko: "값 있음 (NOT NULL)", en: "Is not NULL" },
   "preview.matchModeTitle": { ko: "값 매칭 방식 — 소스 쿼리 WHERE로 내려간다", en: "Value match mode, pushed into the source WHERE clause" },
   // SQL 보기의 컬럼 칩 편집 / pill-based column editing in the SQL view
   "preview.editColumns": { ko: "컬럼 편집", en: "Edit columns" },
@@ -86,12 +91,19 @@ export const MESSAGES = {
     ko: "최소 한 개 컬럼은 남겨야 합니다",
     en: "Keep at least one column",
   },
-  "preview.requery": { ko: "조건으로 재조회", en: "Re-query with filter" },
+  "preview.addFilter": { ko: "필터 추가", en: "Add filter" },
+  "preview.removeFilter": { ko: "조건 제거", en: "Remove condition" },
+  // 서버 MAX_PREVIEW_FILTERS와 같은 숫자 / mirrors the server-side cap
+  "preview.maxFilters": { ko: "조건은 최대 5개", en: "Up to 5 conditions" },
   "preview.requeryHint": {
-    ko: "원본에 새 질의를 보냅니다 (로컬은 합성 데이터)",
-    en: "Sends a fresh query to the source (local: synthetic data)",
+    ko: "조건은 AND로 결합, 추가·제거 즉시 원본에 재질의 (로컬은 합성 데이터)",
+    en: "Conditions AND together; add/remove re-queries the source (local: synthetic data)",
   },
-  "preview.clear": { ko: "필터 해제", en: "Clear filter" },
+  "preview.quickFilterHint": {
+    ko: "셀 더블클릭 = 그 값으로 필터",
+    en: "Double-click a cell to filter by its value",
+  },
+  "preview.clear": { ko: "필터 해제", en: "Clear filters" },
   "preview.empty": {
     ko: "조건에 맞는 행 없음 — 필터를 완화해 보세요",
     en: "No rows match — try relaxing the filter",

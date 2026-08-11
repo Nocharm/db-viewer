@@ -253,16 +253,26 @@ class N8nTablePreview:
 
     def rows(
         self, qname: str, columns: list[dict], limit: int,
-        filter_column: str | None = None, filter_value: str | None = None,
-        filter_mode: str = "contains",
+        filters: list[dict] | None = None,
     ) -> list[dict]:
         schema, table = qname.split(".", 1)
         body: dict = {"kind": "table_preview", "schema": schema, "table": table,
                       "limit": limit}
-        if filter_column and filter_value:
-            body["filter_column"] = filter_column
-            body["filter_value"] = filter_value
-            # W2가 LIKE(기본)와 = 를 가른다 — 구버전 W2는 필드를 무시하고 LIKE로 동작
-            body["filter_mode"] = filter_mode
-        rows, _ = _post_query(self._base, body, self._timeout)
+        filters = filters or []
+        if filters:
+            body["filters"] = filters
+            # 구 W2 호환 — filters를 모르는 W2도 단일 긍정 조건은 구 필드로 처리한다
+            # / legacy fields let a pre-filters W2 still apply a single positive cond
+            if len(filters) == 1 and filters[0]["op"] in ("contains", "eq"):
+                body["filter_column"] = filters[0]["column"]
+                body["filter_value"] = filters[0]["value"]
+                body["filter_mode"] = "exact" if filters[0]["op"] == "eq" else "contains"
+        rows, query = _post_query(self._base, body, self._timeout)
+        if filters and (query is None or "WHERE" not in query.upper()):
+            # 필터를 무시한 구 W2가 무필터 행을 "필터된 결과"로 속이는 사고 차단 —
+            # multi_join_preview의 "신 W2 전용" 가드와 같은 결
+            raise N8nQueryError(
+                "n8n W2 did not apply the preview filters (no WHERE in the executed "
+                "query) — 재배포가 필요합니다 (advanced filters는 신 W2 전용)"
+            )
         return rows
