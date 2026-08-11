@@ -545,6 +545,19 @@ mark.hl {
   50% { opacity: 1; }
 }
 
+/* ── 미리보기 십자 하이라이트 — 행은 tr:hover(기존 hover:bg), 열은 PreviewTable이
+   위임 mouseover로 붙이는 .preview-col-hl. 교차 셀은 겹쳐서 한 단계 진해진다 ── */
+.preview-table .preview-col-hl {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+/* 헤더 호버로 열을 짚을 때 헤더 셀 자체도 또렷하게 */
+.preview-table thead .preview-col-hl {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.preview-table tbody tr:hover .preview-col-hl {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
 /* ── 컬럼 리사이즈 핸들 — 헤더 우측 세로선 / column resize handle on header edges ── */
 .col-resize {
   position: absolute;

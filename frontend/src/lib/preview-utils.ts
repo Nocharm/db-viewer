@@ -66,11 +66,16 @@ function escapeIdentifier(name: string): string {
 export interface PreviewQueryState {
   object: string; // schema.name
   limit: number;
-  filter: { column: string; value: string | null } | null;
+  filter: {
+    column: string;
+    value: string | null;
+    /** 값 매칭 방식 — 생략 시 contains / match mode, contains when omitted */
+    mode?: "contains" | "exact";
+  } | null;
 }
 
 /** 현재 미리보기 상태와 동치인 T-SQL 생성 — 보이는 컬럼·필터·정렬·행수 그대로.
- * 재현용 참고 쿼리다: 필터의 부분 일치 의미(LIKE)와 식별자 이스케이프를 보존한다.
+ * 재현용 참고 쿼리다: 필터의 매칭 방식(부분 LIKE / 정확 =)과 식별자 이스케이프를 보존한다.
  * The T-SQL equivalent of the current preview state, for reproduction elsewhere. */
 export function buildPreviewSql(
   state: PreviewQueryState,
@@ -83,7 +88,9 @@ export function buildPreviewSql(
   let sql = `SELECT TOP ${state.limit}\n       ${columns}\nFROM ${table}`;
   if (state.filter?.column && state.filter.value) {
     const value = state.filter.value.replace(/'/g, "''");
-    sql += `\nWHERE ${escapeIdentifier(state.filter.column)} LIKE N'%${value}%'`;
+    sql += state.filter.mode === "exact"
+      ? `\nWHERE ${escapeIdentifier(state.filter.column)} = N'${value}'`
+      : `\nWHERE ${escapeIdentifier(state.filter.column)} LIKE N'%${value}%'`;
   }
   if (sort) {
     sql += `\nORDER BY ${escapeIdentifier(sort.column)} ${sort.dir.toUpperCase()}`;

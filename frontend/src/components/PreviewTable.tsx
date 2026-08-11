@@ -99,9 +99,38 @@ export function PreviewTable({
     setMenu(null);
   };
 
+  // 십자 하이라이트의 열 축 — React 상태로 두면 호버마다 500행 × N열이 리렌더된다.
+  // 위임된 mouseover에서 셀 인덱스를 읽어 클래스만 토글한다 (행 축은 기존 tr:hover CSS).
+  // / column axis of the crosshair: delegated mouseover toggles a class imperatively,
+  //   since hover-in-state would re-render the whole grid on every move
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const hoverColIndexRef = useRef(-1);
+  const setHoverColumnIndex = (index: number) => {
+    if (hoverColIndexRef.current === index) return;
+    const table = tableRef.current;
+    if (!table) return;
+    for (const cell of Array.from(table.querySelectorAll(".preview-col-hl"))) {
+      cell.classList.remove("preview-col-hl");
+    }
+    if (index >= 0) {
+      for (const row of Array.from(table.rows)) {
+        if (row.cells.length <= 1) continue; // colspan 빈 상태 행은 열 개념이 없다
+        row.cells[index]?.classList.add("preview-col-hl");
+      }
+    }
+    hoverColIndexRef.current = index;
+  };
+  const handleTableMouseOver = (event: React.MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const cell = target?.closest("td, th");
+    setHoverColumnIndex(cell instanceof HTMLTableCellElement ? cell.cellIndex : -1);
+  };
+
   return (
     <>
-      <table className="w-full text-xs">
+      <table ref={tableRef} className="preview-table w-full text-xs"
+             onMouseOver={handleTableMouseOver}
+             onMouseLeave={() => setHoverColumnIndex(-1)}>
         <thead>
           <tr className="sticky top-0 text-left" style={{ background: "var(--surface-card)" }}>
             {columns.map((column) => (

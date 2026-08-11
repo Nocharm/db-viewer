@@ -74,6 +74,18 @@ export const MESSAGES = {
   "preview.matchContains": { ko: "부분 일치", en: "Contains" },
   "preview.matchExact": { ko: "정확 일치", en: "Exact" },
   "preview.matchModeTitle": { ko: "값 매칭 방식 — 소스 쿼리 WHERE로 내려간다", en: "Value match mode, pushed into the source WHERE clause" },
+  // SQL 보기의 컬럼 칩 편집 / pill-based column editing in the SQL view
+  "preview.editColumns": { ko: "컬럼 편집", en: "Edit columns" },
+  "preview.editColumnsHint": {
+    ko: "×나 Backspace로 컬럼을 빼고 적용 — 뺀 컬럼은 일괄 숨김, 남은 순서가 표시 순서",
+    en: "Remove pills with × or Backspace, then apply — removed columns hide in bulk",
+  },
+  "preview.applyColumns": { ko: "적용", en: "Apply" },
+  "preview.resetColumns": { ko: "초기화", en: "Reset" },
+  "preview.editColumnsEmpty": {
+    ko: "최소 한 개 컬럼은 남겨야 합니다",
+    en: "Keep at least one column",
+  },
   "preview.requery": { ko: "조건으로 재조회", en: "Re-query with filter" },
   "preview.requeryHint": {
     ko: "원본에 새 질의를 보냅니다 (로컬은 합성 데이터)",
