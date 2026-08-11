@@ -1,5 +1,6 @@
 /** 백엔드 조회 API 클라이언트 / thin fetch wrappers for the query API. */
 
+import type { PreviewFilterCond } from "./preview-utils";
 import type {
   AiTableHit,
   CandidatesResponse,
@@ -429,9 +430,6 @@ export function explainViewAi(
   return postJson(`/api/ai/explain-view/${objectId}`, {});
 }
 
-/** 값 재검색 매칭 방식 — contains = LIKE 부분일치, exact = 정확 일치 */
-export type PreviewFilterMode = "contains" | "exact";
-
 export interface TablePreview {
   object: string;
   columns: string[];
@@ -440,7 +438,8 @@ export interface TablePreview {
   /** 행이 어디서 왔는지 — 0행일 때 "원본이 비었다"와 "실행기 미연결"을 가른다 */
   source: "live" | "fixture";
   limit: number;
-  filter: { column: string; value: string | null; mode: PreviewFilterMode } | null;
+  /** 적용된 조건 목록(AND) — 서버가 검증해 되돌려준 값 / server-echoed conditions */
+  filters: PreviewFilterCond[];
 }
 
 /** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
@@ -526,14 +525,12 @@ export function removePreviewAllow(
 
 export function fetchObjectPreview(
   objectId: number,
-  filter?: { column: string; value: string; mode?: PreviewFilterMode },
+  filters?: PreviewFilterCond[],
   limit?: number,
 ): Promise<TablePreview> {
   const params = new URLSearchParams();
-  if (filter?.column && filter.value) {
-    params.set("filter_column", filter.column);
-    params.set("filter_value", filter.value);
-    if (filter.mode) params.set("filter_mode", filter.mode);
+  if (filters && filters.length > 0) {
+    params.set("filters", JSON.stringify(filters));
   }
   if (limit !== undefined) params.set("limit", String(limit));
   const suffix = params.size > 0 ? `?${params}` : "";

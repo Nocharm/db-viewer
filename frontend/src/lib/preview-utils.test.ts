@@ -41,7 +41,7 @@ describe("buildPreviewSql", () => {
   const STATE = {
     object: "dbo.HR_EMP",
     limit: 50,
-    filter: { column: "EMP_NM", value: "김'철수" },
+    filters: [{ column: "EMP_NM", op: "contains" as const, value: "김'철수" }],
   };
 
   it("renders the current state as T-SQL with escaping", () => {
@@ -55,16 +55,40 @@ describe("buildPreviewSql", () => {
   });
 
   it("omits WHERE and ORDER BY when absent", () => {
-    const sql = buildPreviewSql({ ...STATE, filter: null }, ["A"], null);
+    const sql = buildPreviewSql({ ...STATE, filters: [] }, ["A"], null);
     expect(sql).not.toContain("WHERE");
     expect(sql).not.toContain("ORDER BY");
   });
 
-  it("renders exact mode as equality, not LIKE", () => {
+  it("renders eq as equality, not LIKE", () => {
     const sql = buildPreviewSql(
-      { ...STATE, filter: { ...STATE.filter, mode: "exact" as const } }, ["EMP_NO"], null);
+      { ...STATE, filters: [{ column: "EMP_NM", op: "eq" as const, value: "김'철수" }] },
+      ["EMP_NO"], null);
     expect(sql).toContain("WHERE [EMP_NM] = N'김''철수'");
     expect(sql).not.toContain("LIKE");
+  });
+
+  it("joins multiple conditions with AND in filter order", () => {
+    const sql = buildPreviewSql({
+      ...STATE,
+      filters: [
+        { column: "DEPT", op: "eq" as const, value: "10" },
+        { column: "EMP_NM", op: "not_contains" as const, value: "퇴사" },
+        { column: "PHONE", op: "is_null" as const, value: null },
+      ],
+    }, ["EMP_NO"], null);
+    expect(sql).toContain(
+      "WHERE [DEPT] = N'10'\n  AND [EMP_NM] NOT LIKE N'%퇴사%'\n  AND [PHONE] IS NULL");
+  });
+
+  it("renders exclusion and null ops", () => {
+    const neq = buildPreviewSql(
+      { ...STATE, filters: [{ column: "DEPT", op: "neq" as const, value: "10" }] }, ["A"], null);
+    expect(neq).toContain("WHERE [DEPT] <> N'10'");
+    const notNull = buildPreviewSql(
+      { ...STATE, filters: [{ column: "DEPT", op: "not_null" as const, value: null }] },
+      ["A"], null);
+    expect(notNull).toContain("WHERE [DEPT] IS NOT NULL");
   });
 });
 
@@ -79,6 +103,12 @@ describe("tokenizeSql", () => {
     expect(byType("string")).toEqual(["N'%x''y%'"]); // '' 이스케이프째로 한 토큰
     // 재조립하면 원문과 동일 / tokens reassemble to the original text
     expect(tokens.map((t) => t.text).join("")).toContain("FROM [dbo].[HR]");
+  });
+
+  it("classifies the AND / NOT LIKE / IS NULL keywords of advanced filters", () => {
+    const tokens = tokenizeSql("WHERE [A] NOT LIKE N'%x%' AND [B] IS NULL");
+    const keywords = tokens.filter((t) => t.type === "keyword").map((t) => t.text);
+    expect(keywords).toEqual(["WHERE", "NOT", "LIKE", "AND", "IS", "NULL"]);
   });
 });
 

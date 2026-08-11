@@ -65,18 +65,61 @@ def test_containment_empty_source_guards_division(captured):
     assert result.cardinality == "N:M"
 
 
-def test_table_preview_sends_filter_params(captured):
-    captured["response"] = [{"EMP_NO": 1000, "EMP_NM": "샘플"}]
+def test_table_preview_sends_filters_with_legacy_single_positive(captured):
+    """filters 배열 + 구 W2 호환 필드 병송 — 단일 긍정 조건은 구 필드로도 표현된다."""
+    captured["response"] = {
+        "query": "SELECT TOP 50 * FROM [dbo].[HR_EMP] WHERE [EMP_NM] LIKE N'%샘플%'",
+        "rows": [{"EMP_NO": 1000, "EMP_NM": "샘플"}],
+    }
     preview = N8nTablePreview("http://n8n/webhook", timeout=5)
-    rows = preview.rows("dbo.HR_EMP", [], 50, filter_column="EMP_NM", filter_value="샘플")
+    rows = preview.rows(
+        "dbo.HR_EMP", [], 50,
+        filters=[{"column": "EMP_NM", "op": "contains", "value": "샘플"}],
+    )
 
     body = captured["bodies"][0]
     assert body == {
         "kind": "table_preview", "schema": "dbo", "table": "HR_EMP",
-        "limit": 50, "filter_column": "EMP_NM", "filter_value": "샘플",
-        "filter_mode": "contains",
+        "limit": 50,
+        "filters": [{"column": "EMP_NM", "op": "contains", "value": "샘플"}],
+        "filter_column": "EMP_NM", "filter_value": "샘플", "filter_mode": "contains",
     }
     assert rows == [{"EMP_NO": 1000, "EMP_NM": "샘플"}]
+
+
+def test_table_preview_multi_condition_omits_legacy_fields(captured):
+    """구 필드는 단일 긍정 조건만 표현한다 — 다중·제외 조건에선 보내지 않는다."""
+    captured["response"] = {
+        "query": "SELECT TOP 20 * FROM [dbo].[HR_EMP] "
+                 "WHERE [EMP_NO] = N'1' AND [PHONE] IS NULL",
+        "rows": [],
+    }
+    N8nTablePreview("http://n8n/webhook", timeout=5).rows(
+        "dbo.HR_EMP", [], 20,
+        filters=[{"column": "EMP_NO", "op": "eq", "value": "1"},
+                 {"column": "PHONE", "op": "is_null", "value": None}],
+    )
+    body = captured["bodies"][0]
+    assert len(body["filters"]) == 2
+    assert "filter_column" not in body
+
+
+def test_table_preview_raises_when_filters_were_ignored(captured):
+    """구 W2는 filters를 몰라 무필터 행을 준다 — 필터된 결과로 속이지 않고 올린다."""
+    preview = N8nTablePreview("http://n8n/webhook", timeout=5)
+    filters = [{"column": "EMP_NO", "op": "neq", "value": "1"}]
+
+    # 실행문 없는 구형 응답 — 적용 여부를 확인할 수 없다
+    captured["response"] = [{"EMP_NO": 1}]
+    with pytest.raises(n8n_query.N8nQueryError, match="did not apply"):
+        preview.rows("dbo.HR_EMP", [], 20, filters=filters)
+
+    # 실행문은 왔지만 WHERE가 없다 — 필터가 무시됐다
+    captured["response"] = {
+        "query": "SELECT TOP 20 * FROM [dbo].[HR_EMP]", "rows": [{"EMP_NO": 1}],
+    }
+    with pytest.raises(n8n_query.N8nQueryError, match="did not apply"):
+        preview.rows("dbo.HR_EMP", [], 20, filters=filters)
 
 
 def test_table_preview_drops_empty_rows(captured):

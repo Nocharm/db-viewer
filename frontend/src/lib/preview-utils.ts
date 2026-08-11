@@ -63,19 +63,42 @@ function escapeIdentifier(name: string): string {
   return `[${name.replace(/]/g, "]]")}]`;
 }
 
+/** 조건 연산자 — 포함/정확과 그 제외형, NULL 검사 / condition operators. */
+export type PreviewFilterOp =
+  | "contains" | "eq" | "not_contains" | "neq" | "is_null" | "not_null";
+
+export interface PreviewFilterCond {
+  column: string;
+  op: PreviewFilterOp;
+  /** NULL 계열 op은 값이 없다 / null ops carry no value */
+  value: string | null;
+}
+
+/** 값이 필요 없는 연산자인지 / whether the op takes no value. */
+export function isNullOp(op: PreviewFilterOp): boolean {
+  return op === "is_null" || op === "not_null";
+}
+
 export interface PreviewQueryState {
   object: string; // schema.name
   limit: number;
-  filter: {
-    column: string;
-    value: string | null;
-    /** 값 매칭 방식 — 생략 시 contains / match mode, contains when omitted */
-    mode?: "contains" | "exact";
-  } | null;
+  /** AND 결합 조건 목록 — 빈 배열이면 무필터 / AND-combined, empty = unfiltered */
+  filters: PreviewFilterCond[];
+}
+
+function renderCondSql(cond: PreviewFilterCond): string {
+  const column = escapeIdentifier(cond.column);
+  if (cond.op === "is_null") return `${column} IS NULL`;
+  if (cond.op === "not_null") return `${column} IS NOT NULL`;
+  const value = (cond.value ?? "").replace(/'/g, "''");
+  if (cond.op === "eq") return `${column} = N'${value}'`;
+  if (cond.op === "neq") return `${column} <> N'${value}'`;
+  if (cond.op === "not_contains") return `${column} NOT LIKE N'%${value}%'`;
+  return `${column} LIKE N'%${value}%'`;
 }
 
 /** 현재 미리보기 상태와 동치인 T-SQL 생성 — 보이는 컬럼·필터·정렬·행수 그대로.
- * 재현용 참고 쿼리다: 필터의 매칭 방식(부분 LIKE / 정확 =)과 식별자 이스케이프를 보존한다.
+ * 재현용 참고 쿼리다: 조건 목록(AND)의 연산자와 식별자 이스케이프를 보존한다.
  * The T-SQL equivalent of the current preview state, for reproduction elsewhere. */
 export function buildPreviewSql(
   state: PreviewQueryState,
@@ -86,11 +109,8 @@ export function buildPreviewSql(
   const table = `${escapeIdentifier(schema)}.${escapeIdentifier(rest.join("."))}`;
   const columns = visibleColumns.map(escapeIdentifier).join(",\n       ");
   let sql = `SELECT TOP ${state.limit}\n       ${columns}\nFROM ${table}`;
-  if (state.filter?.column && state.filter.value) {
-    const value = state.filter.value.replace(/'/g, "''");
-    sql += state.filter.mode === "exact"
-      ? `\nWHERE ${escapeIdentifier(state.filter.column)} = N'${value}'`
-      : `\nWHERE ${escapeIdentifier(state.filter.column)} LIKE N'%${value}%'`;
+  if (state.filters.length > 0) {
+    sql += `\nWHERE ${state.filters.map(renderCondSql).join("\n  AND ")}`;
   }
   if (sort) {
     sql += `\nORDER BY ${escapeIdentifier(sort.column)} ${sort.dir.toUpperCase()}`;
@@ -106,7 +126,7 @@ export interface SqlToken {
 const SQL_TOKEN_PATTERNS: [SqlToken["type"], RegExp][] = [
   ["string", /^N?'(?:[^']|'')*'/],
   ["identifier", /^\[(?:[^\]]|\]\])*\]/],
-  ["keyword", /^(?:SELECT|TOP|FROM|WHERE|LIKE|ORDER|BY|ASC|DESC)\b/i],
+  ["keyword", /^(?:SELECT|TOP|FROM|WHERE|NOT|LIKE|AND|IS|NULL|ORDER|BY|ASC|DESC)\b/i],
   ["number", /^\d+(?:\.\d+)?/],
 ];
 

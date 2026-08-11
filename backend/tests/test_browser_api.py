@@ -1,8 +1,14 @@
 """Table-browser endpoints — join keys, detail, preview. / 브라우저 화면 API 테스트."""
 
+import json
+
 import sqlalchemy as sa
 
 from app.models import Base
+
+
+def _filters_param(conds: list[dict]) -> dict:
+    return {"filters": json.dumps(conds)}
 
 
 def _seed(client, load_fixture) -> None:
@@ -77,22 +83,23 @@ def test_preview_filter_by_column_value(client, load_fixture, allow_preview):
     plain = client.get(f"/api/objects/{object_id}/preview").json()
     sample_value = str(plain["rows"][0][rel["src_column"]])
 
-    body = client.get(f"/api/objects/{object_id}/preview", params={
-        "filter_column": rel["src_column"], "filter_value": sample_value,
-    }).json()
-    assert body["filter"] == {
-        "column": rel["src_column"], "value": sample_value, "mode": "contains",
-    }
+    body = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": rel["src_column"], "op": "contains", "value": sample_value},
+    ])).json()
+    assert body["filters"] == [
+        {"column": rel["src_column"], "op": "contains", "value": sample_value},
+    ]
     assert body["rows"]
     assert all(sample_value in str(row[rel["src_column"]]) for row in body["rows"])
 
-    res = client.get(f"/api/objects/{object_id}/preview",
-                     params={"filter_column": "NOPE_COL", "filter_value": "x"})
+    res = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": "NOPE_COL", "op": "contains", "value": "x"},
+    ]))
     assert res.status_code == 400
 
 
-def test_preview_filter_exact_mode(client, load_fixture, allow_preview):
-    """exact는 부분일치가 아니라 정확 일치만 — 값의 접두 부분 문자열로 대비한다."""
+def test_preview_filter_eq_op(client, load_fixture, allow_preview):
+    """eq는 부분일치가 아니라 정확 일치만 — 값의 접두 부분 문자열로 대비한다."""
     _seed(client, load_fixture)
     rel = load_fixture("expected/relations.json")["rows"][0]
     allow_preview(rel["src_object"])
@@ -101,26 +108,83 @@ def test_preview_filter_exact_mode(client, load_fixture, allow_preview):
     plain = client.get(f"/api/objects/{object_id}/preview").json()
     sample_value = str(plain["rows"][0][rel["src_column"]])
 
-    exact = client.get(f"/api/objects/{object_id}/preview", params={
-        "filter_column": rel["src_column"], "filter_value": sample_value,
-        "filter_mode": "exact",
-    }).json()
-    assert exact["filter"]["mode"] == "exact"
+    exact = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": rel["src_column"], "op": "eq", "value": sample_value},
+    ])).json()
+    assert exact["filters"][0]["op"] == "eq"
     assert exact["rows"]
     assert all(str(row[rel["src_column"]]) == sample_value for row in exact["rows"])
 
-    # 부분 문자열(접두)은 contains에선 잡히지만 exact에선 0행이어야 한다
+    # 부분 문자열(접두)은 contains에선 잡히지만 eq에선 정확 일치만 나와야 한다
     prefix = sample_value[:-1]
     if prefix and not any(str(r[rel["src_column"]]) == prefix for r in plain["rows"]):
-        contains = client.get(f"/api/objects/{object_id}/preview", params={
-            "filter_column": rel["src_column"], "filter_value": prefix,
-        }).json()
+        contains = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+            {"column": rel["src_column"], "op": "contains", "value": prefix},
+        ])).json()
         assert contains["rows"]
-        exact_prefix = client.get(f"/api/objects/{object_id}/preview", params={
-            "filter_column": rel["src_column"], "filter_value": prefix,
-            "filter_mode": "exact",
-        }).json()
-        assert all(str(row[rel["src_column"]]) == prefix for row in exact_prefix["rows"])
+        eq_prefix = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+            {"column": rel["src_column"], "op": "eq", "value": prefix},
+        ])).json()
+        assert all(str(row[rel["src_column"]]) == prefix for row in eq_prefix["rows"])
+
+
+def test_preview_filters_combine_exclude_and_null(client, migrated_engine, load_fixture,
+                                                  allow_preview):
+    """AND 결합·제외·NULL 검사 — 감사 로그에도 조건 전체가 남는다."""
+    _seed(client, load_fixture)
+    rel = load_fixture("expected/relations.json")["rows"][0]
+    allow_preview(rel["src_object"])
+    object_id = _object_id(client, rel["src_object"])
+    col = rel["src_column"]
+
+    plain = client.get(f"/api/objects/{object_id}/preview").json()
+    sample = str(plain["rows"][0][col])
+
+    # 같은 컬럼에 포함 AND 정확-제외 — 포함하되 그 값 자체는 아닌 행만
+    both = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": col, "op": "contains", "value": sample},
+        {"column": col, "op": "neq", "value": sample},
+    ])).json()
+    assert len(both["filters"]) == 2
+    assert all(sample in str(r[col]) and str(r[col]) != sample for r in both["rows"])
+
+    excluded = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": col, "op": "not_contains", "value": sample},
+    ])).json()
+    assert all(sample not in str(r[col]) for r in excluded["rows"])
+
+    # fixture는 NULL을 합성하지 않는다 — is_null은 정직하게 0행
+    null_body = client.get(f"/api/objects/{object_id}/preview", params=_filters_param([
+        {"column": col, "op": "is_null"},
+    ])).json()
+    assert null_body["rows"] == []
+    assert null_body["filters"] == [{"column": col, "op": "is_null", "value": None}]
+
+    with migrated_engine.connect() as conn:
+        audit_t = Base.metadata.tables["audit_logs"]
+        details = [row.detail for row in conn.execute(
+            sa.select(audit_t).where(audit_t.c.action == "table_preview"))]
+    assert any(f"{col}~'{sample}' AND {col}!='{sample}'" in d for d in details)
+    assert any(f"{col} IS NULL" in d for d in details)
+
+
+def test_preview_filters_validation(client, load_fixture, allow_preview):
+    """깨진 JSON·모르는 op·값 없는 조건·개수 초과는 전부 400."""
+    _seed(client, load_fixture)
+    rel = load_fixture("expected/relations.json")["rows"][0]
+    allow_preview(rel["src_object"])
+    object_id = _object_id(client, rel["src_object"])
+    col = rel["src_column"]
+    url = f"/api/objects/{object_id}/preview"
+
+    assert client.get(url, params={"filters": "not-json"}).status_code == 400
+    assert client.get(url, params=_filters_param(
+        [{"column": col, "op": "regex", "value": "x"}])).status_code == 400
+    # NULL 계열이 아닌 op은 값이 필수다
+    assert client.get(url, params=_filters_param(
+        [{"column": col, "op": "contains"}])).status_code == 400
+    too_many = [{"column": col, "op": "contains", "value": str(i)} for i in range(6)]
+    assert client.get(url, params=_filters_param(too_many)).status_code == 400
 
 
 def test_columns_index_covers_tables(client, load_fixture):

@@ -151,12 +151,25 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
 } else if (b.kind === 'table_preview') {
   const tbl = esc(b.schema) + '.' + esc(b.table);
   query = `SELECT TOP ${limit} * FROM ${tbl}`;
-  if (b.filter_column && b.filter_value) {
-    // filter_mode: contains(기본) = LIKE 부분일치, exact = 정확 일치
-    query += b.filter_mode === 'exact'
-      ? ` WHERE ${esc(b.filter_column)} = N'${lit(b.filter_value)}'`
-      : ` WHERE ${esc(b.filter_column)} LIKE N'%${lit(b.filter_value)}%'`;
-  }
+  // filters: [{column, op, value}] AND 결합 — 구버전 필드는 단일 contains/eq로 폴백
+  // / AND-combined conditions; legacy fields fall back to one contains/eq cond
+  const conds = Array.isArray(b.filters) && b.filters.length > 0
+    ? b.filters
+    : (b.filter_column && b.filter_value
+        ? [{ column: b.filter_column, value: b.filter_value,
+             op: b.filter_mode === 'exact' ? 'eq' : 'contains' }]
+        : []);
+  const clauses = conds.map((c) => {
+    const col = esc(c.column);
+    if (c.op === 'is_null') return `${col} IS NULL`;
+    if (c.op === 'not_null') return `${col} IS NOT NULL`;
+    const v = lit(c.value);
+    if (c.op === 'eq') return `${col} = N'${v}'`;
+    if (c.op === 'neq') return `${col} <> N'${v}'`;
+    if (c.op === 'not_contains') return `${col} NOT LIKE N'%${v}%'`;
+    return `${col} LIKE N'%${v}%'`;
+  });
+  if (clauses.length > 0) query += ' WHERE ' + clauses.join(' AND ');
 } else {
   throw new Error('unknown kind: ' + b.kind);
 }

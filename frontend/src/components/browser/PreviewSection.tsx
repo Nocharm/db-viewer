@@ -9,11 +9,32 @@ import { CaretDownIcon, CloseIcon } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
-import type { PreviewFilterMode, TablePreview } from "@/lib/api";
-import { applyColumnOrder, buildCsv, sortRows, type SortSpec } from "@/lib/preview-utils";
+import type { TablePreview } from "@/lib/api";
+import {
+  applyColumnOrder,
+  buildCsv,
+  countUniqueValues,
+  isNullOp,
+  sortRows,
+  type PreviewFilterCond,
+  type PreviewFilterOp,
+  type SortSpec,
+} from "@/lib/preview-utils";
 
 // 행수 선택지 — 서버 상한 500과 일치 / matches the server-side hard cap
 const LIMIT_OPTIONS = [20, 50, 100, 200, 500];
+// 조건 수 상한 — 서버 MAX_PREVIEW_FILTERS와 일치 / matches the server-side cap
+const MAX_FILTERS = 5;
+// 칩 표기 기호 — 감사 로그와 같은 언어 중립 표기 / language-neutral, mirrors the audit log
+const OP_SYMBOLS: Record<PreviewFilterOp, string> = {
+  contains: "~", eq: "=", not_contains: "!~", neq: "≠",
+  is_null: "IS NULL", not_null: "IS NOT NULL",
+};
+const FILTER_OPS: PreviewFilterOp[] = [
+  "contains", "eq", "not_contains", "neq", "is_null", "not_null",
+];
+// 값 자동완성 후보 상한 — 로드된 행 기준이라 많아야 의미 없다
+const VALUE_SUGGESTION_LIMIT = 50;
 
 export interface PreviewTabState {
   id: number;
@@ -27,10 +48,8 @@ export interface PreviewTabState {
 }
 
 export interface RefetchOptions {
-  filterColumn?: string;
-  filterValue?: string;
-  /** 값 매칭 방식 — 생략 시 contains / value match mode, contains when omitted */
-  filterMode?: PreviewFilterMode;
+  /** AND 결합 조건 목록 — 생략·빈 배열은 무필터 / AND-combined, empty = unfiltered */
+  filters?: PreviewFilterCond[];
   limit?: number;
 }
 
@@ -51,19 +70,20 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
   onPatch: Props["onPatch"];
 }) {
   const { t } = useI18n();
-  const [filterColumn, setFilterColumn] = useState(tab.data?.filter?.column ?? "");
-  const [filterValue, setFilterValue] = useState(tab.data?.filter?.value ?? "");
-  const [filterMode, setFilterMode] = useState<PreviewFilterMode>(
-    tab.data?.filter?.mode ?? "contains");
+  // 드래프트 = 아직 추가하지 않은 입력 — 적용된 조건은 서버 echo(data.filters)가 원본
+  // / draft inputs only; applied conditions live in the server-echoed data.filters
+  const [draftColumn, setDraftColumn] = useState("");
+  const [draftOp, setDraftOp] = useState<PreviewFilterOp>("contains");
+  const [draftValue, setDraftValue] = useState("");
   const [columnsOpen, setColumnsOpen] = useState(false);
   const columnsRef = useRef<HTMLDivElement | null>(null);
 
-  // 다른 테이블 데이터로 갱신되면 필터 입력 동기화 / sync inputs on data swap
+  // 다른 테이블 탭으로 바뀌면 드래프트 초기화 / reset drafts when the tab changes
   useEffect(() => {
-    setFilterColumn(tab.data?.filter?.column ?? "");
-    setFilterValue(tab.data?.filter?.value ?? "");
-    setFilterMode(tab.data?.filter?.mode ?? "contains");
-  }, [tab.id, tab.data?.filter]);
+    setDraftColumn("");
+    setDraftOp("contains");
+    setDraftValue("");
+  }, [tab.id]);
 
   useEffect(() => {
     if (!columnsOpen) return;
@@ -76,11 +96,31 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
 
   const data = tab.data;
   const limit = data?.limit ?? 20;
-  const canSearch = filterColumn !== "" && filterValue.trim() !== "" && !tab.loading;
-  const currentFilter: RefetchOptions = data?.filter
-    ? { filterColumn: data.filter.column, filterValue: data.filter.value ?? undefined,
-        filterMode: data.filter.mode }
-    : {};
+  const applied = data?.filters ?? [];
+
+  const isDuplicate = (cond: PreviewFilterCond) => applied.some(
+    (c) => c.column === cond.column && c.op === cond.op && c.value === cond.value);
+  // 추가 = 즉시 재조회 — 칩은 항상 적용된 조건만 보여 화면과 데이터가 어긋나지 않는다
+  // / adding requeries immediately so chips never show unapplied state
+  const appendFilter = (cond: PreviewFilterCond) => {
+    if (tab.loading || applied.length >= MAX_FILTERS || isDuplicate(cond)) return;
+    onRefetch(tab.id, { filters: [...applied, cond], limit });
+  };
+  const draftCond: PreviewFilterCond = {
+    column: draftColumn, op: draftOp,
+    value: isNullOp(draftOp) ? null : draftValue.trim(),
+  };
+  const canAdd = draftColumn !== "" && !tab.loading && applied.length < MAX_FILTERS
+    && (isNullOp(draftOp) || draftValue.trim() !== "") && !isDuplicate(draftCond);
+  const addDraftFilter = () => {
+    if (!canAdd) return;
+    appendFilter(draftCond);
+    setDraftValue("");
+  };
+  // 값 자동완성 — 로드된 행의 고유값 상위 N개 / suggestions from loaded rows
+  const valueSuggestions = data && draftColumn !== "" && !isNullOp(draftOp)
+    ? countUniqueValues(data.rows, draftColumn).slice(0, VALUE_SUGGESTION_LIMIT)
+    : [];
 
   const downloadCsv = () => {
     if (!data) return;
@@ -104,8 +144,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         <select
           className="h-10 rounded-lg border px-3 text-sm"
           style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
-          value={filterColumn}
-          onChange={(e) => setFilterColumn(e.target.value)}
+          value={draftColumn}
+          onChange={(e) => setDraftColumn(e.target.value)}
           data-testid="PreviewSection-filterColumnSelect"
         >
           <option value="">{t("preview.selectColumn")}</option>
@@ -113,40 +153,48 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             <option key={column} value={column}>{column}</option>
           ))}
         </select>
-        <input
-          className="h-10 w-48 rounded-lg border px-3 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)]"
-          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
-          placeholder={t("preview.valuePlaceholder")}
-          value={filterValue}
-          onChange={(e) => setFilterValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && canSearch) {
-              onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), filterMode, limit });
-            }
-          }}
-          data-testid="PreviewSection-filterValueInput"
-        />
-        {/* 매칭 방식 — 부분(LIKE)·정확(=). 소스 쿼리 WHERE로 내려가므로 재질의 시 적용 */}
+        {/* 연산자 — 포함/정확과 제외형, NULL 검사. 소스 쿼리 WHERE로 내려간다 */}
         <select
           className="h-10 rounded-lg border px-2 text-sm"
           style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
           title={t("preview.matchModeTitle")}
-          value={filterMode}
-          onChange={(e) => setFilterMode(e.target.value === "exact" ? "exact" : "contains")}
-          data-testid="PreviewSection-filterModeSelect"
+          value={draftOp}
+          onChange={(e) => setDraftOp(e.target.value as PreviewFilterOp)}
+          data-testid="PreviewSection-filterOpSelect"
         >
-          <option value="contains">{t("preview.matchContains")}</option>
-          <option value="exact">{t("preview.matchExact")}</option>
+          {FILTER_OPS.map((op) => (
+            <option key={op} value={op}>{t(`preview.op.${op}`)}</option>
+          ))}
         </select>
+        <input
+          className="h-10 w-48 rounded-lg border px-3 text-sm outline-none transition-colors duration-200 ease-in-out focus:border-[var(--focus-blue)] disabled:opacity-45"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
+          placeholder={t("preview.valuePlaceholder")}
+          value={draftValue}
+          disabled={isNullOp(draftOp)}
+          list={`PreviewSection-valueOptions-${tab.id}`}
+          onChange={(e) => setDraftValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") addDraftFilter();
+          }}
+          data-testid="PreviewSection-filterValueInput"
+        />
+        <datalist id={`PreviewSection-valueOptions-${tab.id}`}
+                  data-testid="PreviewSection-valueDatalist">
+          {valueSuggestions.map(({ value }) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
         <button
           className="btn-primary"
-          disabled={!canSearch}
-          onClick={() => onRefetch(tab.id, { filterColumn, filterValue: filterValue.trim(), filterMode, limit })}
-          data-testid="PreviewSection-searchButton"
+          disabled={!canAdd}
+          title={applied.length >= MAX_FILTERS ? t("preview.maxFilters") : undefined}
+          onClick={addDraftFilter}
+          data-testid="PreviewSection-addFilterButton"
         >
-          {tab.loading ? t("detail.loading") : t("preview.requery")}
+          {tab.loading ? t("detail.loading") : t("preview.addFilter")}
         </button>
-        {data?.filter && (
+        {applied.length > 0 && (
           <button className="icon-button"
                   onClick={() => onRefetch(tab.id, { limit })}
                   data-testid="PreviewSection-clearButton">
@@ -159,7 +207,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
           style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
           title={t("preview.limitTitle")}
           value={limit}
-          onChange={(e) => onRefetch(tab.id, { ...currentFilter, limit: Number(e.target.value) })}
+          onChange={(e) => onRefetch(tab.id, { filters: applied, limit: Number(e.target.value) })}
           data-testid="PreviewSection-limitSelect"
         >
           {LIMIT_OPTIONS.map((option) => (
@@ -205,7 +253,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
 
         {data && (
           <PreviewSqlButton
-            state={{ object: data.object, limit: data.limit, filter: data.filter }}
+            state={{ object: data.object, limit: data.limit, filters: data.filters }}
             // 드래그 순서까지 화면과 동일하게 — SQL 보기는 화면의 재현이다
             visibleColumns={applyColumnOrder(data.columns, tab.order)
               .filter((column) => !tab.hidden.includes(column))}
@@ -227,6 +275,35 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         </button>
       </div>
 
+      {/* 적용된 조건 칩 — ×로 개별 제거, 제거 즉시 재조회 / applied-condition chips */}
+      {applied.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5"
+             data-testid="PreviewSection-filterChips">
+          {applied.map((cond, index) => (
+            <span key={`${cond.column}-${cond.op}-${cond.value}`}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]"
+                  style={{ borderColor: "var(--hairline-strong)",
+                           background: "var(--surface-elevated)", color: "var(--body-text)" }}
+                  title={t(`preview.op.${cond.op}`)}
+                  data-testid={`PreviewSection-filterChip-${index}`}>
+              {cond.column} {OP_SYMBOLS[cond.op]}
+              {!isNullOp(cond.op) && ` "${cond.value}"`}
+              <button
+                className="pressable rounded-full leading-none"
+                style={{ color: "var(--muted)" }}
+                title={t("preview.removeFilter")}
+                onClick={() => onRefetch(tab.id, {
+                  filters: applied.filter((_, i) => i !== index), limit,
+                })}
+                data-testid={`PreviewSection-filterChipRemove-${index}`}
+              >
+                <CloseIcon size={9} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="mb-2 flex items-center gap-2 text-xs" style={{ color: "var(--muted)" }}>
         {data && <span>{data.rows.length}{t("preview.rowsSuffix")}</span>}
         {data && data.masked_columns.length > 0 && (
@@ -234,10 +311,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             {t("preview.masked")} {data.masked_columns.length}{t("preview.maskedSuffix")}
           </span>
         )}
-        {data?.filter && (
-          <span>— {data.filter.column} ~ &quot;{data.filter.value}&quot;</span>
-        )}
         <span>{t("preview.requeryHint")}</span>
+        <span>{t("preview.quickFilterHint")}</span>
       </div>
 
       <div className="scroll-area rounded-lg border"
@@ -255,6 +330,12 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             })}
             onSort={(sort) => onPatch(tab.id, { sort })}
             onReorder={(order) => onPatch(tab.id, { order })}
+            // 셀 더블클릭 = 그 값으로 eq 조건 (null 셀은 IS NULL) / cell quick-filter
+            onQuickFilter={(column, value) => appendFilter(
+              value === null || value === undefined
+                ? { column, op: "is_null", value: null }
+                : { column, op: "eq", value: String(value) },
+            )}
           />
         ) : (
           <div className="p-4">
