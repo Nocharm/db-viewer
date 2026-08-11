@@ -59,6 +59,13 @@ describe("buildPreviewSql", () => {
     expect(sql).not.toContain("WHERE");
     expect(sql).not.toContain("ORDER BY");
   });
+
+  it("renders exact mode as equality, not LIKE", () => {
+    const sql = buildPreviewSql(
+      { ...STATE, filter: { ...STATE.filter, mode: "exact" as const } }, ["EMP_NO"], null);
+    expect(sql).toContain("WHERE [EMP_NM] = N'김''철수'");
+    expect(sql).not.toContain("LIKE");
+  });
 });
 
 describe("tokenizeSql", () => {

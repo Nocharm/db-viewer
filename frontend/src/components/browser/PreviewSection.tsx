@@ -206,8 +206,17 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         {data && (
           <PreviewSqlButton
             state={{ object: data.object, limit: data.limit, filter: data.filter }}
-            visibleColumns={data.columns.filter((column) => !tab.hidden.includes(column))}
+            // 드래그 순서까지 화면과 동일하게 — SQL 보기는 화면의 재현이다
+            visibleColumns={applyColumnOrder(data.columns, tab.order)
+              .filter((column) => !tab.hidden.includes(column))}
             sort={tab.sort}
+            onApplyColumns={(visible) => {
+              const keep = new Set(visible);
+              onPatch(tab.id, {
+                hidden: data.columns.filter((column) => !keep.has(column)),
+                order: visible,
+              });
+            }}
             buttonClassName="icon-button h-10"
           />
         )}
