@@ -7,6 +7,8 @@
 
 ## 2026-08-11
 
+- **어드밴스드 필터 UX 정정 — 스테이징 + [조회] 스텝 분리** (fix/preview-filter-staged-query). 사용자 지시: 추가마다 쿼리를 날리지 말 것. 칩 추가·제거는 로컬 스테이징만 하고 칩 행의 [조회](돋보기 아이콘)가 한 번에 재질의 — 조건 여러 개를 쌓아도 쿼리는 1회. 미적용 칩은 대시 테두리로 구분(적용되면 실선), [필터 해제](× 아이콘)는 1행에서 칩 행으로 이동해 전체 해제+무필터 재질의, [필터 추가]는 secondary로 강등(주 행동은 조회). 셀 더블클릭도 스테이징만. 검증: tsc·eslint·vitest 101/101, 헤드리스 12/12 — 스테이징 불변(행 유지)→조회 1회 반영→대시/실선 전환→로컬 제거 후 재조회 복귀→해제 왕복.
+
 - **미리보기 어드밴스드 필터 — 복수 조건·제외·NULL, SQL 반영** (feature/preview-advanced-filter). 단일 값 필터를 AND 결합 조건 목록(op 6종: contains/eq/not_contains/neq/is_null/not_null, 상한 5)으로 확장 — 전 스택 관통: API `filters` JSON 파라미터(구 filter_column/value/mode 교체, Pydantic 검증·컬럼 실재·값 필수·개수 상한 400, 감사 로그에 `A~'v' AND B IS NULL` 표기) → FakeTablePreview(AND 평가, is_null은 진짜 None만) → N8nTablePreview(filters 배열 + 단일 긍정 조건은 구 W2 호환 필드 병송, **응답 query에 WHERE 없으면 raise** — 구 W2가 무필터 행을 필터 결과로 속이는 사고 차단) → W2 빌더(AND 결합 WHERE, JSON 재생성 — **운영 n8n엔 W2 재임포트 필요**). UI는 추가/제거 즉시 재조회되는 칩 방식(칩은 항상 적용된 상태만 표시), 같이 구현한 편의 기능: NULL 연산자, 셀 더블클릭 eq 빠른 필터, 값 자동완성 datalist(로드 행 고유값). SQL 보기 `WHERE a\n  AND b` 렌더 + 토크나이저 AND/NOT/IS/NULL. 검증: 백엔드 335 passed(+4: 결합·검증 400·n8n body/가드)·ruff 클린, 프론트 tsc·eslint·vitest 101/101(+5), 헤드리스 실측 9/9 — contains 칩→neq 제외→is_null 0행·값 입력 비활성→SQL 3조건 반영→칩 제거 복귀→더블클릭 eq 칩→datalist→전체 해제 왕복. 제안만 남긴 것: OR 그룹, 범위 연산자(>, <, BETWEEN), 필터 프리셋, WHERE만 복사.
 
 - **SQL 칩 편집 복원 불가 수정 — 고스트 칩 양방향 편집** (fix/sql-pill-restore). 사용자 리포트: 적용 후 다시 열면 스테이징이 "현재 보이는 컬럼"에서 시작해 **누적 제외만 가능**했다. 스테이징을 전체 컬럼 위의 포함 집합(Set)으로 바꿔 — 숨긴 컬럼은 흐린 대시 고스트 칩으로 남고 클릭하면 복원, 「모두 표시」로 일괄 복원, 적용 라벨은 −숨김/+복원 델타 표기. 같이 잡은 것: 모달을 닫아도 editOpen이 남아 재진입 첫 「컬럼 편집」 클릭이 열기가 아니라 닫기가 되던 상태 잔존(모달 열 때 초기화). 검증: tsc·eslint·vitest 98/98, 헤드리스 — 2개 숨김 적용→모달 재진입 시 고스트 2개, 고스트 클릭 「적용 (+1)」로 개별 복원(다른 숨김은 유지), 모두 표시로 20/20 복원.
