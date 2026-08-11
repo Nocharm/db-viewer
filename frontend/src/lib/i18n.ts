@@ -77,11 +77,11 @@ export const MESSAGES = {
   // SQL 보기의 컬럼 칩 편집 / pill-based column editing in the SQL view
   "preview.editColumns": { ko: "컬럼 편집", en: "Edit columns" },
   "preview.editColumnsHint": {
-    ko: "×나 Backspace로 컬럼을 빼고 적용 — 뺀 컬럼은 일괄 숨김, 남은 순서가 표시 순서",
-    en: "Remove pills with × or Backspace, then apply — removed columns hide in bulk",
+    ko: "×나 Backspace로 빼고, 흐린 칩을 누르면 복원 — 적용 시 일괄 반영, 남은 순서가 표시 순서",
+    en: "Remove with × or Backspace, click a dimmed pill to restore — apply commits in bulk",
   },
   "preview.applyColumns": { ko: "적용", en: "Apply" },
-  "preview.resetColumns": { ko: "초기화", en: "Reset" },
+  "preview.restoreColumn": { ko: "다시 표시", en: "Show again" },
   "preview.editColumnsEmpty": {
     ko: "최소 한 개 컬럼은 남겨야 합니다",
     en: "Keep at least one column",
