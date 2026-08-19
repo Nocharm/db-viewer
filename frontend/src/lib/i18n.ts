@@ -33,6 +33,11 @@ export const MESSAGES = {
   "detail.preview": { ko: "미리보기 TOP 20", en: "Preview TOP 20" },
   "detail.loading": { ko: "조회 중…", en: "Loading…" },
   "detail.openErd": { ko: "ERD 보기 →", en: "Open ERD →" },
+  "detail.jumpToPreview": { ko: "미리보기로", en: "To preview" },
+  "detail.jumpToPreviewTitle": {
+    ko: "아래 미리보기 영역으로 이동",
+    en: "Jump to the preview area below",
+  },
   "detail.columns": { ko: "컬럼", en: "Columns" },
   "detail.columnsMore": { ko: "컬럼 더보기", en: "Show all columns" },
   "detail.columnsFold": { ko: "컬럼 접기", en: "Fold columns" },
@@ -168,6 +173,14 @@ export const MESSAGES = {
   "preview.copy": { ko: "클립보드 복사", en: "Copy to clipboard" },
   "preview.copied": { ko: "복사됨 ✓", en: "Copied ✓" },
   "preview.copyFailed": { ko: "복사 실패 — 직접 선택해 복사하세요", en: "Copy failed — select manually" },
+  "preview.backToTop": { ko: "위로", en: "Top" },
+  "preview.backToTopTitle": { ko: "테이블 상세로 이동", en: "Back to the table detail" },
+  "preview.wrapCells": { ko: "줄바꿈", en: "Wrap" },
+  "preview.ellipsisCells": { ko: "말줄임", en: "Ellipsis" },
+  "preview.cellModeTitle": {
+    ko: "긴 값 표시 방식 — 말줄임(…) / 자동 줄바꿈. 컬럼 폭은 헤더 경계를 드래그해 조절",
+    en: "Long-value display — ellipsis or wrap. Drag the header edge to resize a column",
+  },
 
   "parsing.title": { ko: "파싱 지표", en: "Parse metrics" },
   "parsing.snapshot": { ko: "스냅샷", en: "snapshot" },

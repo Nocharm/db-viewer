@@ -69,6 +69,8 @@ function HomeInner() {
   // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
   const previewAllowed = usePreviewAllowlist();
   const previewRef = useRef<HTMLDivElement | null>(null);
+  // 상세 ↔ 미리보기 왕복 버튼이 움직이는 스크롤 컨테이너 / the scroller both jump buttons drive
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchAllObjects()
@@ -289,6 +291,14 @@ function HomeInner() {
     window.addEventListener("pointerup", onUp);
   };
 
+  const jumpToPreview = useCallback(() => {
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const jumpToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   // 컬럼 클릭 → 조인 검증 페이지로 직행 — 소스 테이블·컬럼 프리필, target이 실려 오면
   // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다
   const handleOpenColumn = useCallback(
@@ -320,7 +330,7 @@ function HomeInner() {
       </AppHeader>
       <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
       {/* 카드 레이아웃 — 선 대신 바탕 톤·여백으로 구분 / cards on a muted surface */}
-      <div className="scroll-area surface-muted min-h-0 flex-1">
+      <div ref={scrollRef} className="scroll-area surface-muted min-h-0 flex-1">
         {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
         <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:h-full lg:flex-nowrap">
           <CategoryList
@@ -362,6 +372,8 @@ function HomeInner() {
               }
               onPreview={openPreview}
               onOpenErd={handleOpenErd}
+              canJumpToPreview={previewTabs.length > 0}
+              onJumpToPreview={jumpToPreview}
               onSelectTable={selectByQname}
               onOpenColumn={handleOpenColumn}
             />
@@ -378,6 +390,7 @@ function HomeInner() {
               onSplitPick={setSplitPreviewId}
               onRefetch={refetchPreview}
               onPatch={patchPreview}
+              onJumpToTop={jumpToTop}
             />
           </div>
         )}
