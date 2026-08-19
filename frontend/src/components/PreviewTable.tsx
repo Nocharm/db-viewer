@@ -8,7 +8,8 @@ import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
 import {
-  applyColumnOrder, countUniqueValues, moveColumn, sortRows, type SortSpec,
+  applyColumnOrder, copyTextToClipboard, countUniqueValues, moveColumn, sortRows,
+  type SortSpec,
 } from "@/lib/preview-utils";
 
 interface Props {
@@ -20,8 +21,10 @@ interface Props {
   onToggleHidden: (column: string) => void;
   onSort: (sort: SortSpec | null) => void;
   onReorder: (order: string[]) => void;
-  /** 셀 더블클릭 = 그 값으로 필터 — 미지정이면 비활성 / cell double-click quick filter */
-  onQuickFilter?: (column: string, value: unknown) => void;
+  /** 그 값으로 필터 조건 추가(셀 더블클릭·고유값 메뉴) — 미지정이면 비활성.
+   * op는 포함(eq)/제외(neq), 값이 null이면 IS NULL / IS NOT NULL로 내려간다
+   * / stage a filter for that value; op picks include vs exclude */
+  onQuickFilter?: (column: string, value: unknown, op?: "eq" | "neq") => void;
   /** 긴 값 표시 방식 — true면 자동 줄바꿈, false면 말줄임 / wrap long values instead of ellipsis */
   wrapCells: boolean;
 }
@@ -31,6 +34,16 @@ interface HeaderMenu {
   x: number;
   y: number;
 }
+
+/** 고유값 모달에서 클릭한 값 + 메뉴 위치 / clicked value in the unique-values modal */
+interface ValueMenu {
+  value: string;
+  x: number;
+  y: number;
+}
+
+// 토스트 표시 시간(ms) — 읽고 지나갈 만큼만 / how long a toast stays up
+const TOAST_MS = 2400;
 
 // 컬럼 폭 드래그 한계(px) / drag clamp for column widths
 const MIN_COL_WIDTH = 48;
@@ -52,12 +65,33 @@ const CELL_PADDING_X = 26;
 // 헤더의 정렬 화살표 자리(px) — 이름이 화살표에 가리지 않게 맞춤 폭에 더한다
 const SORT_ICON_SPACE = 18;
 
+/** 포인터 위치에 뜬 메뉴를 뷰포트 안으로 끌어들인다 — 미리보기는 화면 아래쪽이라
+ * 클릭 지점 그대로 열면 항목이 화면 밖으로 잘린다
+ * / pull a pointer-anchored menu back inside the viewport */
+function useViewportClamp<T extends { x: number; y: number }>(
+  position: T | null,
+  ref: React.RefObject<HTMLDivElement | null>,
+  setPosition: (next: T) => void,
+): void {
+  useEffect(() => {
+    const el = ref.current;
+    if (!position || !el) return;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(8, Math.min(position.x, window.innerWidth - rect.width - 8));
+    const y = Math.max(8, Math.min(position.y, window.innerHeight - rect.height - 8));
+    if (x !== position.x || y !== position.y) setPosition({ ...position, x, y });
+  }, [position, ref, setPosition]);
+}
+
 export function PreviewTable({
   data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter, wrapCells,
 }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
   const [uniqueColumn, setUniqueColumn] = useState<string | null>(null);
+  const [valueMenu, setValueMenu] = useState<ValueMenu | null>(null);
+  // 토스트 — 같은 문구를 연속으로 띄워도 다시 뜨도록 id를 함께 든다
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   // 헤더 드래그 순서 변경 — 드래그 중인 컬럼과 드롭 위치(대상 앞/뒤) 표시
   const [dragColumn, setDragColumn] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ column: string; after: boolean } | null>(null);
@@ -65,6 +99,7 @@ export function PreviewTable({
   // dragged or double-click-fitted widths; absent means the default cap applies
   const [widths, setWidths] = useState<Record<string, number>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const valueMenuRef = useRef<HTMLDivElement | null>(null);
   // 내용 실측용 캔버스 — DOM으로 재려면 말줄임·줄바꿈을 임시로 풀었다 되돌려야 해서
   // 레이아웃을 두 번 흔든다 / a canvas measures text without disturbing the layout
   const measureRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -133,6 +168,27 @@ export function PreviewTable({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menu]);
 
+  useEffect(() => {
+    if (!valueMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!valueMenuRef.current?.contains(e.target as Node)) setValueMenu(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [valueMenu]);
+
+  useViewportClamp(menu, menuRef, setMenu);
+  useViewportClamp(valueMenu, valueMenuRef, setValueMenu);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const showToast = (text: string) =>
+    setToast((cur) => ({ id: (cur?.id ?? 0) + 1, text }));
+
   const hiddenSet = new Set(hidden);
   // 순서는 숨김 컬럼까지 포함한 전체에 적용 — 드롭 결과를 저장할 때 숨김 컬럼의 상대
   // 위치가 보존된다 / the order spans hidden columns so their relative slots survive
@@ -200,6 +256,25 @@ export function PreviewTable({
     setMenu(null);
   };
 
+  /** 고유값 → 필터 조건 추가. 조회는 사용자가 [조회]로 직접 낸다(추가마다 재질의 금지)
+   * / stage the condition only; the user runs [Query] themselves */
+  const stageValueFilter = (op: "eq" | "neq") => {
+    if (!uniqueColumn || !valueMenu) return;
+    // 모달의 값은 문자열이라 빈 문자열이 곧 NULL 표기(∅) — 셀 더블클릭과 같은 관례로 넘긴다
+    onQuickFilter?.(uniqueColumn, valueMenu.value === "" ? null : valueMenu.value, op);
+    setValueMenu(null);
+    showToast(t("preview.filterStaged"));
+  };
+
+  const copyValue = () => {
+    if (!valueMenu) return;
+    const { value } = valueMenu;
+    setValueMenu(null);
+    // HTTP(비보안 컨텍스트)에서도 동작 — 공용 헬퍼가 execCommand로 폴백한다
+    copyTextToClipboard(value).then((ok) =>
+      showToast(t(ok ? "preview.copied" : "preview.copyFailed")));
+  };
+
   // 십자 하이라이트의 열 축 — React 상태로 두면 호버마다 500행 × N열이 리렌더된다.
   // 위임된 mouseover에서 셀 인덱스를 읽어 클래스만 토글한다 (행 축은 기존 tr:hover CSS).
   // / column axis of the crosshair: delegated mouseover toggles a class imperatively,
@@ -242,7 +317,7 @@ export function PreviewTable({
               <th
                 key={column}
                 draggable
-                className="relative cursor-context-menu whitespace-nowrap px-3 py-1.5 font-mono font-medium"
+                className="relative cursor-pointer whitespace-nowrap px-3 py-1.5 font-mono font-medium"
                 style={{
                   ...cellStyle(column),
                   ...(dragColumn === column ? { opacity: 0.4 } : undefined),
@@ -278,6 +353,10 @@ export function PreviewTable({
                   e.preventDefault();
                   setMenu({ column, x: e.clientX, y: e.clientY });
                 }}
+                // 좌클릭도 같은 메뉴 — 우클릭만 열리는 건 발견되지 않는다(사용자 리포트).
+                // 드래그로 순서를 바꾼 뒤에는 click이 발생하지 않아 순서 변경과 겹치지 않는다
+                // / left-click opens the same menu; a real drag never fires click
+                onClick={(e) => setMenu({ column, x: e.clientX, y: e.clientY })}
                 data-testid={`PreviewTable-header-${column}`}
               >
                 <span className="inline-block align-middle"
@@ -304,6 +383,7 @@ export function PreviewTable({
                     e.stopPropagation();
                     fitColumnWidth(column);
                   }}
+                  onClick={(e) => e.stopPropagation()}
                   onContextMenu={(e) => e.stopPropagation()}
                   data-testid={`PreviewTable-resizeHandle-${column}`}
                 />
@@ -401,6 +481,7 @@ export function PreviewTable({
             </div>
             <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>
               {t("preview.uniqueBasis").replace("{n}", String(data.rows.length))}
+              {onQuickFilter && ` · ${t("preview.uniqueRowHint")}`}
             </p>
             <div className="scroll-area min-h-0 overflow-y-auto">
               <table className="w-full text-xs">
@@ -412,7 +493,13 @@ export function PreviewTable({
                 </thead>
                 <tbody>
                   {uniqueItems.map(({ value, count }) => (
-                    <tr key={value} className="border-t" style={{ borderColor: "var(--hairline)" }}>
+                    <tr
+                      key={value}
+                      className="pressable border-t"
+                      style={{ borderColor: "var(--hairline)" }}
+                      onClick={(e) => setValueMenu({ value, x: e.clientX, y: e.clientY })}
+                      data-testid={`PreviewTable-uniqueRow-${value}`}
+                    >
                       <td className="max-w-64 truncate py-1 font-mono">{value || "∅"}</td>
                       <td className="text-right tabular-nums" style={{ color: "var(--stat-ink)" }}>
                         {count}
@@ -422,7 +509,48 @@ export function PreviewTable({
                 </tbody>
               </table>
             </div>
+
+            {/* 값 메뉴 — 모달 안에 두어야 바깥 mousedown 닫기에 모달까지 닫히지 않는다 */}
+            {valueMenu && (
+              <div ref={valueMenuRef} className="erd-menu !fixed"
+                   style={{ left: valueMenu.x, top: valueMenu.y }}
+                   data-testid="PreviewTable-uniqueValueMenu">
+                <div className="erd-menu__label max-w-56 truncate font-mono">
+                  {valueMenu.value || "∅"}
+                </div>
+                <button className="pressable erd-menu__item" onClick={copyValue}
+                        data-testid="PreviewTable-copyValueItem">
+                  {t("preview.copyValue")}
+                </button>
+                {onQuickFilter && (
+                  <>
+                    <button className="pressable erd-menu__item"
+                            onClick={() => stageValueFilter("eq")}
+                            data-testid="PreviewTable-onlyValueItem">
+                      {t("preview.onlyThisValue")}
+                    </button>
+                    <button className="pressable erd-menu__item"
+                            onClick={() => stageValueFilter("neq")}
+                            data-testid="PreviewTable-excludeValueItem">
+                      {t("preview.excludeThisValue")}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* 토스트 — 모달(z-50) 위에 뜬다 / above the modal layer */}
+      {toast && (
+        <div
+          className="fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm"
+          style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)",
+                   color: "var(--ink)" }}
+          data-testid="PreviewTable-toast"
+        >
+          {toast.text}
         </div>
       )}
     </>
