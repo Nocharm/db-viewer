@@ -177,6 +177,10 @@ export const MESSAGES = {
   "preview.backToTopTitle": { ko: "테이블 상세로 이동", en: "Back to the table detail" },
   "preview.wrapCells": { ko: "줄바꿈", en: "Wrap" },
   "preview.ellipsisCells": { ko: "말줄임", en: "Ellipsis" },
+  "preview.fitColumnTitle": {
+    ko: "드래그로 폭 조절 · 더블클릭으로 내용 맞춤 (말줄임: 전문 한 줄 / 줄바꿈: 3줄 내외, 한 번 더 누르면 기본 폭)",
+    en: "Drag to resize · double-click to fit content (ellipsis: one full line / wrap: ~3 lines; again restores the default)",
+  },
   "preview.cellModeTitle": {
     ko: "긴 값 표시 방식 — 말줄임(…) / 자동 줄바꿈. 컬럼 폭은 헤더 경계를 드래그해 조절",
     en: "Long-value display — ellipsis or wrap. Drag the header edge to resize a column",

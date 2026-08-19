@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon, CodeIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import {
   buildPreviewSql,
@@ -80,6 +80,7 @@ export function PreviewSqlButton({
                 setEditOpen(false);
               }}
               data-testid="PreviewSqlButton-openButton">
+        <CodeIcon size={11} className="mr-1 inline-block align-middle" />
         {t("preview.sqlView")}
       </button>
       {open && (

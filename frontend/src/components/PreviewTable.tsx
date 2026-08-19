@@ -34,11 +34,23 @@ interface HeaderMenu {
 
 // 컬럼 폭 드래그 한계(px) / drag clamp for column widths
 const MIN_COL_WIDTH = 48;
-const MAX_COL_WIDTH = 800;
+// 상한은 「전문 한 줄」 맞춤이 실제로 도달할 수 있게 넉넉히 — 긴 텍스트 컬럼은
+// 1,000px를 넘기도 한다 / high enough that fit-to-content can actually reach full text
+const MAX_COL_WIDTH = 1600;
 // 폭을 지정하지 않은 컬럼의 첫 렌더 상한(px) — 값이 긴 컬럼 하나가 표를 가로로
-// 밀어내 첫 화면부터 못 읽게 되는 걸 막는다. 개별 조정은 헤더 경계 드래그(더블클릭 해제)
+// 밀어내 첫 화면부터 못 읽게 되는 걸 막는다. 개별 조정은 헤더 경계 드래그·더블클릭
 // / default cap so one long-valued column can't stretch the grid on first render
-const DEFAULT_COL_WIDTH = 260;
+const DEFAULT_COL_WIDTH = 340;
+// 줄바꿈 모드의 더블클릭 목표 줄 수 — 전문 폭을 이 수로 나눠 대략 3줄에서 끊는다
+const WRAP_TARGET_LINES = 3;
+// 단어 단위로 끊기며 줄 끝에 남는 여백 보정 — 정확히 3등분하면 한 줄이 더 생긴다(실측)
+const WRAP_SLACK = 1.15;
+// 줄바꿈 맞춤의 하한(px) — 3등분이 지나치게 좁아 단어마다 끊기는 걸 막는다
+const WRAP_MIN_WIDTH = 140;
+// 셀 좌우 패딩(px-3 = 24) + 여유 1px / cell padding plus a hair of slack
+const CELL_PADDING_X = 26;
+// 헤더의 정렬 화살표 자리(px) — 이름이 화살표에 가리지 않게 맞춤 폭에 더한다
+const SORT_ICON_SPACE = 18;
 
 export function PreviewTable({
   data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter, wrapCells,
@@ -49,10 +61,13 @@ export function PreviewTable({
   // 헤더 드래그 순서 변경 — 드래그 중인 컬럼과 드롭 위치(대상 앞/뒤) 표시
   const [dragColumn, setDragColumn] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ column: string; after: boolean } | null>(null);
-  // 세로선 드래그로 지정한 폭 — 더블클릭이 지우면 내용 맞춤(자연 폭)으로 복귀
-  // dragged widths; double-click clears back to natural (content-fit) width
+  // 세로선 드래그·더블클릭으로 지정한 폭 — 없으면 DEFAULT_COL_WIDTH 상한을 쓴다
+  // dragged or double-click-fitted widths; absent means the default cap applies
   const [widths, setWidths] = useState<Record<string, number>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // 내용 실측용 캔버스 — DOM으로 재려면 말줄임·줄바꿈을 임시로 풀었다 되돌려야 해서
+  // 레이아웃을 두 번 흔든다 / a canvas measures text without disturbing the layout
+  const measureRef = useRef<CanvasRenderingContext2D | null>(null);
 
   // 다른 테이블 데이터로 바뀌면 폭 초기화 / reset widths when the object changes
   useEffect(() => {
@@ -110,6 +125,60 @@ export function PreviewTable({
   const columns = orderedAll.filter((column) => !hiddenSet.has(column));
   const rows = sortRows(data.rows, sort);
   const uniqueItems = uniqueColumn ? countUniqueValues(data.rows, uniqueColumn) : [];
+
+  const getFont = (el: Element | null): string => {
+    if (!el) return "12px sans-serif";
+    const style = getComputedStyle(el);
+    return `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  };
+
+  /** 컬럼 내용을 한 줄로 폈을 때의 최대 폭(px, 패딩 포함) — 헤더 이름도 후보에 넣는다 */
+  const measureColumnWidth = (column: string): number => {
+    const ctx = measureRef.current
+      ?? (measureRef.current = document.createElement("canvas").getContext("2d"));
+    const table = tableRef.current;
+    if (!ctx || !table) return DEFAULT_COL_WIDTH;
+    const index = columns.indexOf(column);
+    const headCell = table.rows[0]?.cells[index] ?? null;
+    const bodyCell = table.rows[1]?.cells[index] ?? null;
+    ctx.font = getFont(headCell);
+    let widest = ctx.measureText(column).width + SORT_ICON_SPACE;
+    ctx.font = getFont(bodyCell ?? headCell);
+    for (const row of rows) {
+      const width = ctx.measureText(String(row[column] ?? "")).width;
+      if (width > widest) widest = width;
+    }
+    return Math.ceil(widest) + CELL_PADDING_X;
+  };
+
+  /** 더블클릭 = 내용 맞춤. 말줄임이면 전문이 한 줄에 들어가는 폭, 줄바꿈이면 그 폭을
+   * 3등분해 대략 3줄에서 끊는다. 이미 맞춤 폭이면 기본 상한으로 되돌려 왕복이 된다.
+   * / double-click fits to content: one full line when ellipsizing, a third of it when
+   *   wrapping (~3 lines); a second double-click restores the default cap. */
+  const fitColumnWidth = (column: string) => {
+    const content = measureColumnWidth(column);
+    const target = Math.min(
+      Math.max(
+        wrapCells
+          ? Math.min(
+              content,
+              Math.max(Math.round((content / WRAP_TARGET_LINES) * WRAP_SLACK), WRAP_MIN_WIDTH),
+            )
+          : content,
+        MIN_COL_WIDTH,
+      ),
+      MAX_COL_WIDTH,
+    );
+    setWidths((cur) => {
+      const current = cur[column];
+      if (current !== undefined && Math.abs(current - target) <= 1) {
+        const next = { ...cur };
+        delete next[column];
+        return next;
+      }
+      return { ...cur, [column]: target };
+    });
+  };
 
   const menuAction = (action: () => void) => {
     action();
@@ -212,14 +281,11 @@ export function PreviewTable({
                 <span
                   className="col-resize"
                   draggable={false}
+                  title={t("preview.fitColumnTitle")}
                   onPointerDown={(e) => startColumnResize(e, column)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
-                    setWidths((cur) => {
-                      const next = { ...cur };
-                      delete next[column];
-                      return next;
-                    });
+                    fitColumnWidth(column);
                   }}
                   onContextMenu={(e) => e.stopPropagation()}
                   data-testid={`PreviewTable-resizeHandle-${column}`}

@@ -110,6 +110,76 @@ export function ArrowDownIcon(props: IconProps) {
   );
 }
 
+export function FilterIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 깔때기 — 조건으로 좁힌다는 은유 */}
+      <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+    </Svg>
+  );
+}
+
+export function ColumnsIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16M15 4v16" />
+    </Svg>
+  );
+}
+
+export function CodeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8.5 7.5 3 12l5.5 4.5" />
+      <path d="M15.5 7.5 21 12l-5.5 4.5" />
+    </Svg>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3v12" />
+      <path d="M7 11l5 5 5-5" />
+      <path d="M4 20h16" />
+    </Svg>
+  );
+}
+
+export function SplitIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M12 4v16" />
+    </Svg>
+  );
+}
+
+/** 자동 줄바꿈 — 두 줄과 되돌아가는 화살표 / wrap: text lines with a return arrow */
+export function WrapTextIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h12a3 3 0 0 1 0 6h-3" />
+      <path d="M16 15l-3 3 3 3" />
+      <path d="M4 18h4" />
+    </Svg>
+  );
+}
+
+/** 말줄임 — 잘린 한 줄과 … / ellipsis: one clipped line ending in dots */
+export function EllipsisTextIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h9" />
+      <path d="M16.5 12h.01M19.5 12h.01" />
+      <path d="M4 18h16" />
+    </Svg>
+  );
+}
+
 /** 브랜드 마크 — 옐로 라운드 스퀘어 + DB 실린더. app/icon.svg(파비콘)와 같은 도형이다.
  * 둘이 어긋나면 탭과 화면의 브랜드가 달라 보이므로 지오메트리를 맞춰 유지한다.
  * Brand mark mirroring app/icon.svg so the tab and the UI show the same logo. */
