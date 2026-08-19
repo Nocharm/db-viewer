@@ -103,10 +103,25 @@ export function PreviewTable({
   // 값 클리핑은 셀이 아니라 내부 블록이 맡는다 — auto 레이아웃 표는 td의 max-width를
   // 무시하고 내용만큼 열을 늘리기 때문 / an inner block caps the content's preferred width
   const contentStyle = (column: string): React.CSSProperties => {
-    const maxWidth = widths[column] ?? DEFAULT_COL_WIDTH;
-    return wrapCells
-      ? { maxWidth, whiteSpace: "normal", wordBreak: "break-word" }
-      : { maxWidth, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+    const width = widths[column];
+    // 폭 값은 셀 패딩을 포함한 「컬럼 폭」이다 — 내부 블록엔 패딩을 뺀 값을 줘야 글자가
+    // 옆 컬럼까지 번지지 않는다 / the stored width includes padding; the inner block gets
+    // the remainder so text never bleeds past the cell
+    const inner = Math.max((width ?? DEFAULT_COL_WIDTH) - CELL_PADDING_X, MIN_COL_WIDTH);
+    if (wrapCells) {
+      // 줄바꿈 열의 min-content는 「가장 긴 단어」라, 컬럼이 많아 표가 포화되면 auto
+      // 레이아웃이 지정 폭을 무시하고 컬럼명 폭까지 눌러버린다. width+minWidth를 같이
+      // 걸어 지정 폭을 열의 최소 기여폭으로 만들면 더블클릭·드래그가 실제로 먹는다
+      // / a wrappable column's min-content is its longest word, so a saturated table
+      //   squeezes it back to the header; width+minWidth pins the chosen width instead
+      return width !== undefined
+        ? { width: inner, minWidth: inner, maxWidth: inner,
+            whiteSpace: "normal", wordBreak: "break-word" }
+        // 폭 미지정이어도 한 단어 폭까지 쪼그라들지 않게 하한을 준다
+        : { minWidth: WRAP_MIN_WIDTH - CELL_PADDING_X, maxWidth: inner,
+            whiteSpace: "normal", wordBreak: "break-word" };
+    }
+    return { maxWidth: inner, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
   };
 
   useEffect(() => {
@@ -266,7 +281,9 @@ export function PreviewTable({
                 data-testid={`PreviewTable-header-${column}`}
               >
                 <span className="inline-block align-middle"
-                      style={{ maxWidth: widths[column] ?? DEFAULT_COL_WIDTH,
+                      style={{ maxWidth: Math.max(
+                                 (widths[column] ?? DEFAULT_COL_WIDTH) - CELL_PADDING_X,
+                                 MIN_COL_WIDTH),
                                overflow: "hidden", textOverflow: "ellipsis",
                                whiteSpace: "nowrap" }}>
                   {column}
