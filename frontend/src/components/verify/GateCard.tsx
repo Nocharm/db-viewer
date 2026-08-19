@@ -4,6 +4,8 @@
  * The pre-gate: blocks impossible joins from type family and sample uniqueness alone. */
 
 import { useI18n } from "@/components/i18n";
+import { GateIcon } from "@/components/icons";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import type { GateResult, GateSide } from "@/lib/api";
 
 interface GateCardProps {
@@ -67,13 +69,15 @@ export function GateCard({ gate, busy, onRun }: GateCardProps) {
 
   return (
     <section className="card p-4" data-testid="GateCard-root">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-widest"
-              style={{ color: "var(--muted)" }}>
-          {t("verify.gate.title")}
-        </span>
-        {/* 버튼은 라벨 옆 — ml-auto로 카드 오른쪽 끝에 두면 넓은 화면에서 라벨과
-            ~900px 떨어져 시선·마우스가 왕복한다 / button hugs the label, not the far edge */}
+      {/* 버튼은 제목 옆 — ml-auto로 카드 오른쪽 끝에 두면 넓은 화면에서 제목과
+          ~900px 떨어져 시선·마우스가 왕복한다 / button hugs the title, not the far edge */}
+      <StepCardHeader
+        no={1}
+        icon={<GateIcon size={15} />}
+        title={t("verify.gate.title")}
+        desc={t("verify.step1.desc")}
+        done={gate?.verdict === "pass"}
+      >
         <button
           className="btn-secondary !py-1 text-xs"
           disabled={busy}
@@ -82,7 +86,7 @@ export function GateCard({ gate, busy, onRun }: GateCardProps) {
         >
           {busy ? t("common.loading") : t("verify.gate.run")}
         </button>
-      </div>
+      </StepCardHeader>
 
       {gate && (
         <>

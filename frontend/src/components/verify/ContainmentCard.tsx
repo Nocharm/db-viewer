@@ -4,6 +4,8 @@
  * Containment result rendered as a symptom and a remedy, not raw numbers. */
 
 import { useI18n } from "@/components/i18n";
+import { ContainmentIcon } from "@/components/icons";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { getJoinVerdict, type VerdictLevel } from "@/lib/join-verdict";
 import type { ContainmentResponse } from "@/lib/types";
 
@@ -30,12 +32,15 @@ export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCar
 
   return (
     <section className="card p-4" data-testid="ContainmentCard-root">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-widest"
-              style={{ color: "var(--muted)" }}>
-          {t("verify.containment.title")}
-        </span>
-        {/* 버튼은 라벨 옆 — GateCard와 같은 이유 / same near-label placement as GateCard */}
+      {/* 버튼은 제목 옆 — GateCard와 같은 이유 / same near-title placement as GateCard */}
+      <StepCardHeader
+        no={2}
+        icon={<ContainmentIcon size={15} />}
+        title={t("verify.containment.title")}
+        desc={t("verify.step2.desc")}
+        lockNote={enabled ? null : t("verify.lock.needGate")}
+        done={result !== null}
+      >
         <button
           className="btn-secondary !py-1 text-xs"
           disabled={busy || !enabled}
@@ -44,7 +49,7 @@ export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCar
         >
           {busy ? t("common.loading") : t("verify.containment.run")}
         </button>
-      </div>
+      </StepCardHeader>
 
       {result && verdict && (
         <>

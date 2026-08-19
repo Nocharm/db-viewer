@@ -8,12 +8,15 @@ import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useI18n } from "@/components/i18n";
+import { CheckIcon } from "@/components/icons";
 import { ContainmentCard } from "@/components/verify/ContainmentCard";
 import { GateCard } from "@/components/verify/GateCard";
 import { JoinPreviewCard } from "@/components/verify/JoinPreviewCard";
 import { PairCandidateList } from "@/components/verify/PairCandidateList";
 import { PendingList } from "@/components/verify/PendingList";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { TablePickerPanel } from "@/components/verify/TablePickerPanel";
+import { VerifyStepper } from "@/components/verify/VerifyStepper";
 import {
   confirmRelation, fetchObjectDetail, runContainment, runGate, searchObjects,
   type PairCandidate, type PendingRelation,
@@ -77,6 +80,8 @@ function VerifyPageInner() {
   // 대기 큐에서 골라 온 항목 — 목록에 "지금 작업 중인 항목" 표시용. 수동 조작으로
   // 페어가 바뀌면 큐 항목과 어긋나므로 함께 해제한다
   const [pickedPendingId, setPickedPendingId] = useState<number | null>(null);
+  // 3단계(샘플)는 선택 단계라 상태머신에 없다 — 흐름 다이어그램의 완료 표시용으로만 든다
+  const [sampleSeen, setSampleSeen] = useState(false);
 
   // 인플라이트 응답을 적용할지 가리는 기준 — 늦게 온 이전 페어의 결과는 버린다
   // the yardstick for late results: anything from a pair we've left is dropped
@@ -95,6 +100,7 @@ function VerifyPageInner() {
   const handlePickPair = useCallback((next: PairCandidate) => {
     setPair(next);
     setState(resetForNewPair());
+    setSampleSeen(false);
     setError(null);
     setPickedPendingId(null); // 수동 페어 선택은 큐 항목과의 연결을 끊는다
     clearBusy();
@@ -107,6 +113,7 @@ function VerifyPageInner() {
     } else setTgt(obj);
     setPair(null);
     setState(resetForNewPair());
+    setSampleSeen(false);
     setError(null);
     setPickedPendingId(null);
     clearBusy();
@@ -255,9 +262,9 @@ function VerifyPageInner() {
             style={{ gridTemplateColumns: "20rem minmax(0, 1fr) 20rem" }}
             data-testid="VerifyPage-root">
         <div className="scroll-area flex min-h-0 flex-col gap-3 overflow-y-auto">
-          <TablePickerPanel side="src" selected={src}
+          <TablePickerPanel side="src" selected={src} peerSchema={tgt?.schema ?? null}
                             onSelect={(obj) => handleSelectSide("src", obj)} />
-          <TablePickerPanel side="tgt" selected={tgt}
+          <TablePickerPanel side="tgt" selected={tgt} peerSchema={src?.schema ?? null}
                             onSelect={(obj) => handleSelectSide("tgt", obj)} />
           {src && tgt && (
             <PairCandidateList
@@ -279,6 +286,11 @@ function VerifyPageInner() {
               {error}
             </p>
           )}
+          {/* 흐름 다이어그램은 페어 전에도 보여준다 — 처음 오는 사람이 무엇을 하는
+              화면인지, 다음에 무엇을 눌러야 하는지 먼저 읽게 한다
+              / the flow shows before a pair exists: it explains the screen itself */}
+          <VerifyStepper src={src} tgt={tgt} pair={pair} state={state}
+                         sampleSeen={sampleSeen} />
           {!pair && (
             <p className="text-sm" style={{ color: "var(--muted)" }}
                data-testid="VerifyPage-startHint">
@@ -300,13 +312,18 @@ function VerifyPageInner() {
                 allowed={previewOk}
                 srcObjectId={src.id}
                 tgtObjectId={tgt.id}
+                onViewed={() => setSampleSeen(true)}
               />
               <section className="card p-4" data-testid="VerifyPage-confirmCard">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-widest"
-                        style={{ color: "var(--muted)" }}>
-                    {t("verify.confirm.title")}
-                  </span>
+                <StepCardHeader
+                  no={4}
+                  icon={<CheckIcon size={15} />}
+                  title={t("verify.confirm.title")}
+                  desc={t("verify.step4.desc")}
+                  lockNote={canConfirm(state) || state.step === "confirmed"
+                    ? null : t("verify.lock.needContainment")}
+                  done={state.step === "confirmed"}
+                >
                   <button
                     className="btn-primary !py-1.5 text-xs"
                     disabled={!canConfirm(state) || confirmBusy}
@@ -315,7 +332,7 @@ function VerifyPageInner() {
                   >
                     {confirmBusy ? t("join.confirming") : t("verify.confirm.button")}
                   </button>
-                </div>
+                </StepCardHeader>
                 {state.step === "confirmed" && (
                   <p className="mt-2 text-sm" style={{ color: "var(--rel-confirmed)" }}
                      data-testid="VerifyPage-confirmDone">

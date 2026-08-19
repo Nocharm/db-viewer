@@ -291,6 +291,48 @@ export const MESSAGES = {
   "verify.confirm.title": { ko: "4단계 · 확정", en: "Step 4 · Confirm" },
   "verify.confirm.button": { ko: "키 확정", en: "Confirm key" },
   "verify.confirm.done": { ko: "확정됨 — 관계 큐에서 내려갑니다", en: "Confirmed — removed from the queue" },
+  // 테이블 피커 — 스키마 아코디언 + 하위 플라이아웃
+  "verify.pickSchema": { ko: "스키마 선택", en: "Pick a schema" },
+  "verify.schemaTableCount": { ko: "{n}개", en: "{n}" },
+  "verify.samePeerSchema": { ko: "같은 스키마", en: "same schema" },
+  "verify.tableFilterPlaceholder": { ko: "이 스키마에서 찾기", en: "Filter in this schema" },
+  "verify.loadingMore": { ko: "더 불러오는 중…", en: "Loading more…" },
+  "verify.scrollForMore": { ko: "스크롤하면 더 표시됩니다 ({shown}/{total})", en: "Scroll for more ({shown}/{total})" },
+
+  // 단계 다이어그램
+  "verify.flow.title": { ko: "검증 흐름", en: "Verification flow" },
+  "verify.flow.needTables": {
+    ko: "출발·대상 테이블과 컬럼 페어를 고르면 1단계부터 열립니다",
+    en: "Pick both tables and a column pair to unlock step 1",
+  },
+  "verify.flow.optional": { ko: "선택", en: "optional" },
+  "verify.flow.done": { ko: "완료", en: "done" },
+  "verify.flow.current": { ko: "지금 할 차례", en: "do this next" },
+  "verify.flow.locked": { ko: "잠김", en: "locked" },
+  "verify.flow.blocked": { ko: "차단됨", en: "blocked" },
+  "verify.step1.desc": {
+    ko: "값을 읽지 않고 타입·표본 유니크니스만으로 불가능한 조인을 먼저 걸러냅니다",
+    en: "Rules out impossible joins from type family and sample uniqueness — no values read",
+  },
+  "verify.step2.desc": {
+    ko: "출발 값이 대상에 실제로 몇 % 들어 있는지, 카디널리티와 고아 행을 실데이터로 확인합니다",
+    en: "Measures how much of the source actually exists in the target, with cardinality and orphans",
+  },
+  "verify.step3.desc": {
+    ko: "조인 결과와 양쪽 원본 행을 눈으로 확인합니다 — 건너뛰어도 확정할 수 있습니다",
+    en: "Eyeball the joined rows and each side's raw sample — skippable",
+  },
+  "verify.step4.desc": {
+    ko: "관계로 확정해 ERD에 반영하고 검증 대기 큐에서 내립니다",
+    en: "Confirms the relation: it lands on the ERD and leaves the pending queue",
+  },
+  "verify.lock.needPair": { ko: "컬럼 페어를 먼저 고르세요", en: "Pick a column pair first" },
+  "verify.lock.needGate": { ko: "1단계 게이트를 통과해야 열립니다", en: "Unlocks after step 1 passes" },
+  "verify.lock.needContainment": { ko: "2단계 포함률 검증 후 확정할 수 있습니다", en: "Confirm unlocks after step 2" },
+  "verify.diagram.title": { ko: "지금 검증 중인 관계", en: "The relation under test" },
+  "verify.diagram.pickPair": { ko: "컬럼 페어 미선택", en: "No column pair yet" },
+  "verify.diagram.containmentLabel": { ko: "포함률", en: "containment" },
+
   "verify.pending.title": { ko: "검증 대기 관계", en: "Pending relations" },
   "verify.pending.empty": { ko: "대기 중인 관계 없음", en: "No pending relations" },
   "verify.pending.emptyFiltered": {
