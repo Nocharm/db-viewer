@@ -328,57 +328,63 @@ function HomeInner() {
           </span>
         )}
       </AppHeader>
-      <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
       {/* 카드 레이아웃 — 선 대신 바탕 톤·여백으로 구분 / cards on a muted surface */}
       <div ref={scrollRef} className="scroll-area surface-muted min-h-0 flex-1">
-        {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
-        <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:h-full lg:flex-nowrap">
-          <CategoryList
-            categories={categories}
-            selected={category}
-            totalCount={typedObjects.length}
-            onSelect={changeCategory}
-            schemas={visibleSchemas}
-            dbFilter={dbFilter}
-            onDbFilter={changeDbFilter}
-            onAssignCategory={assignCategory}
-            previewAllowed={previewAllowed}
-            width={paneWidths.rail}
-          />
-          {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
-          <div className="pane-resize hidden lg:block"
-               onPointerDown={startPaneResize("rail")}
-               data-testid="Home-railResizeHandle" />
-          <TableList
-            items={listItems}
-            selectedId={selected?.id ?? null}
-            query={query}
-            typeFilter={typeFilter}
-            onQuery={setQuery}
-            onTypeFilter={setTypeFilter}
-            onSelect={selectTable}
-            width={paneWidths.list}
-          />
-          <div className="pane-resize hidden lg:block"
-               onPointerDown={startPaneResize("list")}
-               data-testid="Home-listResizeHandle" />
-          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
-            <TableDetail
-              detail={detail}
-              loading={detailLoading}
-              previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
-              previewAllowed={
-                selected !== null && previewAllowed.has(selected.schema)
-              }
-              onPreview={openPreview}
-              onOpenErd={handleOpenErd}
-              canJumpToPreview={previewTabs.length > 0}
-              onJumpToPreview={jumpToPreview}
-              onSelectTable={selectByQname}
-              onOpenColumn={handleOpenColumn}
+        {/* 조인키 바는 스크롤 컨테이너 안 — 미리보기로 내려가면 같이 밀려 올라간다.
+            래퍼는 스크롤 높이에 딱 맞춰(h-full) 미리보기가 없을 땐 스크롤이 생기지 않고,
+            상세 패널도 예전처럼 자기 안에서 스크롤된다
+            / the join-key bar scrolls away with the content instead of holding the top */}
+        <div className="flex h-full flex-col">
+          <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
+          {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
+          <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:min-h-0 lg:flex-1 lg:flex-nowrap">
+            <CategoryList
+              categories={categories}
+              selected={category}
+              totalCount={typedObjects.length}
+              onSelect={changeCategory}
+              schemas={visibleSchemas}
+              dbFilter={dbFilter}
+              onDbFilter={changeDbFilter}
+              onAssignCategory={assignCategory}
+              previewAllowed={previewAllowed}
+              width={paneWidths.rail}
             />
-          </section>
-        </main>
+            {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
+            <div className="pane-resize hidden lg:block"
+                 onPointerDown={startPaneResize("rail")}
+                 data-testid="Home-railResizeHandle" />
+            <TableList
+              items={listItems}
+              selectedId={selected?.id ?? null}
+              query={query}
+              typeFilter={typeFilter}
+              onQuery={setQuery}
+              onTypeFilter={setTypeFilter}
+              onSelect={selectTable}
+              width={paneWidths.list}
+            />
+            <div className="pane-resize hidden lg:block"
+                 onPointerDown={startPaneResize("list")}
+                 data-testid="Home-listResizeHandle" />
+            <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
+              <TableDetail
+                detail={detail}
+                loading={detailLoading}
+                previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
+                previewAllowed={
+                  selected !== null && previewAllowed.has(selected.schema)
+                }
+                onPreview={openPreview}
+                onOpenErd={handleOpenErd}
+                canJumpToPreview={previewTabs.length > 0}
+                onJumpToPreview={jumpToPreview}
+                onSelectTable={selectByQname}
+                onOpenColumn={handleOpenColumn}
+              />
+            </section>
+          </main>
+        </div>
         {previewTabs.length > 0 && (
           <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
