@@ -516,6 +516,16 @@ mark.hl {
   color: var(--ink);
 }
 
+/* ── 상세 관계 목록 — 항목이 수십 개여도 아래 미리보기까지의 스크롤이 길어지지 않게
+   10줄 남짓에서 목록 자체가 스크롤된다 / relation lists cap at ~10 rows and scroll
+   internally, so a long list never pushes the preview area off-screen ── */
+.detail-list {
+  max-height: 17rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px; /* 스크롤바가 항목 위에 겹치지 않게 */
+}
+
 /* ── 아코디언 — max-height 전환. 높이는 실측값을 인라인 스타일로 넣는다 ── */
 .collapsible {
   overflow: hidden;

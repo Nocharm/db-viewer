@@ -22,6 +22,8 @@ interface Props {
   onReorder: (order: string[]) => void;
   /** 셀 더블클릭 = 그 값으로 필터 — 미지정이면 비활성 / cell double-click quick filter */
   onQuickFilter?: (column: string, value: unknown) => void;
+  /** 긴 값 표시 방식 — true면 자동 줄바꿈, false면 말줄임 / wrap long values instead of ellipsis */
+  wrapCells: boolean;
 }
 
 interface HeaderMenu {
@@ -33,9 +35,13 @@ interface HeaderMenu {
 // 컬럼 폭 드래그 한계(px) / drag clamp for column widths
 const MIN_COL_WIDTH = 48;
 const MAX_COL_WIDTH = 800;
+// 폭을 지정하지 않은 컬럼의 첫 렌더 상한(px) — 값이 긴 컬럼 하나가 표를 가로로
+// 밀어내 첫 화면부터 못 읽게 되는 걸 막는다. 개별 조정은 헤더 경계 드래그(더블클릭 해제)
+// / default cap so one long-valued column can't stretch the grid on first render
+const DEFAULT_COL_WIDTH = 260;
 
 export function PreviewTable({
-  data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter,
+  data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter, wrapCells,
 }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
@@ -72,11 +78,20 @@ export function PreviewTable({
     window.addEventListener("pointerup", onUp);
   };
 
-  // 지정 폭 컬럼은 말줄임 처리 / overridden columns ellipsize overflowing content
+  // 드래그로 지정한 폭만 셀에 건다 / only dragged widths size the cell itself
   const cellStyle = (column: string): React.CSSProperties | undefined => {
     const width = widths[column];
     if (width === undefined) return undefined;
-    return { width, maxWidth: width, overflow: "hidden", textOverflow: "ellipsis" };
+    return { width, maxWidth: width };
+  };
+
+  // 값 클리핑은 셀이 아니라 내부 블록이 맡는다 — auto 레이아웃 표는 td의 max-width를
+  // 무시하고 내용만큼 열을 늘리기 때문 / an inner block caps the content's preferred width
+  const contentStyle = (column: string): React.CSSProperties => {
+    const maxWidth = widths[column] ?? DEFAULT_COL_WIDTH;
+    return wrapCells
+      ? { maxWidth, whiteSpace: "normal", wordBreak: "break-word" }
+      : { maxWidth, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
   };
 
   useEffect(() => {
@@ -181,7 +196,12 @@ export function PreviewTable({
                 }}
                 data-testid={`PreviewTable-header-${column}`}
               >
-                {column}
+                <span className="inline-block align-middle"
+                      style={{ maxWidth: widths[column] ?? DEFAULT_COL_WIDTH,
+                               overflow: "hidden", textOverflow: "ellipsis",
+                               whiteSpace: "nowrap" }}>
+                  {column}
+                </span>
                 {sort?.column === column && (
                   <span className="ml-1 inline-block align-middle"
                         style={{ color: "var(--stat-ink)" }}>
@@ -213,11 +233,13 @@ export function PreviewTable({
             <tr key={index} className="border-t transition-colors duration-150 ease-in-out hover:bg-[var(--soft-stone)]"
                 style={{ borderColor: "var(--hairline)" }}>
               {columns.map((column) => (
-                <td key={column} className="whitespace-nowrap px-3 py-1"
+                <td key={column} className="px-3 py-1 align-top"
                     style={cellStyle(column)}
                     title={String(row[column] ?? "")}
                     onDoubleClick={() => onQuickFilter?.(column, row[column])}>
-                  {String(row[column] ?? "")}
+                  <span className="block" style={contentStyle(column)}>
+                    {String(row[column] ?? "")}
+                  </span>
                 </td>
               ))}
             </tr>
