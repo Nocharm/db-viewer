@@ -544,15 +544,23 @@ mark.hl {
   }
 }
 
-/* ── 주의 환기 깜빡임 — 좌측 검증 카드로 이동했을 때 도착 지점을 한 번 밝힌다.
+/* ── 주의 환기 깜빡임 — 좌측 진행 순서에서 이동했을 때 도착 지점을 밝힌다.
+   링은 **안쪽**(inset)이다: 바깥 링은 좌우가 스크롤 컨테이너 경계에 잘려 위아래만
+   보였다. 색은 옐로(--primary)가 아니라 테마별 행동색 — 옐로는 라이트에서 묻힌다.
    전역 prefers-reduced-motion 가드가 이 애니메이션도 함께 끈다
-   / one-shot attention flash marking where a jump landed ── */
+   / an inset ring: an outer one gets clipped left and right by the scroll container ── */
 .flash-attention {
-  animation: flash-attention 1.2s ease-in-out 2;
+  animation: flash-attention 1.1s ease-in-out 2;
 }
 @keyframes flash-attention {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  35% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 65%, transparent); }
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+    border-color: var(--hairline);
+  }
+  35% {
+    box-shadow: inset 0 0 0 2px var(--action-blue);
+    border-color: var(--action-blue);
+  }
 }
 
 /* ── 로딩 스켈레톤 — 텍스트 대신 형태로 상태 전달 ── */

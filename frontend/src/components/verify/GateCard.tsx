@@ -9,6 +9,8 @@ import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import type { GateResult, GateSide } from "@/lib/api";
 
 interface GateCardProps {
+  /** 좌측 진행 순서에서 이동해 오는 앵커 / anchor for the step navigator */
+  id: string;
   gate: GateResult | null;
   busy: boolean;
   onRun: () => void;
@@ -53,7 +55,7 @@ function SideStat({ side, mismatch, threshold }: {
   );
 }
 
-export function GateCard({ gate, busy, onRun }: GateCardProps) {
+export function GateCard({ id, gate, busy, onRun }: GateCardProps) {
   const { t } = useI18n();
   const mismatch = gate !== null && gate.src.family !== gate.tgt.family;
 
@@ -68,7 +70,7 @@ export function GateCard({ gate, busy, onRun }: GateCardProps) {
   }
 
   return (
-    <section className="card p-4" data-testid="GateCard-root">
+    <section id={id} className="card p-4" data-testid="GateCard-root">
       {/* 버튼은 제목 옆 — ml-auto로 카드 오른쪽 끝에 두면 넓은 화면에서 제목과
           ~900px 떨어져 시선·마우스가 왕복한다 / button hugs the title, not the far edge */}
       <StepCardHeader

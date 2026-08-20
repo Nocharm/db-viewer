@@ -327,7 +327,6 @@ export const MESSAGES = {
   "verify.summary.title": { ko: "선택한 테이블·컬럼", en: "Your picks" },
   "verify.summary.collapse": { ko: "접기", en: "Fold" },
   "verify.summary.expand": { ko: "펼쳐서 수정", en: "Edit" },
-  "verify.nav.title": { ko: "단계 바로가기", en: "Jump to a step" },
   "verify.nav.hint": { ko: "누르면 해당 단계로 이동", en: "Click to jump" },
   "verify.diagram.title": { ko: "지금 확인 중인 연결", en: "The link you are checking" },
   "verify.diagram.pickPair": { ko: "컬럼 미선택", en: "No column yet" },

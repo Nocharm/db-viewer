@@ -27,7 +27,8 @@ export function StepCardHeader({
   no, icon, title, desc, lockNote = null, done = false, children,
 }: StepCardHeaderProps) {
   const { t } = useI18n();
-  const color = lockNote ? "var(--muted)" : done ? "var(--rel-confirmed)" : "var(--primary)";
+  // 진행 중 색은 --action-blue — 옐로(--primary)는 라이트 테마의 흰 배경에서 묻힌다
+  const color = lockNote ? "var(--muted)" : done ? "var(--rel-confirmed)" : "var(--action-blue)";
 
   return (
     <div className="mb-3 flex items-start gap-2.5" data-testid={`StepCardHeader-${no}`}>

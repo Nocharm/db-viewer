@@ -13,12 +13,12 @@ import { ContainmentCard } from "@/components/verify/ContainmentCard";
 import { GateCard } from "@/components/verify/GateCard";
 import { JoinPreviewCard } from "@/components/verify/JoinPreviewCard";
 import { PairCandidateList } from "@/components/verify/PairCandidateList";
+import { JoinDiagramCard } from "@/components/verify/JoinDiagramCard";
 import { PendingList } from "@/components/verify/PendingList";
 import { SelectionPanel } from "@/components/verify/SelectionPanel";
 import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { TablePickerPanel } from "@/components/verify/TablePickerPanel";
 import { VerifyStepNav } from "@/components/verify/VerifyStepNav";
-import { VerifyStepper } from "@/components/verify/VerifyStepper";
 import {
   confirmRelation, fetchObjectDetail, runContainment, runGate, searchObjects,
   type PairCandidate, type PendingRelation,
@@ -310,10 +310,10 @@ function VerifyPageInner() {
             )}
           </SelectionPanel>
 
-          {/* 검증 카드는 선택이 끝난 뒤에만 — 그 전에는 누를 대상 섹션이 없다 */}
-          {picksComplete && (
-            <VerifyStepNav states={stepStates} onNavigate={navigateToStep} />
-          )}
+          {/* 진행 순서 = 설명 + 이동. 선택 전에도 잠긴 채 보여 이 화면이 무엇을 하는지
+              먼저 읽히게 한다 (중앙에 같은 목록을 또 그리지 않는다) */}
+          <VerifyStepNav states={stepStates} navigable={picksComplete}
+                         onNavigate={navigateToStep} />
         </div>
 
         <div className="scroll-area flex min-h-0 flex-col gap-3 overflow-y-auto">
@@ -323,35 +323,31 @@ function VerifyPageInner() {
               {error}
             </p>
           )}
-          {/* 흐름 다이어그램은 페어 전에도 보여준다 — 처음 오는 사람이 무엇을 하는
-              화면인지, 다음에 무엇을 눌러야 하는지 먼저 읽게 한다
-              / the flow shows before a pair exists: it explains the screen itself */}
-          <VerifyStepper src={src} tgt={tgt} pair={pair} state={state}
-                         sampleSeen={sampleSeen} />
+          {/* 무엇을 검증 중인지만 — 단계 목록은 좌측 「진행 순서」가 맡는다
+              / what is under test; the step list lives in the left flow card */}
+          <JoinDiagramCard src={src} tgt={tgt} pair={pair} state={state} />
           {pair && src && tgt && (
             <>
-              {/* id는 좌측 검증 카드의 이동 목적지 — 깜빡임(box-shadow)도 이 래퍼가 받는다 */}
-              <div id="verify-step-1" className="rounded-xl">
-                <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
-              </div>
-              <div id="verify-step-2" className="rounded-xl">
-                <ContainmentCard
-                  result={state.containment}
-                  busy={containmentBusy}
-                  enabled={canRunContainment(state)}
-                  onRun={handleRunContainment}
-                />
-              </div>
-              <div id="verify-step-3" className="rounded-xl">
-                <JoinPreviewCard
-                  srcColumnId={pair.src_column_id}
-                  tgtColumnId={pair.tgt_column_id}
-                  allowed={previewOk}
-                  srcObjectId={src.id}
-                  tgtObjectId={tgt.id}
-                  onViewed={() => setSampleSeen(true)}
-                />
-              </div>
+              {/* id = 좌측 진행 순서의 이동 목적지. 깜빡임은 카드 자신에게 건다 —
+                  래퍼에 걸면 바깥 링의 좌우가 스크롤 컨테이너에 잘린다 */}
+              <GateCard id="verify-step-1" gate={state.gate} busy={gateBusy}
+                        onRun={handleRunGate} />
+              <ContainmentCard
+                id="verify-step-2"
+                result={state.containment}
+                busy={containmentBusy}
+                enabled={canRunContainment(state)}
+                onRun={handleRunContainment}
+              />
+              <JoinPreviewCard
+                id="verify-step-3"
+                srcColumnId={pair.src_column_id}
+                tgtColumnId={pair.tgt_column_id}
+                allowed={previewOk}
+                srcObjectId={src.id}
+                tgtObjectId={tgt.id}
+                onViewed={() => setSampleSeen(true)}
+              />
               <section id="verify-step-4" className="card p-4" data-testid="VerifyPage-confirmCard">
                 <StepCardHeader
                   no={4}

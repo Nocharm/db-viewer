@@ -11,6 +11,8 @@ import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { fetchObjectPreview, runValidatePreview } from "@/lib/api";
 
 interface JoinPreviewCardProps {
+  /** 좌측 진행 순서에서 이동해 오는 앵커 / anchor for the step navigator */
+  id: string;
   srcColumnId: number;
   tgtColumnId: number;
   /** 양쪽 스키마가 모두 미리보기 허용 목록에 있는가 — 서버도 403으로 다시 막는다 */
@@ -47,7 +49,7 @@ function buildColumns(rows: Record<string, unknown>[]): string[] {
 const SAMPLE_LIMIT = 200;
 
 export function JoinPreviewCard({
-  srcColumnId, tgtColumnId, allowed, srcObjectId, tgtObjectId, onViewed,
+  id, srcColumnId, tgtColumnId, allowed, srcObjectId, tgtObjectId, onViewed,
 }: JoinPreviewCardProps) {
   const { t } = useI18n();
   const [view, setView] = useState<SampleView | null>(null);
@@ -106,7 +108,7 @@ export function JoinPreviewCard({
   );
 
   return (
-    <section className="card p-4" data-testid="JoinPreviewCard-root">
+    <section id={id} className="card p-4" data-testid="JoinPreviewCard-root">
       {/* 버튼 군은 제목 옆 — ml-auto 우측 밀착은 제목과의 거리만 벌린다 (GateCard와 동일) */}
       <StepCardHeader
         no={3}
