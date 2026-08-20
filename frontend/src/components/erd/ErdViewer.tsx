@@ -228,14 +228,18 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     });
   }, []);
 
-  // 바깥 클릭으로 메뉴 닫기 — mousedown 기준 (PreviewTable 헤더 메뉴와 동일)
+  // 메뉴 바깥 클릭이면 닫는다 — **캡처 단계**로 듣는다. React Flow의 노드 드래그(d3-drag)가
+  // 노드 위 mousedown에서 stopPropagation을 해버려 버블 단계 리스너까지 오지 않는다:
+  // 그래서 다른 노드를 눌러도 메뉴가 안 닫히고 빈 캔버스를 눌러야만 닫혔다(사용자 리포트).
+  // / capture phase: React Flow's node drag stops mousedown propagation, so a bubble-phase
+  //   listener never fired when clicking another node — only the empty pane closed the menu
   useEffect(() => {
     if (!nodeMenu) return;
     const handleClick = (e: MouseEvent) => {
       if (!nodeMenuRef.current?.contains(e.target as Node)) setNodeMenu(null);
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClick, true);
+    return () => document.removeEventListener("mousedown", handleClick, true);
   }, [nodeMenu]);
 
   const handleNodeContextMenu = useCallback(

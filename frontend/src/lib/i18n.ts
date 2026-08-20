@@ -226,6 +226,10 @@ export const MESSAGES = {
   "erd.legendToggle": { ko: "범례", en: "Legend" },
   "erd.expandColumns": { ko: "컬럼 펼치기", en: "Expand columns" },
   "erd.collapseColumns": { ko: "접기", en: "Collapse" },
+  "erd.headerHint": {
+    ko: "드래그: 이동 · 더블클릭: 펼치기/접기 · 우클릭: 메뉴",
+    en: "Drag to move · double-click to fold · right-click for actions",
+  },
   "erd.expandNeighbors": { ko: "이웃 1-hop 확장", en: "Expand 1-hop neighbors" },
   "erd.resetPositions": { ko: "노드 위치 초기화", en: "Reset node positions" },
   "erd.emptyReadOnly": {
