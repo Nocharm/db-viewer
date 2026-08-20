@@ -14,8 +14,10 @@ import { GateCard } from "@/components/verify/GateCard";
 import { JoinPreviewCard } from "@/components/verify/JoinPreviewCard";
 import { PairCandidateList } from "@/components/verify/PairCandidateList";
 import { PendingList } from "@/components/verify/PendingList";
+import { SelectionPanel } from "@/components/verify/SelectionPanel";
 import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { TablePickerPanel } from "@/components/verify/TablePickerPanel";
+import { VerifyStepNav } from "@/components/verify/VerifyStepNav";
 import { VerifyStepper } from "@/components/verify/VerifyStepper";
 import {
   confirmRelation, fetchObjectDetail, runContainment, runGate, searchObjects,
@@ -24,6 +26,7 @@ import {
 import type { ObjectSummary } from "@/lib/types";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { isSamePair } from "@/lib/verify-pair";
+import { getVerifyStepStates } from "@/lib/verify-steps";
 import {
   applyConfirm, applyContainment, applyGateResult, canConfirm, canRunContainment,
   createInitialState, resetForNewPair, type VerifyState,
@@ -82,6 +85,15 @@ function VerifyPageInner() {
   const [pickedPendingId, setPickedPendingId] = useState<number | null>(null);
   // 3단계(샘플)는 선택 단계라 상태머신에 없다 — 흐름 다이어그램의 완료 표시용으로만 든다
   const [sampleSeen, setSampleSeen] = useState(false);
+  // 선택 영역 접힘 — 셋 다 고른 순간 자동으로 접고, 헤더로 다시 펼쳐 수정한다
+  const [pickCollapsed, setPickCollapsed] = useState(false);
+
+  // 선택이 완성되면 좌측을 접어 검증 카드에 자리를 내주고, 하나라도 풀리면 다시 펼친다
+  // — 사용자가 수동으로 펼친 상태는 선택이 그대로인 한 유지된다
+  const picksComplete = src !== null && tgt !== null && pair !== null;
+  useEffect(() => {
+    setPickCollapsed(picksComplete);
+  }, [picksComplete]);
 
   // 인플라이트 응답을 적용할지 가리는 기준 — 늦게 온 이전 페어의 결과는 버린다
   // the yardstick for late results: anything from a pair we've left is dropped
@@ -241,6 +253,20 @@ function VerifyPageInner() {
       });
   };
 
+  /** 좌측 검증 카드 → 해당 섹션으로 스크롤 + 테두리 한 번 깜빡 / jump and flash. */
+  const navigateToStep = (no: number) => {
+    const el = document.getElementById(`verify-step-${no}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 같은 카드를 연속으로 누를 때도 다시 돌게 — 클래스를 뗐다 붙이며 리플로를 강제한다
+    el.classList.remove("flash-attention");
+    void el.offsetWidth;
+    el.classList.add("flash-attention");
+    window.setTimeout(() => el.classList.remove("flash-attention"), 2600);
+  };
+
+  const stepStates = getVerifyStepStates(state, pair !== null, sampleSeen);
+
   const previewOk = src !== null && tgt !== null
     && previewAllowed.has(src.schema) && previewAllowed.has(tgt.schema);
 
@@ -262,20 +288,31 @@ function VerifyPageInner() {
             style={{ gridTemplateColumns: "20rem minmax(0, 1fr) 20rem" }}
             data-testid="VerifyPage-root">
         <div className="scroll-area flex min-h-0 flex-col gap-3 overflow-y-auto">
-          <TablePickerPanel side="src" selected={src} peerSchema={tgt?.schema ?? null}
-                            onSelect={(obj) => handleSelectSide("src", obj)} />
-          <TablePickerPanel side="tgt" selected={tgt} peerSchema={src?.schema ?? null}
-                            onSelect={(obj) => handleSelectSide("tgt", obj)} />
-          {src && tgt && (
-            <PairCandidateList
-              // 테이블이 바뀌면 후보·드롭다운 상태를 새로 시작한다
-              key={`${src.id}-${tgt.id}`}
-              srcObjectId={src.id}
-              tgtObjectId={tgt.id}
-              selectedPair={pair}
-              onPick={handlePickPair}
-              initialManualSrcColumnId={manualSrcColumnId}
-            />
+          <SelectionPanel
+            collapsed={pickCollapsed}
+            onToggle={() => setPickCollapsed((cur) => !cur)}
+            src={src} tgt={tgt} pair={pair}
+          >
+            <TablePickerPanel side="src" selected={src} peerSchema={tgt?.schema ?? null}
+                              onSelect={(obj) => handleSelectSide("src", obj)} />
+            <TablePickerPanel side="tgt" selected={tgt} peerSchema={src?.schema ?? null}
+                              onSelect={(obj) => handleSelectSide("tgt", obj)} />
+            {src && tgt && (
+              <PairCandidateList
+                // 테이블이 바뀌면 후보·드롭다운 상태를 새로 시작한다
+                key={`${src.id}-${tgt.id}`}
+                srcObjectId={src.id}
+                tgtObjectId={tgt.id}
+                selectedPair={pair}
+                onPick={handlePickPair}
+                initialManualSrcColumnId={manualSrcColumnId}
+              />
+            )}
+          </SelectionPanel>
+
+          {/* 검증 카드는 선택이 끝난 뒤에만 — 그 전에는 누를 대상 섹션이 없다 */}
+          {picksComplete && (
+            <VerifyStepNav states={stepStates} onNavigate={navigateToStep} />
           )}
         </div>
 
@@ -299,22 +336,29 @@ function VerifyPageInner() {
           )}
           {pair && src && tgt && (
             <>
-              <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
-              <ContainmentCard
-                result={state.containment}
-                busy={containmentBusy}
-                enabled={canRunContainment(state)}
-                onRun={handleRunContainment}
-              />
-              <JoinPreviewCard
-                srcColumnId={pair.src_column_id}
-                tgtColumnId={pair.tgt_column_id}
-                allowed={previewOk}
-                srcObjectId={src.id}
-                tgtObjectId={tgt.id}
-                onViewed={() => setSampleSeen(true)}
-              />
-              <section className="card p-4" data-testid="VerifyPage-confirmCard">
+              {/* id는 좌측 검증 카드의 이동 목적지 — 깜빡임(box-shadow)도 이 래퍼가 받는다 */}
+              <div id="verify-step-1" className="rounded-xl">
+                <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
+              </div>
+              <div id="verify-step-2" className="rounded-xl">
+                <ContainmentCard
+                  result={state.containment}
+                  busy={containmentBusy}
+                  enabled={canRunContainment(state)}
+                  onRun={handleRunContainment}
+                />
+              </div>
+              <div id="verify-step-3" className="rounded-xl">
+                <JoinPreviewCard
+                  srcColumnId={pair.src_column_id}
+                  tgtColumnId={pair.tgt_column_id}
+                  allowed={previewOk}
+                  srcObjectId={src.id}
+                  tgtObjectId={tgt.id}
+                  onViewed={() => setSampleSeen(true)}
+                />
+              </div>
+              <section id="verify-step-4" className="card p-4" data-testid="VerifyPage-confirmCard">
                 <StepCardHeader
                   no={4}
                   icon={<CheckIcon size={15} />}
