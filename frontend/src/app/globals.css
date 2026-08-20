@@ -587,6 +587,16 @@ mark.hl {
   background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
+/* ── 고정 컬럼 강조 — 조인 검증이 "지금 검증 중인 컬럼"을 표시한다. 호버 십자
+   (.preview-col-hl)와 겹칠 수 있어 색을 다르게 쓴다 / pinned column highlight ── */
+.preview-table .preview-col-pin {
+  background: color-mix(in srgb, var(--action-blue) 12%, transparent);
+}
+.preview-table thead .preview-col-pin {
+  background: color-mix(in srgb, var(--action-blue) 20%, transparent);
+  color: var(--ink);
+}
+
 /* ── 컬럼 리사이즈 핸들 — 헤더 우측 세로선 / column resize handle on header edges ── */
 .col-resize {
   position: absolute;

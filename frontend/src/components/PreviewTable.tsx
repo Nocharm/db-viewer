@@ -27,6 +27,9 @@ interface Props {
   onQuickFilter?: (column: string, value: unknown, op?: "eq" | "neq") => void;
   /** 긴 값 표시 방식 — true면 자동 줄바꿈, false면 말줄임 / wrap long values instead of ellipsis */
   wrapCells: boolean;
+  /** 계속 강조할 컬럼 — 조인 검증이 "지금 보는 컬럼"을 표시하는 데 쓴다(호버 십자와 별개)
+   * / a column pinned as highlighted, independent of the hover crosshair */
+  highlightColumn?: string | null;
 }
 
 interface HeaderMenu {
@@ -85,6 +88,7 @@ function useViewportClamp<T extends { x: number; y: number }>(
 
 export function PreviewTable({
   data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter, wrapCells,
+  highlightColumn = null,
 }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
@@ -317,7 +321,8 @@ export function PreviewTable({
               <th
                 key={column}
                 draggable
-                className="relative cursor-pointer whitespace-nowrap px-3 py-1.5 font-mono font-medium"
+                className={"relative cursor-pointer whitespace-nowrap px-3 py-1.5 font-mono font-medium"
+                  + (column === highlightColumn ? " preview-col-pin" : "")}
                 style={{
                   ...cellStyle(column),
                   ...(dragColumn === column ? { opacity: 0.4 } : undefined),
@@ -396,7 +401,9 @@ export function PreviewTable({
             <tr key={index} className="border-t transition-colors duration-150 ease-in-out hover:bg-[var(--soft-stone)]"
                 style={{ borderColor: "var(--hairline)" }}>
               {columns.map((column) => (
-                <td key={column} className="px-3 py-1 align-top"
+                <td key={column}
+                    className={"px-3 py-1 align-top"
+                      + (column === highlightColumn ? " preview-col-pin" : "")}
                     style={cellStyle(column)}
                     title={String(row[column] ?? "")}
                     onDoubleClick={() => onQuickFilter?.(column, row[column])}>

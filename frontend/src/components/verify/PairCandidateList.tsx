@@ -6,43 +6,40 @@
 import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { fetchObjectDetail, fetchPairCandidates, type ObjectDetail, type PairCandidate } from "@/lib/api";
+import { fetchPairCandidates, type ObjectDetail, type PairCandidate } from "@/lib/api";
 import { applyManualSelection, buildManualPair, toManualSelection } from "@/lib/verify-pair";
+
+type DetailColumn = ObjectDetail["columns"][number];
 
 interface PairCandidateListProps {
   srcObjectId: number;
   tgtObjectId: number;
+  /** 컬럼 목록은 페이지가 들고 있다 — 이 패널은 접히면 사라지지만 상단 다이어그램의
+   * 컬럼 셀렉트는 그 뒤에도 살아 있어야 한다 / owned by the page, shared with the diagram */
+  srcColumns: DetailColumn[];
+  tgtColumns: DetailColumn[];
   selectedPair: PairCandidate | null;
   onPick: (pair: PairCandidate) => void;
   /** 딥링크가 src 컬럼만 싣고 tgt를 못 정했을 때의 수동 선택 초기값(src쪽만) */
   initialManualSrcColumnId?: number | null;
 }
 
-type DetailColumn = ObjectDetail["columns"][number];
-
 export function PairCandidateList({
-  srcObjectId, tgtObjectId, selectedPair, onPick, initialManualSrcColumnId = null,
+  srcObjectId, tgtObjectId, srcColumns, tgtColumns, selectedPair, onPick,
+  initialManualSrcColumnId = null,
 }: PairCandidateListProps) {
   const { t } = useI18n();
   const [items, setItems] = useState<PairCandidate[]>([]);
-  const [srcColumns, setSrcColumns] = useState<DetailColumn[]>([]);
-  const [tgtColumns, setTgtColumns] = useState<DetailColumn[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([
-      fetchPairCandidates(srcObjectId, tgtObjectId),
-      fetchObjectDetail(srcObjectId),
-      fetchObjectDetail(tgtObjectId),
-    ])
-      .then(([candidates, srcDetail, tgtDetail]) => {
+    fetchPairCandidates(srcObjectId, tgtObjectId)
+      .then((candidates) => {
         if (cancelled) return;
         setItems(candidates.items);
-        setSrcColumns(srcDetail.columns);
-        setTgtColumns(tgtDetail.columns);
         setError(null);
       })
       .catch((e: Error) => {

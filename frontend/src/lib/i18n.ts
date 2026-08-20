@@ -334,6 +334,7 @@ export const MESSAGES = {
   "verify.nav.hint": { ko: "누르면 해당 단계로 이동", en: "Click to jump" },
   "verify.diagram.title": { ko: "지금 확인 중인 연결", en: "The link you are checking" },
   "verify.diagram.pickPair": { ko: "컬럼 미선택", en: "No column yet" },
+  "verify.diagram.previewValues": { ko: "값 미리보기", en: "Preview values" },
 
   "verify.pending.title": { ko: "확인 대기 목록", en: "Waiting to be checked" },
   "verify.pending.empty": { ko: "대기 중인 항목 없음", en: "Nothing waiting" },
