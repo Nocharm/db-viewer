@@ -1,105 +1,59 @@
 "use client";
 
-/** ERD 하단 미리보기 서랍 — 캔버스를 떠나지 않고 값을 훑는다.
+/** ERD 하단 미리보기 서랍 — 테이블 화면과 **같은** 미리보기 컴포넌트를 얹는다.
  *
- * 우클릭 「미리보기」가 테이블 화면으로 튕겨 보내면 방금 보던 그래프의 위치·확대가 사라진다.
- * 여기서는 TOP N만 빠르게 보고, 필터·CSV·SQL 같은 전체 도구가 필요하면 헤더의 링크로
- * 테이블 화면으로 건너간다. 표는 미리보기와 같은 컴포넌트를 그대로 쓴다.
- * A bottom drawer for a quick look at rows without leaving the canvas; the header links
- * out to the table screen when the full toolset is needed.
+ * 서랍용으로 표만 따로 감싸면 필터·조회·컬럼 편집·정렬·CSV·SQL 보기가 한쪽에만 붙는다.
+ * 그래서 PreviewSection을 그대로 마운트하고 탭 상태만 공용 훅(usePreviewTabs)에서 받는다 —
+ * 두 화면의 기능 격차가 구조적으로 생기지 않는다.
+ * The drawer mounts the table screen's PreviewSection as-is, so both screens always have
+ * the same tools; only the tab state comes from the shared hook.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
+import { PreviewSection } from "@/components/browser/PreviewSection";
 import { useI18n } from "@/components/i18n";
-import {
-  ArrowRightIcon, CloseIcon, EllipsisTextIcon, WrapTextIcon,
-} from "@/components/icons";
-import { PreviewTable } from "@/components/PreviewTable";
-import { fetchObjectPreview, type TablePreview } from "@/lib/api";
-import type { SortSpec } from "@/lib/preview-utils";
+import { ArrowRightIcon, CloseIcon } from "@/components/icons";
+import type { PreviewTabsController } from "@/lib/use-preview-tabs";
 
 interface ErdPreviewDrawerProps {
-  objectId: number;
-  qname: string;
-  /** 「테이블 화면에서 열기」 — 필터·CSV·SQL이 필요할 때의 탈출구 */
-  onOpenFull: () => void;
+  preview: PreviewTabsController;
+  /** 「테이블 화면에서 열기」 — 활성 탭을 테이블 화면에서 이어 본다 */
+  onOpenFull: (objectId: number) => void;
   onClose: () => void;
 }
 
-// 서랍은 훑어보기용이라 행수를 고정한다 — 조건 검색·전량 확인은 테이블 화면 몫
-const DRAWER_LIMIT = 50;
-
-export function ErdPreviewDrawer({
-  objectId, qname, onOpenFull, onClose,
-}: ErdPreviewDrawerProps) {
+export function ErdPreviewDrawer({ preview, onOpenFull, onClose }: ErdPreviewDrawerProps) {
   const { t } = useI18n();
-  const [data, setData] = useState<TablePreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [hidden, setHidden] = useState<string[]>([]);
-  const [sort, setSort] = useState<SortSpec | null>(null);
-  const [order, setOrder] = useState<string[]>([]);
-  const [wrapCells, setWrapCells] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  // 대상 테이블이 바뀌면 이전 표를 지우고 다시 받는다 — 남은 행이 다른 테이블의 값으로
-  // 오귀속되면 안 된다 (미리보기는 원본 값이 나가는 경로다)
+  // 탭이 모두 닫히면 서랍도 닫는다 — 빈 껍데기가 캔버스를 가리지 않게
   useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setError(null);
-    setHidden([]);
-    setSort(null);
-    setOrder([]);
-    setBusy(true);
-    fetchObjectPreview(objectId, undefined, DRAWER_LIMIT)
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [objectId]);
+    if (preview.tabs.length === 0) onClose();
+  }, [preview.tabs.length, onClose]);
+
+  const activeId = preview.activeId ?? preview.tabs[0]?.id ?? null;
 
   return (
     <section
-      className="card absolute inset-x-3 bottom-3 z-40 flex max-h-[42vh] flex-col overflow-hidden shadow-lg"
+      className="card absolute inset-x-3 bottom-3 z-40 flex max-h-[60vh] flex-col overflow-hidden shadow-lg"
       data-testid="ErdPreviewDrawer-root"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
+      {/* 얇은 서랍 바 — 제목은 PreviewSection이 이미 달고 있어 여기선 반복하지 않는다 */}
+      <div className="flex items-center gap-2 border-b px-3 py-1.5"
            style={{ borderColor: "var(--hairline)" }}>
-        <span className="font-mono text-sm font-semibold" style={{ color: "var(--ink)" }}>
-          {qname}
-        </span>
-        <span className="badge badge--muted">
-          {t("preview.title")} TOP {DRAWER_LIMIT}
-        </span>
-        {data && (
-          <span className="text-xs" style={{ color: "var(--muted)" }}>
-            {data.rows.length}{t("preview.rowsSuffix")}
+        {preview.error && (
+          <span className="truncate text-xs" style={{ color: "var(--error)" }}
+                data-testid="ErdPreviewDrawer-errorText">
+            {preview.error}
           </span>
         )}
-
         <button
           className="icon-button ml-auto"
-          title={t("preview.cellModeTitle")}
-          aria-pressed={wrapCells}
-          onClick={() => setWrapCells((cur) => !cur)}
-          data-testid="ErdPreviewDrawer-cellModeButton"
+          disabled={activeId === null}
+          onClick={() => activeId !== null && onOpenFull(activeId)}
+          data-testid="ErdPreviewDrawer-openFullButton"
         >
-          {wrapCells
-            ? <EllipsisTextIcon size={11} className="mr-1 inline-block align-middle" />
-            : <WrapTextIcon size={11} className="mr-1 inline-block align-middle" />}
-          {wrapCells ? t("preview.ellipsisCells") : t("preview.wrapCells")}
-        </button>
-        <button className="icon-button" onClick={onOpenFull}
-                data-testid="ErdPreviewDrawer-openFullButton">
           {t("erd.previewOpenFull")}
           <ArrowRightIcon size={11} className="ml-1 inline-block align-middle" />
         </button>
@@ -109,33 +63,19 @@ export function ErdPreviewDrawer({
         </button>
       </div>
 
-      <div className="scroll-area min-h-0 flex-1 overflow-auto">
-        {busy && (
-          <p className="p-3 text-sm" style={{ color: "var(--muted)" }}
-             data-testid="ErdPreviewDrawer-busy">
-            {t("common.loading")}
-          </p>
-        )}
-        {!busy && error && (
-          <p className="p-3 text-sm" style={{ color: "var(--error)" }}
-             data-testid="ErdPreviewDrawer-errorText">
-            {error}
-          </p>
-        )}
-        {!busy && !error && data && (
-          <PreviewTable
-            data={data}
-            hidden={hidden}
-            sort={sort}
-            order={order}
-            wrapCells={wrapCells}
-            onToggleHidden={(column) =>
-              setHidden((cur) => (cur.includes(column)
-                ? cur.filter((c) => c !== column) : [...cur, column]))}
-            onSort={setSort}
-            onReorder={setOrder}
-          />
-        )}
+      <div ref={bodyRef} className="scroll-area min-h-0 flex-1 overflow-y-auto p-3">
+        <PreviewSection
+          tabs={preview.tabs}
+          activeId={preview.activeId}
+          splitId={preview.splitId}
+          onActivate={preview.setActiveId}
+          onClose={preview.close}
+          onSplitPick={preview.setSplitId}
+          onRefetch={preview.refetch}
+          onPatch={preview.patch}
+          // 서랍 안에서는 「위로」가 서랍 본문을 되감는다 / scrolls the drawer body
+          onJumpToTop={() => bodyRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+        />
       </div>
     </section>
   );
