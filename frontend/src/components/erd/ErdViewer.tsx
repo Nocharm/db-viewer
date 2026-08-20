@@ -24,6 +24,7 @@ import {
   applyManualPositions, clampMenuPosition, filterGraphBySchema, groupConnectedComponents,
   packGroupRows, type PlacedNode,
 } from "@/lib/erd-graph";
+import { ErdPreviewDrawer } from "@/components/erd/ErdPreviewDrawer";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { ErdSchemaFilter } from "./ErdSchemaFilter";
 import type { MessageKey } from "@/lib/i18n";
@@ -179,6 +180,9 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
   // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  // 캔버스를 떠나지 않는 하단 미리보기 — 우클릭 「여기서 미리보기」가 연다
+  const [previewTarget, setPreviewTarget] =
+    useState<{ nodeId: number; qname: string } | null>(null);
   const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
@@ -609,18 +613,32 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
                  loading={graph === null} />
 
       {/* 노드 우클릭 메뉴 — 화면 좌표 고정, 미리보기는 허용 스키마에서만 활성 */}
+      {previewTarget && (
+        <ErdPreviewDrawer
+          objectId={previewTarget.nodeId}
+          qname={previewTarget.qname}
+          onOpenFull={() => menuNavigate(`/?table=${previewTarget.nodeId}&preview=1`)}
+          onClose={() => setPreviewTarget(null)}
+        />
+      )}
+
       {nodeMenu && (
         <div ref={nodeMenuRef} className="erd-menu !fixed z-50 max-w-72"
              style={{ left: nodeMenu.x, top: nodeMenu.y }}
              data-testid="ErdViewer-nodeMenu">
           <div className="erd-menu__label truncate font-mono">{nodeMenu.qname}</div>
+          {/* 기본은 캔버스 안 서랍 — 그래프 위치·확대를 잃지 않는다. 필터·CSV·SQL이
+              필요하면 서랍 헤더의 「테이블 화면에서 열기」로 건너간다 */}
           <button className="pressable erd-menu__item"
                   disabled={!previewAllowed.has(nodeMenu.schema)}
                   title={previewAllowed.has(nodeMenu.schema)
                     ? undefined : t("preview.notAllowedHint")}
-                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}&preview=1`)}
+                  onClick={() => {
+                    setPreviewTarget({ nodeId: nodeMenu.nodeId, qname: nodeMenu.qname });
+                    setNodeMenu(null);
+                  }}
                   data-testid="ErdViewer-nodeMenuPreview">
-            {t("erd.menuPreview")}
+            {t("erd.menuPreviewHere")}
           </button>
           <button className="pressable erd-menu__item"
                   onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}`)}

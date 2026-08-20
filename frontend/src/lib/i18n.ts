@@ -226,6 +226,8 @@ export const MESSAGES = {
   "erd.legendToggle": { ko: "범례", en: "Legend" },
   "erd.expandColumns": { ko: "컬럼 펼치기", en: "Expand columns" },
   "erd.collapseColumns": { ko: "접기", en: "Collapse" },
+  "erd.previewOpenFull": { ko: "테이블 화면에서 열기", en: "Open in the table screen" },
+  "erd.menuPreviewHere": { ko: "여기서 미리보기", en: "Preview here" },
   "erd.headerHint": {
     ko: "드래그: 이동 · 더블클릭: 펼치기/접기 · 우클릭: 메뉴",
     en: "Drag to move · double-click to fold · right-click for actions",
@@ -248,7 +250,6 @@ export const MESSAGES = {
   "erd.schemaFilter": { ko: "스키마", en: "Schemas" },
   "erd.filterAll": { ko: "전체", en: "All" },
   // 노드 우클릭 메뉴 / node context menu
-  "erd.menuPreview": { ko: "미리보기", en: "Preview" },
   "erd.menuDetail": { ko: "테이블 상세로", en: "Open table detail" },
   "erd.menuVerify": { ko: "조인 검증하기", en: "Verify a join" },
   "erd.menuCopyName": { ko: "테이블명 복사", en: "Copy table name" },
@@ -459,6 +460,7 @@ export const MESSAGES = {
   "common.seconds": { ko: "{n}초", en: "{n}s" },
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },
+  "common.close": { ko: "닫기", en: "Close" },
 
   // 수치 패널 chrome 라벨 — symptom/remedy·PATTERN_LABELS(도메인 문구)는 카테고리 라벨과 같은 이유로 제외
   // chrome labels for the numbers panel — symptom/remedy and PATTERN_LABELS stay out, same reason as category labels

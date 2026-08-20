@@ -25,6 +25,8 @@
 
 - **사내 AI 서버 전환 반영 — 사고 모델 계약** (claude/map-table-preview-ui-ns688a). AI 기능이 전부 죽은 원인은 우리 코드가 구 vLLM 계약(모델명 alias·max_tokens 미지정)에 머물러 있었기 때문. bpm 리포지토리(`backend/app/ai_client.py`, 2026-08-18 전환)를 참조해 같은 계약으로 맞췄다 — 요청에 `max_tokens`(기본 8000, **사고 토큰 포함**)·`response_format: json_object`를 싣고, 사고 모드는 `chat_template_kwargs`로 지정(high=`reasoning_effort`, none=`enable_thinking:false`, 미지정=최대). 목적별 배분: 관계 판정·채팅=high, 요약·설명·검색 재랭크=none. 빈 content는 재시도 없이 "AI_MAX_TOKENS를 키우라"는 문구로 즉시 실패시킨다(사고가 예산을 소진한 전형적 증상이라 재시도해도 같다). 기본 타임아웃 60→120초. 설정 동기화: `.env.example`·docker-compose(`AI_MAX_TOKENS`)·`docs/connect.md` 9단계(현행값 `https://gpu02.sbiologics.com/v1`·`glm-5.2`). 검증: pytest 339 통과(+신규 4: max_tokens·json_object·reasoning 매핑 2종·빈 응답 무재시도), ruff 클린.
 
+- **ERD 안 미리보기 복원 (하단 서랍)** (claude/map-table-preview-ui-ns688a). 우클릭 「미리보기」가 테이블 화면으로 튕겨 보내면 방금 보던 그래프의 위치·확대가 사라진다 — 2026-08-07 `7948bd0`에서 캔버스 검증 UI와 함께 지워진 인캔버스 미리보기를 서랍 형태로 되살렸다. 「여기서 미리보기」 → 하단 서랍(TOP 50, 기존 PreviewTable 재사용: 정렬·숨김·순서·줄바꿈 토글), 필터·CSV·SQL이 필요하면 헤더의 「테이블 화면에서 열기」가 기존 딥링크로 건너간다. 허용 목록 판정은 종전대로 메뉴에서 막고 서버가 403으로 다시 막는다. 검증: tsc·eslint·vitest 107/107·build + ERD 헤드리스 실측(우클릭→서랍 12행, URL이 /erd 유지, 줄바꿈 토글·닫기).
+
 ## 2026-08-11
 
 - **어드밴스드 필터 UX 정정 — 스테이징 + [조회] 스텝 분리** (fix/preview-filter-staged-query). 사용자 지시: 추가마다 쿼리를 날리지 말 것. 칩 추가·제거는 로컬 스테이징만 하고 칩 행의 [조회](돋보기 아이콘)가 한 번에 재질의 — 조건 여러 개를 쌓아도 쿼리는 1회. 미적용 칩은 대시 테두리로 구분(적용되면 실선), [필터 해제](× 아이콘)는 1행에서 칩 행으로 이동해 전체 해제+무필터 재질의, [필터 추가]는 secondary로 강등(주 행동은 조회). 셀 더블클릭도 스테이징만. 검증: tsc·eslint·vitest 101/101, 헤드리스 12/12 — 스테이징 불변(행 유지)→조회 1회 반영→대시/실선 전환→로컬 제거 후 재조회 복귀→해제 왕복.
