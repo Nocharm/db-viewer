@@ -142,10 +142,17 @@ n8n에서 **W0 recon queries** 열기 → Execute Workflow → 마지막 **Recon
 서버 `.env`에 사내 LLM 정보를 채우고 backend만 재기동:
 
 ```
-AI_BASE_URL=http://<사내LLM호스트>:<포트>/v1   # OpenAI 호환 (Ollama/vLLM/LiteLLM)
-AI_MODEL=<서버에 로드된 모델명>
+AI_BASE_URL=https://gpu02.sbiologics.com/v1   # 사내 GPU 현행값 (OpenAI 호환)
+AI_MODEL=glm-5.2                              # SGLang 단일 모델 (구 vLLM alias 3종은 폐기)
 AI_API_KEY=            # 무인증 서버면 비워둔다
+AI_TIMEOUT=120         # 사고 모델은 첫 토큰까지 오래 걸린다 (120~180 권장)
+AI_MAX_TOKENS=8000     # **사고 토큰 포함** 상한 — 작으면 빈 응답이 온다
 ```
+
+> 2026-08 사내 GPU가 vLLM → SGLang(`glm-5.2`)으로 바뀌면서 사고(thinking) 모드가
+> 모델명 alias가 아니라 요청 파라미터가 됐다. 백엔드는 목적별로 자동 지정한다
+> (관계 판정·채팅=사고 켬, 요약·설명·검색 재랭크=사고 끔). 구 설정(모델명 alias,
+> `AI_MAX_TOKENS` 없음)으로 두면 **응답이 빈 문자열로 와서 AI 기능 전체가 죽은 것처럼 보인다.**
 
 `docker compose up -d backend` (재기동).
 
@@ -161,6 +168,8 @@ AI_API_KEY=            # 무인증 서버면 비워둔다
 - 실패 시: 연결 실패(LLM 서버 다운 등)는 화면에 502와 함께 url·모델이 표시되고,
   응답 파싱 실패는 응답 원문 발췌가 표시된다 — `AI_BASE_URL` 오타, 모델명 불일치 순으로 확인.
   응답이 느리면 `AI_TIMEOUT` 상향 (재시도 1회 포함 최악 지연은 `2×AI_TIMEOUT`).
+  응답이 **비어 있다**는 502(`llm returned empty content`)는 `AI_MAX_TOKENS`가 작다는 뜻 —
+  사고 토큰이 예산을 다 쓴 것이라 재시도해도 같다(8000 이상 권장).
 - `AI_BASE_URL`을 비우면 즉시 기존 목업으로 복귀한다 (재기동 필요).
 
 ### 임베딩 의미 검색 켜기 (선택)

@@ -169,7 +169,8 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
           select-none은 더블클릭이 헤더 텍스트를 선택 반전시키는 것을 막는다 */}
       <div
         className="erd-node__header select-none"
-        title={node.ai_summary ?? undefined}
+        // 호버 툴팁에 조작법을 적는다 — 커서(pointer)만으로는 우클릭 메뉴의 존재가 안 보인다
+        title={node.ai_summary ? `${node.ai_summary}\n\n${t("erd.headerHint")}` : t("erd.headerHint")}
         onDoubleClick={() => data.onToggleNode(node.id)}
         data-testid={`ErdNode-header-${node.id}`}
       >
@@ -204,7 +205,10 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
         <div>
           <div
             ref={scrollRef}
-            className="erd-node__scroll scroll-area"
+            // nowheel = React Flow가 이 영역의 휠을 줌으로 가로채지 않는다(공식 이스케이프
+            // 해치). 없으면 컬럼 목록 위에서 굴려도 목록이 아니라 캔버스가 확대·축소된다
+            // / nowheel keeps the wheel with the column list instead of the canvas zoom
+            className="erd-node__scroll scroll-area nowheel"
             onScroll={reportVisible}
             data-testid={`ErdNode-columnScroll-${node.id}`}
           >

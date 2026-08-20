@@ -752,8 +752,15 @@ input::placeholder {
    실측 식별 불가였다. 컬럼 행 호버(.erd-node__row)와 같은 계열
    / grab affordance; ink-based mix so the tint survives the dark theme */
 .react-flow .erd-node__header {
-  cursor: grab;
+  /* 호버는 pointer — 이 헤더는 끌 수도 있지만 더블클릭·우클릭 액션이 먼저다.
+     grab 커서를 항상 띄우면 "끄는 것 말고는 할 게 없다"로 읽힌다
+     / pointer on hover: the header is clickable first, draggable second */
+  cursor: pointer;
   transition: background-color 0.15s ease-in-out;
+}
+/* 누르고 있는 동안에만 잡는 손 / the grabbing hand only while the button is down */
+.react-flow .erd-node__header:active {
+  cursor: grabbing;
 }
 .react-flow .erd-node__header:hover {
   background-color: color-mix(in srgb, var(--ink) 6%, transparent);

@@ -21,6 +21,10 @@
 
 - **조인 검증 마감 손질** (claude/map-table-preview-ui-ns688a → main). ① 같은 네 단계를 중앙·좌측에 두 번 그리던 것을 좌측 「진행 순서」 카드 하나로 합쳤다 — 설명(아이콘·한 줄·상태·잠김 사유)과 이동 버튼이 한 몸이고, 선택 전에도 잠긴 채 노출해 화면 설명 역할을 유지한다. 중앙은 「지금 확인 중인 연결」 다이어그램만(VerifyStepper → JoinDiagramCard). ② 진행 중 강조색 `--primary`(옐로) → `--action-blue` — 옐로는 라이트 테마 흰 배경에서 묻힌다(토큰 주석이 같은 이유로 stat-ink·focus-blue를 이미 테마별로 갈라 뒀는데 새 컴포넌트가 그걸 밟았다). ③ 이동 깜빡임은 바깥 box-shadow → **inset 링** — 바깥 링은 좌우가 스크롤 컨테이너에 잘려 위아래만 보였다. 앵커도 래퍼 div 대신 카드 자신(id prop)이 받는다. 검증: tsc·eslint·vitest 107/107·build + 다크/라이트 헤드리스 실측(라이트 진행 중 rgb(24,99,220), 깜빡임 inset 2px 네 변).
 
+- **ERD 조작·미리보기 복원 + 사내 AI 서버 전환** (claude/map-table-preview-ui-ns688a → main). ① ERD 3건: 펼친 노드 컬럼 목록에 `nowheel`(휠이 캔버스 줌으로 새던 것), 우클릭 메뉴 바깥 클릭 감지를 캡처 단계로(React Flow 노드 드래그가 mousedown 전파를 끊어 빈 캔버스만 먹혔다), 헤더 커서를 호버 pointer/누르는 동안만 grabbing + 조작법 툴팁. ② 캔버스 안 미리보기 복원 — 2026-08-07 `7948bd0`에서 검증 UI와 함께 지워졌던 것을 하단 서랍(TOP 50, PreviewTable 재사용)으로 되살리고, 전체 도구가 필요하면 서랍 헤더가 기존 딥링크로 넘긴다. ③ **AI 미작동 복구** — 사내 GPU가 vLLM(모델명 alias) → SGLang 단일 `glm-5.2`로 바뀌며 사고(thinking)가 요청 파라미터로 이관됐는데 우리는 구 계약이라 content가 빈 문자열로 왔다. bpm `ai_client.py`와 같은 계약으로: `max_tokens`(8000, 사고 토큰 포함)·`response_format=json_object`·`chat_template_kwargs`(판정·채팅=high, 요약·설명·재랭크=none), 빈 응답은 재시도 없이 원인 문구로 실패, 타임아웃 60→120초. `.env.example`·compose·`docs/connect.md`에 현행값(`https://gpu02.sbiologics.com/v1`·`glm-5.2`) 반영. 검증: pytest 339·ruff / tsc·eslint·vitest 107·build + ERD 헤드리스 실측(휠 0→300px·줌 불변, 메뉴 닫힘, 커서·툴팁, 서랍 12행·URL 유지).
+
+
+
 ## 2026-08-11
 
 - **어드밴스드 필터 UX 정정 — 스테이징 + [조회] 스텝 분리** (fix/preview-filter-staged-query). 사용자 지시: 추가마다 쿼리를 날리지 말 것. 칩 추가·제거는 로컬 스테이징만 하고 칩 행의 [조회](돋보기 아이콘)가 한 번에 재질의 — 조건 여러 개를 쌓아도 쿼리는 1회. 미적용 칩은 대시 테두리로 구분(적용되면 실선), [필터 해제](× 아이콘)는 1행에서 칩 행으로 이동해 전체 해제+무필터 재질의, [필터 추가]는 secondary로 강등(주 행동은 조회). 셀 더블클릭도 스테이징만. 검증: tsc·eslint·vitest 101/101, 헤드리스 12/12 — 스테이징 불변(행 유지)→조회 1회 반영→대시/실선 전환→로컬 제거 후 재조회 복귀→해제 왕복.
