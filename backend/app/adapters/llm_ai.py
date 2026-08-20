@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import urllib.request
+from typing import Literal
 from urllib.error import URLError
 
 from app.adapters.ai import (
@@ -35,6 +36,12 @@ SEARCH_RESULT_LIMIT = 20
 # 프롬프트에 싣는 테이블당 컬럼 수 — 대형 테이블 토큰 폭주 방지
 SEARCH_COLUMNS_PER_TABLE = 12
 
+# 사고 모드 — 사내 GPU가 vLLM(모델명 alias 3종) → SGLang 단일 glm-5.2로 바뀌면서
+# 모델명이 아니라 요청 파라미터로 지정한다(bpm 2026-08-18 전환과 동일 계약).
+# None=최대 사고(기본), "high"=중간 단계, "none"=사고 끔.
+# / thinking is a request parameter since the GPU moved from vLLM to SGLang glm-5.2
+AiReasoning = Literal["high", "none"]
+
 
 class AiUnavailableError(RuntimeError):
     """LLM 호출·응답 파싱 실패 — 앱 핸들러가 502로 변환 / mapped to 502 by the app."""
@@ -45,20 +52,35 @@ class AiUnavailableError(RuntimeError):
 
 
 def _post_chat(base_url: str, model: str, api_key: str, timeout: int,
-               system: str, user: str) -> str:
-    """chat completions 1회 호출 → assistant 본문 텍스트 / returns message content."""
+               system: str, user: str, *, max_tokens: int,
+               reasoning: AiReasoning | None = None) -> str:
+    """chat completions 1회 호출 → assistant 본문 텍스트 / returns message content.
+
+    max_tokens는 **사고 토큰을 포함한** 상한이라 반드시 실어 보낸다 — 서버 기본값이 작으면
+    사고가 예산을 소진해 content가 빈 문자열로 돌아온다. reasoning은 SGLang의
+    chat_template_kwargs로 전달한다(None이면 서버 기본 = 최대 사고).
+    / max_tokens covers thinking tokens; reasoning maps to SGLang chat_template_kwargs
+    """
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    payload: dict = {
+        "model": model,
+        "temperature": TEMPERATURE,
+        "max_tokens": max_tokens,
+        # 서버가 JSON만 뱉게 강제 — 사고 모델은 프롬프트 지시만으론 서술을 섞는다
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+    }
+    if reasoning == "high":
+        payload["chat_template_kwargs"] = {"reasoning_effort": "high"}
+    elif reasoning == "none":
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     request = urllib.request.Request(
         url,
-        data=json.dumps({
-            "model": model,
-            "temperature": TEMPERATURE,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-        }, ensure_ascii=False).encode(),
+        data=json.dumps(payload, ensure_ascii=False).encode(),
         headers=headers,
         method="POST",
     )
@@ -66,8 +88,18 @@ def _post_chat(base_url: str, model: str, api_key: str, timeout: int,
     for attempt in range(RETRY_COUNT + 1):
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode())
-            return payload["choices"][0]["message"]["content"]
+                body = json.loads(response.read().decode())
+            content = body["choices"][0]["message"]["content"]
+            if not (content or "").strip():
+                # 사고 토큰이 max_tokens를 다 써버린 전형적 증상 — 원인을 문구로 못박는다
+                raise AiUnavailableError(
+                    "llm returned empty content — max_tokens may be too small "
+                    "(thinking tokens count toward it); raise AI_MAX_TOKENS",
+                    {"url": url, "model": model, "max_tokens": max_tokens},
+                )
+            return content
+        except AiUnavailableError:
+            raise  # 빈 응답은 재시도해도 같다 — 설정을 고쳐야 한다
         except (URLError, TimeoutError, KeyError, IndexError, TypeError,
                 json.JSONDecodeError) as e:
             last_error = e
@@ -243,21 +275,25 @@ def build_chat_prompt(question: str, history: list[tuple[str, str]],
 class LlmAiClient:
     """OpenAI 호환 서버 위 AiClient 구현 — 프롬프트는 순수 빌더로 분리."""
 
-    def __init__(self, base_url: str, model: str, api_key: str, timeout: int):
+    def __init__(self, base_url: str, model: str, api_key: str, timeout: int,
+                 max_tokens: int):
         self._base_url = base_url
         self._model = model
         self._api_key = api_key
         self._timeout = timeout
+        self._max_tokens = max_tokens
 
-    def _chat(self, user_prompt: str) -> dict:
+    def _chat(self, user_prompt: str, reasoning: AiReasoning | None = None) -> dict:
         content = _post_chat(self._base_url, self._model, self._api_key,
-                             self._timeout, _SYSTEM_PROMPT, user_prompt)
+                             self._timeout, _SYSTEM_PROMPT, user_prompt,
+                             max_tokens=self._max_tokens, reasoning=reasoning)
         return _extract_json(content)
 
     def judge_relations(self, candidates: list[CandidatePair]) -> list[RelationJudgement]:
         if not candidates:
             return []
-        data = self._chat(build_judge_prompt(candidates))
+        # 관계 판정은 근거를 따져야 한다 — 사고 켬 / judgement needs reasoning
+        data = self._chat(build_judge_prompt(candidates), reasoning="high")
         judgements = data.get("judgements", [])
         if not isinstance(judgements, list):
             raise AiUnavailableError("llm returned malformed judgements",
@@ -296,7 +332,8 @@ class LlmAiClient:
 
         환각 qname 제거·점수 가드·정렬·상한은 입력 출처(키워드/임베딩)와 무관하게 동일.
         """
-        data = self._chat(build_search_prompt(query, candidates))
+        # 재랭크는 대화형 경로라 응답 속도가 우선 — 사고 끔 / interactive: no thinking
+        data = self._chat(build_search_prompt(query, candidates), reasoning="none")
         items = data.get("items", [])
         if not isinstance(items, list):
             raise AiUnavailableError("llm returned malformed items", {"data": str(data)[:200]})
@@ -325,20 +362,23 @@ class LlmAiClient:
 
     def summarize_table(self, table: TableMeta, base_tables: list[str]) -> str:
         """테이블 메타로 한 문장 요약 / generates business-domain summary."""
-        return _require_text(self._chat(build_summary_prompt(table, base_tables)))
+        return _require_text(
+            self._chat(build_summary_prompt(table, base_tables), reasoning="none"))
 
     def explain_validation(self, facts: ValidationFacts) -> str:
         """검증 통계로 조인 가능성 진단 / interprets validation findings."""
-        return _require_text(self._chat(build_validation_prompt(facts)))
+        return _require_text(self._chat(build_validation_prompt(facts), reasoning="none"))
 
     def explain_view(self, facts: ViewFacts) -> str:
         """뷰 메타로 기능 설명 / explains view definition and purpose."""
-        return _require_text(self._chat(build_view_prompt(facts)))
+        return _require_text(self._chat(build_view_prompt(facts), reasoning="none"))
 
     def answer_question(self, question: str, history: list[tuple[str, str]],
                         context: ChatContext) -> str:
         """검색 컨텍스트 + 최근 대화로 스키마 Q&A 답변 / schema Q&A over search context."""
-        return _require_text(self._chat(build_chat_prompt(question, history, context)))
+        # 사용자 질문 응답은 품질 우선 — 사고 켬 / chat answers keep reasoning on
+        return _require_text(
+            self._chat(build_chat_prompt(question, history, context), reasoning="high"))
 
 
 def embed_texts(base_url: str, model: str, api_key: str, timeout: int,

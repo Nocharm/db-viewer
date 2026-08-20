@@ -216,5 +216,6 @@ def create_ai_client() -> AiClient:
     settings = get_settings()
     if settings.ai_base_url:
         return LlmAiClient(base_url=settings.ai_base_url, model=settings.ai_model,
-                           api_key=settings.ai_api_key, timeout=settings.ai_timeout)
+                           api_key=settings.ai_api_key, timeout=settings.ai_timeout,
+                           max_tokens=settings.ai_max_tokens)
     return FakeAiClient()

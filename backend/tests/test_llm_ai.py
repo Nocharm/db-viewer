@@ -29,7 +29,9 @@ def test_ai_settings_defaults():
     assert s.ai_base_url == ""
     assert s.ai_model == ""
     assert s.ai_api_key == ""
-    assert s.ai_timeout == 60
+    # 사고 모델(SGLang glm-5.2) 기준 — 짧은 타임아웃·작은 max_tokens가 곧 빈 응답이다
+    assert s.ai_timeout == 120
+    assert s.ai_max_tokens == 8000
     assert s.ai_suggest_max_pairs == 40
     # Task 7: embedding settings — URL·모델·타임아웃은 사내 공통 변수명(BPM과 동일)
     assert s.embed_url == ""
@@ -69,7 +71,7 @@ def captured(monkeypatch):
 def test_post_chat_sends_openai_payload_with_auth(captured):
     captured["content"] = '{"ok": true}'
     text = _post_chat("http://llm:11434/v1/", "test-model", "sk-x", 30,
-                      system="시스템", user="유저")
+                      system="시스템", user="유저", max_tokens=8000)
     assert text == '{"ok": true}'
     req = captured["requests"][0]
     assert req.full_url == "http://llm:11434/v1/chat/completions"  # 슬래시 정규화
@@ -80,8 +82,37 @@ def test_post_chat_sends_openai_payload_with_auth(captured):
     assert [m["role"] for m in body["messages"]] == ["system", "user"]
 
 
+def test_post_chat_sends_max_tokens_and_json_format(captured):
+    """사고 토큰이 포함된 상한과 JSON 강제 — 둘 다 빠지면 glm-5.2가 빈 응답·산문을 준다."""
+    _post_chat("http://llm:11434/v1", "m", "", 30, system="s", user="u", max_tokens=1234)
+    body = json.loads(captured["requests"][0].data.decode())
+    assert body["max_tokens"] == 1234
+    assert body["response_format"] == {"type": "json_object"}
+    assert "chat_template_kwargs" not in body  # 기본은 서버 기본값(최대 사고)
+
+
+@pytest.mark.parametrize(("reasoning", "expected"), [
+    ("high", {"reasoning_effort": "high"}),
+    ("none", {"enable_thinking": False}),
+])
+def test_post_chat_maps_reasoning_to_chat_template_kwargs(captured, reasoning, expected):
+    _post_chat("http://llm:11434/v1", "m", "", 30, system="s", user="u",
+               max_tokens=8000, reasoning=reasoning)
+    body = json.loads(captured["requests"][0].data.decode())
+    assert body["chat_template_kwargs"] == expected
+
+
+def test_post_chat_raises_on_empty_content_without_retry(captured):
+    """빈 content는 재시도 대상이 아니다 — max_tokens 설정 문제라 안내로 끝낸다."""
+    captured["content"] = "   "
+    with pytest.raises(AiUnavailableError) as exc:
+        _post_chat("http://llm:11434/v1", "m", "", 30, system="s", user="u", max_tokens=16)
+    assert "max_tokens" in str(exc.value)
+    assert len(captured["requests"]) == 1
+
+
 def test_post_chat_omits_auth_header_without_key(captured):
-    _post_chat("http://llm:11434/v1", "m", "", 30, system="s", user="u")
+    _post_chat("http://llm:11434/v1", "m", "", 30, system="s", user="u", max_tokens=8000)
     assert captured["requests"][0].get_header("Authorization") is None
 
 
@@ -94,7 +125,7 @@ def test_post_chat_retries_then_raises(monkeypatch):
 
     monkeypatch.setattr(llm_ai.urllib.request, "urlopen", failing_urlopen)
     with pytest.raises(AiUnavailableError) as exc:
-        _post_chat("http://llm:11434/v1", "m", "", 5, system="s", user="u")
+        _post_chat("http://llm:11434/v1", "m", "", 5, system="s", user="u", max_tokens=8000)
     assert len(attempts) == 2  # 1회 재시도 후 포기
     assert exc.value.context["url"].endswith("/chat/completions")
 
@@ -126,7 +157,8 @@ def _pair(i: int) -> CandidatePair:
 
 
 def _client() -> LlmAiClient:
-    return LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    return LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="",
+                       timeout=30, max_tokens=8000)
 
 
 def test_judge_relations_maps_accepted_indices(captured):

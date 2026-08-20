@@ -49,7 +49,9 @@ services:
       AI_BASE_URL: ${AI_BASE_URL}
       AI_MODEL: ${AI_MODEL}
       AI_API_KEY: ${AI_API_KEY}
-      AI_TIMEOUT: ${AI_TIMEOUT:-60}
+      AI_TIMEOUT: ${AI_TIMEOUT:-120}
+      # 사고 토큰 포함 상한 — 작으면 빈 응답 (docs/connect.md 9단계)
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-8000}
       AI_SUGGEST_MAX_PAIRS: ${AI_SUGGEST_MAX_PAIRS:-40}
       # 임베딩 서버 — 채팅 LLM과 다른 호스트일 수 있어 별도 (사내 공통 변수명)
       EMBED_URL: ${EMBED_URL}

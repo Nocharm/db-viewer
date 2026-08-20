@@ -97,8 +97,13 @@ class Settings(BaseSettings):
     ai_model: str = ""
     # Environment: LLM API 키 — 비우면 Authorization 헤더 생략 (사내 무인증 서버 대응)
     ai_api_key: str = ""
-    # Tuning: LLM 응답 대기 상한(초) — CPU 추론 대비 여유 / LLM response wait cap
-    ai_timeout: int = 60
+    # Tuning: LLM 응답 대기 상한(초) — 사고(thinking) 모델은 첫 토큰까지 오래 걸린다.
+    # 사내 GPU(SGLang glm-5.2) 권장 120~180 (bpm 운영값) / thinking models need a long wait
+    ai_timeout: int = 120
+    # Tuning: 응답 max_tokens 상한 — **사고 토큰 포함**. 너무 작으면 사고가 예산을 다 쓰고
+    # content가 빈 문자열로 온다(= AI가 "작동 안 함"으로 보인다). bpm 운영값과 동일한 8000.
+    # / includes thinking tokens; too small and the model returns empty content
+    ai_max_tokens: int = 8000
     # Tuning: LLM 재판정에 넘길 후보 페어 상한 — 프롬프트 크기·응답 시간 제어
     ai_suggest_max_pairs: int = 40
 
