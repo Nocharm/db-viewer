@@ -10,6 +10,8 @@ import { getJoinVerdict, type VerdictLevel } from "@/lib/join-verdict";
 import type { ContainmentResponse } from "@/lib/types";
 
 interface ContainmentCardProps {
+  /** 좌측 진행 순서에서 이동해 오는 앵커 / anchor for the step navigator */
+  id: string;
   result: ContainmentResponse | null;
   busy: boolean;
   /** 게이트를 통과해야 켜진다 — verify-flow.canRunContainment */
@@ -25,13 +27,13 @@ const LEVEL_COLOR: Record<VerdictLevel, string> = {
   unknown: "var(--muted)",
 };
 
-export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCardProps) {
+export function ContainmentCard({ id, result, busy, enabled, onRun }: ContainmentCardProps) {
   const { t } = useI18n();
   const verdict = result ? getJoinVerdict(result, null) : null;
   const color = LEVEL_COLOR[verdict?.level ?? "unknown"];
 
   return (
-    <section className="card p-4" data-testid="ContainmentCard-root">
+    <section id={id} className="card p-4" data-testid="ContainmentCard-root">
       {/* 버튼은 제목 옆 — GateCard와 같은 이유 / same near-title placement as GateCard */}
       <StepCardHeader
         no={2}

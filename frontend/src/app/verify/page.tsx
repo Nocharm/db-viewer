@@ -328,28 +328,26 @@ function VerifyPageInner() {
           <JoinDiagramCard src={src} tgt={tgt} pair={pair} state={state} />
           {pair && src && tgt && (
             <>
-              {/* id는 좌측 검증 카드의 이동 목적지 — 깜빡임(box-shadow)도 이 래퍼가 받는다 */}
-              <div id="verify-step-1" className="rounded-xl">
-                <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
-              </div>
-              <div id="verify-step-2" className="rounded-xl">
-                <ContainmentCard
-                  result={state.containment}
-                  busy={containmentBusy}
-                  enabled={canRunContainment(state)}
-                  onRun={handleRunContainment}
-                />
-              </div>
-              <div id="verify-step-3" className="rounded-xl">
-                <JoinPreviewCard
-                  srcColumnId={pair.src_column_id}
-                  tgtColumnId={pair.tgt_column_id}
-                  allowed={previewOk}
-                  srcObjectId={src.id}
-                  tgtObjectId={tgt.id}
-                  onViewed={() => setSampleSeen(true)}
-                />
-              </div>
+              {/* id = 좌측 진행 순서의 이동 목적지. 깜빡임은 카드 자신에게 건다 —
+                  래퍼에 걸면 바깥 링의 좌우가 스크롤 컨테이너에 잘린다 */}
+              <GateCard id="verify-step-1" gate={state.gate} busy={gateBusy}
+                        onRun={handleRunGate} />
+              <ContainmentCard
+                id="verify-step-2"
+                result={state.containment}
+                busy={containmentBusy}
+                enabled={canRunContainment(state)}
+                onRun={handleRunContainment}
+              />
+              <JoinPreviewCard
+                id="verify-step-3"
+                srcColumnId={pair.src_column_id}
+                tgtColumnId={pair.tgt_column_id}
+                allowed={previewOk}
+                srcObjectId={src.id}
+                tgtObjectId={tgt.id}
+                onViewed={() => setSampleSeen(true)}
+              />
               <section id="verify-step-4" className="card p-4" data-testid="VerifyPage-confirmCard">
                 <StepCardHeader
                   no={4}
