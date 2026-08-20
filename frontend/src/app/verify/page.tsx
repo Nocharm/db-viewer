@@ -8,12 +8,17 @@ import { useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useI18n } from "@/components/i18n";
+import { CheckIcon } from "@/components/icons";
 import { ContainmentCard } from "@/components/verify/ContainmentCard";
 import { GateCard } from "@/components/verify/GateCard";
 import { JoinPreviewCard } from "@/components/verify/JoinPreviewCard";
 import { PairCandidateList } from "@/components/verify/PairCandidateList";
 import { PendingList } from "@/components/verify/PendingList";
+import { SelectionPanel } from "@/components/verify/SelectionPanel";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { TablePickerPanel } from "@/components/verify/TablePickerPanel";
+import { VerifyStepNav } from "@/components/verify/VerifyStepNav";
+import { VerifyStepper } from "@/components/verify/VerifyStepper";
 import {
   confirmRelation, fetchObjectDetail, runContainment, runGate, searchObjects,
   type PairCandidate, type PendingRelation,
@@ -21,6 +26,7 @@ import {
 import type { ObjectSummary } from "@/lib/types";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { isSamePair } from "@/lib/verify-pair";
+import { getVerifyStepStates } from "@/lib/verify-steps";
 import {
   applyConfirm, applyContainment, applyGateResult, canConfirm, canRunContainment,
   createInitialState, resetForNewPair, type VerifyState,
@@ -77,6 +83,17 @@ function VerifyPageInner() {
   // 대기 큐에서 골라 온 항목 — 목록에 "지금 작업 중인 항목" 표시용. 수동 조작으로
   // 페어가 바뀌면 큐 항목과 어긋나므로 함께 해제한다
   const [pickedPendingId, setPickedPendingId] = useState<number | null>(null);
+  // 3단계(샘플)는 선택 단계라 상태머신에 없다 — 흐름 다이어그램의 완료 표시용으로만 든다
+  const [sampleSeen, setSampleSeen] = useState(false);
+  // 선택 영역 접힘 — 셋 다 고른 순간 자동으로 접고, 헤더로 다시 펼쳐 수정한다
+  const [pickCollapsed, setPickCollapsed] = useState(false);
+
+  // 선택이 완성되면 좌측을 접어 검증 카드에 자리를 내주고, 하나라도 풀리면 다시 펼친다
+  // — 사용자가 수동으로 펼친 상태는 선택이 그대로인 한 유지된다
+  const picksComplete = src !== null && tgt !== null && pair !== null;
+  useEffect(() => {
+    setPickCollapsed(picksComplete);
+  }, [picksComplete]);
 
   // 인플라이트 응답을 적용할지 가리는 기준 — 늦게 온 이전 페어의 결과는 버린다
   // the yardstick for late results: anything from a pair we've left is dropped
@@ -95,6 +112,7 @@ function VerifyPageInner() {
   const handlePickPair = useCallback((next: PairCandidate) => {
     setPair(next);
     setState(resetForNewPair());
+    setSampleSeen(false);
     setError(null);
     setPickedPendingId(null); // 수동 페어 선택은 큐 항목과의 연결을 끊는다
     clearBusy();
@@ -107,6 +125,7 @@ function VerifyPageInner() {
     } else setTgt(obj);
     setPair(null);
     setState(resetForNewPair());
+    setSampleSeen(false);
     setError(null);
     setPickedPendingId(null);
     clearBusy();
@@ -234,6 +253,20 @@ function VerifyPageInner() {
       });
   };
 
+  /** 좌측 검증 카드 → 해당 섹션으로 스크롤 + 테두리 한 번 깜빡 / jump and flash. */
+  const navigateToStep = (no: number) => {
+    const el = document.getElementById(`verify-step-${no}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 같은 카드를 연속으로 누를 때도 다시 돌게 — 클래스를 뗐다 붙이며 리플로를 강제한다
+    el.classList.remove("flash-attention");
+    void el.offsetWidth;
+    el.classList.add("flash-attention");
+    window.setTimeout(() => el.classList.remove("flash-attention"), 2600);
+  };
+
+  const stepStates = getVerifyStepStates(state, pair !== null, sampleSeen);
+
   const previewOk = src !== null && tgt !== null
     && previewAllowed.has(src.schema) && previewAllowed.has(tgt.schema);
 
@@ -255,20 +288,31 @@ function VerifyPageInner() {
             style={{ gridTemplateColumns: "20rem minmax(0, 1fr) 20rem" }}
             data-testid="VerifyPage-root">
         <div className="scroll-area flex min-h-0 flex-col gap-3 overflow-y-auto">
-          <TablePickerPanel side="src" selected={src}
-                            onSelect={(obj) => handleSelectSide("src", obj)} />
-          <TablePickerPanel side="tgt" selected={tgt}
-                            onSelect={(obj) => handleSelectSide("tgt", obj)} />
-          {src && tgt && (
-            <PairCandidateList
-              // 테이블이 바뀌면 후보·드롭다운 상태를 새로 시작한다
-              key={`${src.id}-${tgt.id}`}
-              srcObjectId={src.id}
-              tgtObjectId={tgt.id}
-              selectedPair={pair}
-              onPick={handlePickPair}
-              initialManualSrcColumnId={manualSrcColumnId}
-            />
+          <SelectionPanel
+            collapsed={pickCollapsed}
+            onToggle={() => setPickCollapsed((cur) => !cur)}
+            src={src} tgt={tgt} pair={pair}
+          >
+            <TablePickerPanel side="src" selected={src} peerSchema={tgt?.schema ?? null}
+                              onSelect={(obj) => handleSelectSide("src", obj)} />
+            <TablePickerPanel side="tgt" selected={tgt} peerSchema={src?.schema ?? null}
+                              onSelect={(obj) => handleSelectSide("tgt", obj)} />
+            {src && tgt && (
+              <PairCandidateList
+                // 테이블이 바뀌면 후보·드롭다운 상태를 새로 시작한다
+                key={`${src.id}-${tgt.id}`}
+                srcObjectId={src.id}
+                tgtObjectId={tgt.id}
+                selectedPair={pair}
+                onPick={handlePickPair}
+                initialManualSrcColumnId={manualSrcColumnId}
+              />
+            )}
+          </SelectionPanel>
+
+          {/* 검증 카드는 선택이 끝난 뒤에만 — 그 전에는 누를 대상 섹션이 없다 */}
+          {picksComplete && (
+            <VerifyStepNav states={stepStates} onNavigate={navigateToStep} />
           )}
         </div>
 
@@ -279,6 +323,11 @@ function VerifyPageInner() {
               {error}
             </p>
           )}
+          {/* 흐름 다이어그램은 페어 전에도 보여준다 — 처음 오는 사람이 무엇을 하는
+              화면인지, 다음에 무엇을 눌러야 하는지 먼저 읽게 한다
+              / the flow shows before a pair exists: it explains the screen itself */}
+          <VerifyStepper src={src} tgt={tgt} pair={pair} state={state}
+                         sampleSeen={sampleSeen} />
           {!pair && (
             <p className="text-sm" style={{ color: "var(--muted)" }}
                data-testid="VerifyPage-startHint">
@@ -287,26 +336,38 @@ function VerifyPageInner() {
           )}
           {pair && src && tgt && (
             <>
-              <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
-              <ContainmentCard
-                result={state.containment}
-                busy={containmentBusy}
-                enabled={canRunContainment(state)}
-                onRun={handleRunContainment}
-              />
-              <JoinPreviewCard
-                srcColumnId={pair.src_column_id}
-                tgtColumnId={pair.tgt_column_id}
-                allowed={previewOk}
-                srcObjectId={src.id}
-                tgtObjectId={tgt.id}
-              />
-              <section className="card p-4" data-testid="VerifyPage-confirmCard">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-widest"
-                        style={{ color: "var(--muted)" }}>
-                    {t("verify.confirm.title")}
-                  </span>
+              {/* id는 좌측 검증 카드의 이동 목적지 — 깜빡임(box-shadow)도 이 래퍼가 받는다 */}
+              <div id="verify-step-1" className="rounded-xl">
+                <GateCard gate={state.gate} busy={gateBusy} onRun={handleRunGate} />
+              </div>
+              <div id="verify-step-2" className="rounded-xl">
+                <ContainmentCard
+                  result={state.containment}
+                  busy={containmentBusy}
+                  enabled={canRunContainment(state)}
+                  onRun={handleRunContainment}
+                />
+              </div>
+              <div id="verify-step-3" className="rounded-xl">
+                <JoinPreviewCard
+                  srcColumnId={pair.src_column_id}
+                  tgtColumnId={pair.tgt_column_id}
+                  allowed={previewOk}
+                  srcObjectId={src.id}
+                  tgtObjectId={tgt.id}
+                  onViewed={() => setSampleSeen(true)}
+                />
+              </div>
+              <section id="verify-step-4" className="card p-4" data-testid="VerifyPage-confirmCard">
+                <StepCardHeader
+                  no={4}
+                  icon={<CheckIcon size={15} />}
+                  title={t("verify.confirm.title")}
+                  desc={t("verify.step4.desc")}
+                  lockNote={canConfirm(state) || state.step === "confirmed"
+                    ? null : t("verify.lock.needContainment")}
+                  done={state.step === "confirmed"}
+                >
                   <button
                     className="btn-primary !py-1.5 text-xs"
                     disabled={!canConfirm(state) || confirmBusy}
@@ -315,7 +376,7 @@ function VerifyPageInner() {
                   >
                     {confirmBusy ? t("join.confirming") : t("verify.confirm.button")}
                   </button>
-                </div>
+                </StepCardHeader>
                 {state.step === "confirmed" && (
                   <p className="mt-2 text-sm" style={{ color: "var(--rel-confirmed)" }}
                      data-testid="VerifyPage-confirmDone">
