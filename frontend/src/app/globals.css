@@ -552,7 +552,9 @@ mark.hl {
 }
 @keyframes flash-attention {
   0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  35% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 65%, transparent); }
+  /* 옐로(--primary)는 라이트 배경에서 거의 안 보인다 — 테마별 행동색을 쓴다
+     / yellow washes out on light; use the per-theme action color */
+  35% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-blue) 65%, transparent); }
 }
 
 /* ── 로딩 스켈레톤 — 텍스트 대신 형태로 상태 전달 ── */
