@@ -328,12 +328,6 @@ function VerifyPageInner() {
               / the flow shows before a pair exists: it explains the screen itself */}
           <VerifyStepper src={src} tgt={tgt} pair={pair} state={state}
                          sampleSeen={sampleSeen} />
-          {!pair && (
-            <p className="text-sm" style={{ color: "var(--muted)" }}
-               data-testid="VerifyPage-startHint">
-              {t("verify.startHint")}
-            </p>
-          )}
           {pair && src && tgt && (
             <>
               {/* id는 좌측 검증 카드의 이동 목적지 — 깜빡임(box-shadow)도 이 래퍼가 받는다 */}
