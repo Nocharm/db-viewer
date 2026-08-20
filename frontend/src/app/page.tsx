@@ -9,11 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
-import {
-  PreviewSection,
-  type PreviewTabState,
-  type RefetchOptions,
-} from "@/components/browser/PreviewSection";
+import { PreviewSection } from "@/components/browser/PreviewSection";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import {
@@ -22,7 +18,6 @@ import {
   fetchColumnsIndex,
   fetchJoinKeys,
   fetchObjectDetail,
-  fetchObjectPreview,
   fetchSchemaCategories,
   type JoinKeyItem,
   type ObjectDetail,
@@ -34,6 +29,7 @@ import { matchTable } from "@/lib/search";
 import type { ObjectSummary } from "@/lib/types";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
+import { usePreviewTabs } from "@/lib/use-preview-tabs";
 
 export default function Home() {
   return (
@@ -61,10 +57,8 @@ function HomeInner() {
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  // 미리보기 다중 탭 — 같은 테이블은 탭 활성화로만 (중복 열기 차단)
-  const [previewTabs, setPreviewTabs] = useState<PreviewTabState[]>([]);
-  const [activePreviewId, setActivePreviewId] = useState<number | null>(null);
-  const [splitPreviewId, setSplitPreviewId] = useState<number | null>(null);
+  // 미리보기 다중 탭 — 상태 기계는 ERD 서랍과 공유한다(use-preview-tabs)
+  const preview = usePreviewTabs();
   const [error, setError] = useState<string | null>(null);
   // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
   const previewAllowed = usePreviewAllowlist();
@@ -206,36 +200,13 @@ function HomeInner() {
     return items;
   }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
-  // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
-  const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
-    setPreviewTabs((cur) => cur.map((tab) =>
-      tab.id === id ? { ...tab, loading: true } : tab));
-    fetchObjectPreview(id, opts.filters, opts.limit)
-      .then((res) => setPreviewTabs((cur) => cur.map((tab) =>
-        tab.id === id ? { ...tab, data: res, loading: false } : tab)))
-      .catch((e) => {
-        setError(e.message);
-        setPreviewTabs((cur) => cur.map((tab) =>
-          tab.id === id ? { ...tab, loading: false } : tab));
-      });
-  }, []);
-
-  // 미리보기 열기 — 이미 열려 있으면 탭 활성화만 (중복 열기 차단)
+  // 미리보기 열기 — 탭 생성·중복 차단은 훅이 맡고, 화면은 스크롤만 담당한다
   const openPreview = useCallback(() => {
     if (!selected) return;
-    const id = selected.id;
-    const exists = previewTabs.some((tab) => tab.id === id);
-    if (!exists) {
-      setPreviewTabs((cur) => [...cur, {
-        id, qname: `${selected.schema}.${selected.name}`,
-        data: null, loading: true, hidden: [], sort: null, order: [],
-      }]);
-      refetchPreview(id, {});
-    }
-    setActivePreviewId(id);
+    preview.open(selected.id, `${selected.schema}.${selected.name}`);
     setTimeout(() => previewRef.current?.scrollIntoView(
       { behavior: "smooth", block: "start" }), 60);
-  }, [selected, previewTabs, refetchPreview]);
+  }, [selected, preview]);
 
   // ERD 우클릭 메뉴의 「미리보기」 딥링크(?table=&preview=1) — 선택이 잡히면 한 번 열고
   // 파라미터를 소진한다(남기면 새로고침·뒤로가기마다 재발동). 미허용 스키마면 열지 않고
@@ -248,21 +219,6 @@ function HomeInner() {
     if (previewAllowed.has(selected.schema)) openPreview();
     router.replace(`/?table=${selected.id}`, { scroll: false });
   }, [previewParam, selected, previewAllowed, openPreview, router]);
-
-  const closePreview = useCallback((id: number) => {
-    setPreviewTabs((cur) => {
-      const next = cur.filter((tab) => tab.id !== id);
-      setActivePreviewId((act) => (act === id ? next[next.length - 1]?.id ?? null : act));
-      setSplitPreviewId((split) => (split === id ? null : split));
-      return next;
-    });
-  }, []);
-
-  const patchPreview = useCallback(
-    (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort" | "order">>) => {
-      setPreviewTabs((cur) => cur.map((tab) =>
-        tab.id === id ? { ...tab, ...patch } : tab));
-    }, []);
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
@@ -371,13 +327,13 @@ function HomeInner() {
               <TableDetail
                 detail={detail}
                 loading={detailLoading}
-                previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
+                previewLoading={preview.tabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
                 previewAllowed={
                   selected !== null && previewAllowed.has(selected.schema)
                 }
                 onPreview={openPreview}
                 onOpenErd={handleOpenErd}
-                canJumpToPreview={previewTabs.length > 0}
+                canJumpToPreview={preview.tabs.length > 0}
                 onJumpToPreview={jumpToPreview}
                 onSelectTable={selectByQname}
                 onOpenColumn={handleOpenColumn}
@@ -385,17 +341,17 @@ function HomeInner() {
             </section>
           </main>
         </div>
-        {previewTabs.length > 0 && (
+        {preview.tabs.length > 0 && (
           <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
-              tabs={previewTabs}
-              activeId={activePreviewId}
-              splitId={splitPreviewId}
-              onActivate={setActivePreviewId}
-              onClose={closePreview}
-              onSplitPick={setSplitPreviewId}
-              onRefetch={refetchPreview}
-              onPatch={patchPreview}
+              tabs={preview.tabs}
+              activeId={preview.activeId}
+              splitId={preview.splitId}
+              onActivate={preview.setActiveId}
+              onClose={preview.close}
+              onSplitPick={preview.setSplitId}
+              onRefetch={preview.refetch}
+              onPatch={preview.patch}
               onJumpToTop={jumpToTop}
             />
           </div>

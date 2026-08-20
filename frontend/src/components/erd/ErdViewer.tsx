@@ -24,7 +24,6 @@ import {
   applyManualPositions, clampMenuPosition, filterGraphBySchema, groupConnectedComponents,
   packGroupRows, type PlacedNode,
 } from "@/lib/erd-graph";
-import { ErdPreviewDrawer } from "@/components/erd/ErdPreviewDrawer";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { ErdSchemaFilter } from "./ErdSchemaFilter";
 import type { MessageKey } from "@/lib/i18n";
@@ -161,6 +160,9 @@ interface Props {
   /** ?focus= 로 들어온 대상 — 그래프에 있으면 센터링, 없으면 배너 */
   focusId: number | null;
   focusLabel: string | null;
+  /** 우클릭 「여기서 미리보기」 — 페이지가 아래 섹션을 열고 그리로 스크롤한다
+   * / the page owns the preview section below the canvas and scrolls to it */
+  onPreview: (objectId: number, qname: string) => void;
 }
 
 export function ErdViewer(props: Props) {
@@ -171,7 +173,7 @@ export function ErdViewer(props: Props) {
   );
 }
 
-function ErdViewerInner({ focusId, focusLabel }: Props) {
+function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
   const { t } = useI18n();
   const router = useRouter();
   const previewAllowed = usePreviewAllowlist();
@@ -180,9 +182,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
   // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
-  // 캔버스를 떠나지 않는 하단 미리보기 — 우클릭 「여기서 미리보기」가 연다
-  const [previewTarget, setPreviewTarget] =
-    useState<{ nodeId: number; qname: string } | null>(null);
+
   const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
@@ -613,15 +613,6 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
                  loading={graph === null} />
 
       {/* 노드 우클릭 메뉴 — 화면 좌표 고정, 미리보기는 허용 스키마에서만 활성 */}
-      {previewTarget && (
-        <ErdPreviewDrawer
-          objectId={previewTarget.nodeId}
-          qname={previewTarget.qname}
-          onOpenFull={() => menuNavigate(`/?table=${previewTarget.nodeId}&preview=1`)}
-          onClose={() => setPreviewTarget(null)}
-        />
-      )}
-
       {nodeMenu && (
         <div ref={nodeMenuRef} className="erd-menu !fixed z-50 max-w-72"
              style={{ left: nodeMenu.x, top: nodeMenu.y }}
@@ -634,7 +625,7 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
                   title={previewAllowed.has(nodeMenu.schema)
                     ? undefined : t("preview.notAllowedHint")}
                   onClick={() => {
-                    setPreviewTarget({ nodeId: nodeMenu.nodeId, qname: nodeMenu.qname });
+                    onPreview(nodeMenu.nodeId, nodeMenu.qname);
                     setNodeMenu(null);
                   }}
                   data-testid="ErdViewer-nodeMenuPreview">

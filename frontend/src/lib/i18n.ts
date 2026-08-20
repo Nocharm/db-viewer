@@ -226,7 +226,6 @@ export const MESSAGES = {
   "erd.legendToggle": { ko: "범례", en: "Legend" },
   "erd.expandColumns": { ko: "컬럼 펼치기", en: "Expand columns" },
   "erd.collapseColumns": { ko: "접기", en: "Collapse" },
-  "erd.previewOpenFull": { ko: "테이블 화면에서 열기", en: "Open in the table screen" },
   "erd.menuPreviewHere": { ko: "여기서 미리보기", en: "Preview here" },
   "erd.headerHint": {
     ko: "드래그: 이동 · 더블클릭: 펼치기/접기 · 우클릭: 메뉴",
