@@ -90,19 +90,19 @@ class Settings(BaseSettings):
     # Tuning: n8n 쿼리 응답 대기 상한(초) — W1 수집 쿼리·W2 검증 쿼리 공용
     n8n_query_timeout: int = 120
 
-    # Environment: 같은 서버의 별도 업무 Postgres — **읽기 전용 계정** DSN
-    # (예: postgresql://viewer_ro:pw@172.48.0.1:5433/bizdb). 비우면 기능 자체가 꺼진다.
-    # MSSQL과 달리 n8n 워크플로가 없어 백엔드가 직결한다 — 연결은 항상 read-only로 연다.
-    # / DSN for the secondary business Postgres; empty disables the feature
-    pg_source_dsn: str = ""
-    # Environment: 화면·감사 로그에 쓰는 소스 표시 이름 / label shown in the UI and audit log
-    pg_source_label: str = "Postgres"
+    # Environment: 업무 Postgres 연결의 비밀번호 암호화 키 — 연결 목록 자체는 관리 콘솔에서
+    # 관리하고(서비스마다 DB가 달라 계속 늘어난다) 비밀번호만 이 키로 암호화해 저장한다.
+    # 비우면 등록·사용이 모두 막힌다(fail closed). 값을 바꾸면 기존 등록은 열리지 않으니
+    # 비밀번호를 다시 입력해야 한다. 아무 문장이나 가능 — 내부에서 32바이트로 유도한다.
+    # / key for encrypting registered Postgres passwords; empty disables the feature
+    pg_source_secret: str = ""
     # Tuning: 연결·문장 대기 상한(초) — 같은 값을 statement_timeout에도 건다
     pg_source_timeout: int = 10
 
     @property
     def pg_source_enabled(self) -> bool:
-        return bool(self.pg_source_dsn)
+        """연결을 등록·사용할 수 있는 배포인지 (연결 유무는 DB가 안다) / can credentials be used."""
+        return bool(self.pg_source_secret)
 
     # Environment: 사내 LLM OpenAI 호환 베이스 URL (예: http://<llm-host>:11434/v1).
     # 비우면 FakeAiClient — 로컬·CI는 오프라인 유지 / empty keeps the offline fake

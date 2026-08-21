@@ -9,6 +9,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { AdUserList } from "@/components/admin/AdUserList";
 import { CollectPanel } from "@/components/admin/CollectPanel";
 import { HiddenSchemaPanel } from "@/components/admin/HiddenSchemaPanel";
+import { PgSourcePanel } from "@/components/admin/PgSourcePanel";
 import { PreviewAllowlistPanel } from "@/components/admin/PreviewAllowlistPanel";
 import { useI18n } from "@/components/i18n";
 import { useMe } from "@/components/providers";
@@ -127,6 +128,8 @@ export default function AdminPage() {
       <CollectPanel />
 
       <PreviewAllowlistPanel />
+
+      <PgSourcePanel />
 
       <HiddenSchemaPanel />
 

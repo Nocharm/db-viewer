@@ -478,9 +478,9 @@ export const MESSAGES = {
     ko: "카탈로그에 수집하지 않는 별도 소스입니다 — 목록과 값을 그때그때 원본에서 읽습니다",
     en: "A separate source, never ingested — the list and the values are read live",
   },
-  "pg.disabled": {
-    ko: "연결이 설정되지 않았습니다 — 서버 .env의 PG_SOURCE_DSN(읽기 전용 계정)을 넣고 백엔드를 재기동하세요",
-    en: "No connection configured — set PG_SOURCE_DSN (read-only account) and restart the backend",
+  "pg.noSources": {
+    ko: "등록된 연결이 없습니다 — 관리 콘솔 → 업무 Postgres 연결에서 추가하세요",
+    en: "No connections registered — add one in the admin console",
   },
   "pg.searchPlaceholder": { ko: "스키마·테이블 검색", en: "Filter schemas and tables" },
   "pg.tableCount": { ko: "테이블 {n}개", en: "{n} tables" },
@@ -490,8 +490,8 @@ export const MESSAGES = {
   "pg.viewValues": { ko: "값 보기", en: "Show values" },
   "pg.locked": { ko: "값 잠김", en: "Values locked" },
   "pg.lockedHint": {
-    ko: "이 스키마는 값 보기가 막혀 있습니다 — 관리 콘솔에서 '{key}'를 미리보기 허용 목록에 추가하세요",
-    en: "Values are locked for this schema — add '{key}' to the preview allowlist in the admin console",
+    ko: "이 스키마는 값 보기가 막혀 있습니다 — 관리 콘솔 → 업무 Postgres 연결에서 이 스키마를 허용하세요",
+    en: "Values are locked for this schema — unlock it in the admin console",
   },
   "pg.empty": { ko: "테이블이 없습니다", en: "No tables" },
 } as const;

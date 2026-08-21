@@ -61,6 +61,16 @@ async function putJson<T>(
   }));
 }
 
+async function patchJson<T>(
+  url: string, body: unknown, extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return handle(await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
+    body: JSON.stringify(body),
+  }));
+}
+
 async function deleteJson<T>(
   url: string, extraHeaders?: Record<string, string>,
 ): Promise<T> {
@@ -538,15 +548,24 @@ export function fetchObjectPreview(
   return getJson(`/api/objects/${objectId}/preview${suffix}`);
 }
 
-// --- 업무 Postgres 소스 (수집하지 않는 별도 소스) / the secondary Postgres source ---
+// --- 업무 Postgres 소스 (수집하지 않는 별도 소스, 여러 개 등록 가능) ---
+// The registered business-Postgres sources; never ingested, always read live.
+
+/** 일반 사용자에게 나가는 소스 요약 — 접속 정보는 담기지 않는다 / no connection details */
+export interface PgSourceSummary {
+  slug: string;
+  label: string;
+  database: string;
+  /** 값 보기가 열린 스키마 / schemas whose values are unlocked */
+  allowed_schemas: string[];
+}
 
 export interface PgStatus {
+  /** 쓸 수 있는 소스가 하나라도 있는지 — 메뉴 노출 판단 */
   enabled: boolean;
-  label: string;
-  /** 자격증명을 뺀 접속 대상 — 꺼져 있으면 null */
-  connection: { host: string; port: string; database: string; user: string } | null;
-  /** 미리보기가 열린 스키마(접두어 없는 이름) / allowed schemas, prefix stripped */
-  allowed_schemas: string[];
+  /** PG_SOURCE_SECRET 설정 여부 — 없으면 등록해도 쓸 수 없다 */
+  secret_configured: boolean;
+  sources: PgSourceSummary[];
 }
 
 export interface PgTable {
@@ -561,17 +580,102 @@ export function fetchPgStatus(): Promise<PgStatus> {
   return getJson("/api/pg/status");
 }
 
-export function fetchPgTables(): Promise<{ items: PgTable[]; total: number }> {
-  return getJson("/api/pg/tables");
+export function fetchPgTables(source: string): Promise<{ items: PgTable[]; total: number }> {
+  return getJson(`/api/pg/tables?source=${encodeURIComponent(source)}`);
 }
 
 export function fetchPgPreview(
-  schema: string, table: string, filters?: PreviewFilterCond[], limit?: number,
+  source: string, schema: string, table: string,
+  filters?: PreviewFilterCond[], limit?: number,
 ): Promise<TablePreview> {
-  const params = new URLSearchParams({ schema, table });
+  const params = new URLSearchParams({ source, schema, table });
   if (filters && filters.length > 0) params.set("filters", JSON.stringify(filters));
   if (limit !== undefined) params.set("limit", String(limit));
   return getJson(`/api/pg/preview?${params}`);
+}
+
+// --- 연결 관리 (관리자 전용) / connection registry, sysadmin only ---
+
+export interface PgSourceEntry extends PgSourceSummary {
+  host: string;
+  port: number;
+  username: string;
+  note: string | null;
+  created_by: string;
+  updated_at: string;
+}
+
+export interface PgSourceList {
+  /** 비밀번호 암호화 키 설정 여부 — 없으면 등록 자체가 막힌다(503) */
+  secret_configured: boolean;
+  /** 수정 비밀번호(PREVIEW_ADMIN_PASSWORD) 설정 여부 */
+  password_configured: boolean;
+  items: PgSourceEntry[];
+}
+
+/** 등록·수정에 보내는 값 — 비밀번호는 쓰기 전용이라 목록에서 되읽을 수 없다 */
+export interface PgSourceInput {
+  slug?: string;
+  label?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  note?: string | null;
+}
+
+export function fetchPgSources(): Promise<PgSourceList> {
+  return getJson("/api/admin/pg-sources");
+}
+
+// 비밀번호류는 헤더로만 — URL·히스토리에 남기지 않는다 (미리보기 허용 목록과 같은 관용)
+export function createPgSource(
+  input: PgSourceInput, password: string,
+): Promise<{ slug: string; created: boolean }> {
+  return postJson("/api/admin/pg-sources", input, { "X-Preview-Password": password });
+}
+
+export function updatePgSource(
+  slug: string, input: PgSourceInput, password: string,
+): Promise<{ slug: string; changed: string[] }> {
+  return patchJson(`/api/admin/pg-sources/${encodeURIComponent(slug)}`, input,
+                   { "X-Preview-Password": password });
+}
+
+export function removePgSource(
+  slug: string, password: string,
+): Promise<{ removed: boolean; unlocked_removed: number }> {
+  return deleteJson(`/api/admin/pg-sources/${encodeURIComponent(slug)}`,
+                    { "X-Preview-Password": password });
+}
+
+export interface PgConnectionTest {
+  ok: boolean;
+  error?: string;
+  schemas?: string[];
+  table_count?: number;
+}
+
+export function testPgSource(slug: string): Promise<PgConnectionTest> {
+  return postJson(`/api/admin/pg-sources/${encodeURIComponent(slug)}/test`, {});
+}
+
+export interface PgSchemaEntry {
+  schema: string;
+  table_count: number;
+  allowed: boolean;
+}
+
+export function fetchPgSourceSchemas(slug: string): Promise<{ items: PgSchemaEntry[] }> {
+  return getJson(`/api/admin/pg-sources/${encodeURIComponent(slug)}/schemas`);
+}
+
+export function setPgSchemaUnlock(
+  slug: string, schema: string, allowed: boolean, password: string, note?: string,
+): Promise<{ schema: string; allowed: boolean }> {
+  return postJson(`/api/admin/pg-sources/${encodeURIComponent(slug)}/schemas`,
+                  { schema, allowed, note }, { "X-Preview-Password": password });
 }
 
 export function fetchColumnsIndex(): Promise<{
