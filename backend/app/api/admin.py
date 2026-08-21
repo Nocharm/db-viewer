@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.adapters import pg_source
+from app.api.pg_source import ALLOWLIST_PREFIX
 from app.auth import require_preview_admin, require_sysadmin
 from app.config import get_settings
 from app.db import get_db
@@ -145,6 +147,28 @@ def list_preview_allowlist(db: Session = Depends(get_db)) -> dict:
     }
 
 
+def _ensure_pg_schema_exists(schema: str) -> None:
+    """`pg:` 키는 카탈로그에 없다 — 업무 Postgres에 직접 물어 실재를 확인한다.
+
+    수집하지 않는 소스라 오타 방어를 걸 곳이 여기밖에 없다. 소스가 꺼져 있거나 닿지
+    않으면 등록도 막는다 — 열리지 않을 스키마를 목록에 쌓지 않기 위해서다.
+    """
+    settings = get_settings()
+    if not settings.pg_source_enabled:
+        raise HTTPException(400, {
+            "message": "the Postgres source is not configured (PG_SOURCE_DSN)",
+            "context": {"schema": schema}})
+    try:
+        schemas = {row["schema"] for row in pg_source.list_tables(
+            settings.pg_source_dsn, settings.pg_source_timeout)}
+    except pg_source.PgSourceError as e:
+        raise HTTPException(502, {"message": f"Postgres source query failed: {e}",
+                                  "context": {"schema": schema}}) from e
+    if schema not in schemas:
+        raise HTTPException(400, {"message": "unknown schema in the Postgres source",
+                                  "context": {"schema": schema}})
+
+
 class PreviewAllowRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -164,12 +188,15 @@ def add_preview_allow(
     """스키마 하나를 미리보기 허용으로 등록 — 그 스키마의 모든 객체가 열린다."""
     schema = req.schema_name.strip()
     # 오타로 유령 허용이 쌓이면 목록만 늘고 아무 테이블도 안 열린다 (schema_categories 동일 관용)
-    exists = db.execute(
-        select(CatalogObject.id).where(CatalogObject.schema == schema).limit(1)
-    ).scalar_one_or_none()
-    if exists is None:
-        raise HTTPException(400, {"message": "unknown schema in the catalog",
-                                  "context": {"schema": schema}})
+    if schema.startswith(ALLOWLIST_PREFIX):
+        _ensure_pg_schema_exists(schema[len(ALLOWLIST_PREFIX):])
+    else:
+        exists = db.execute(
+            select(CatalogObject.id).where(CatalogObject.schema == schema).limit(1)
+        ).scalar_one_or_none()
+        if exists is None:
+            raise HTTPException(400, {"message": "unknown schema in the catalog",
+                                      "context": {"schema": schema}})
 
     now = datetime.now(UTC)
     row = db.get(PreviewAllowlist, schema)

@@ -11,6 +11,7 @@ import { CaretDownIcon, LogoMark, MoonIcon, SunIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
+import { fetchPgStatus } from "@/lib/api";
 
 function ThemeToggle() {
   const { t } = useI18n();
@@ -115,6 +116,14 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
   const me = useMe();
   const { t } = useI18n();
   const pathname = usePathname();
+  // 업무 Postgres는 연결된 배포에서만 메뉴에 뜬다 — 대부분의 배포에선 꺼져 있다
+  const [pgEnabled, setPgEnabled] = useState(false);
+
+  useEffect(() => {
+    fetchPgStatus()
+      .then((res) => setPgEnabled(res.enabled))
+      .catch(() => setPgEnabled(false)); // 소스 상태 조회 실패는 메뉴를 감추는 쪽으로
+  }, []);
 
   return (
     <header
@@ -149,6 +158,15 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
             </Link>
           );
         })}
+        {pgEnabled && (
+          <Link href="/pg" className="pressable rounded px-2.5 py-1 text-sm"
+                style={pathname === "/pg"
+                  ? { background: "var(--soft-stone)", fontWeight: 500 }
+                  : { color: "var(--slate)" }}
+                data-testid="AppHeader-link-pg">
+            {t("nav.pg")}
+          </Link>
+        )}
         {(me?.is_sysadmin || me?.auth_enabled === false) && (
           <Link href="/admin" className="pressable rounded px-2.5 py-1 text-sm"
                 style={pathname === "/admin"

@@ -54,6 +54,22 @@ describe("buildPreviewSql", () => {
     expect(sql).toContain("ORDER BY [EMP_NO] DESC");
   });
 
+  it("renders the Postgres source with quoted identifiers, ILIKE and a trailing LIMIT", () => {
+    // 업무 Postgres 탭은 방언이 다르다 — 복사해 그대로 실행되는 문장이어야 한다
+    const sql = buildPreviewSql(
+      { object: "public.orders", limit: 20, dialect: "pg" as const,
+        filters: [{ column: "note", op: "contains" as const, value: "가" },
+                  { column: "code", op: "eq" as const, value: "A" }] },
+      ["id", 'we"ird'], { column: "id", dir: "asc" },
+    );
+    expect(sql).not.toContain("TOP");
+    expect(sql).toContain('FROM "public"."orders"');
+    expect(sql).toContain('"we""ird"'); // " 는 "" 로 / quote escape
+    expect(sql).toContain(`WHERE "note"::text ILIKE '%가%'`);
+    expect(sql).toContain(`AND upper("code"::text) = upper('A')`);
+    expect(sql.trimEnd().endsWith("LIMIT 20;")).toBe(true);
+  });
+
   it("omits WHERE and ORDER BY when absent", () => {
     const sql = buildPreviewSql({ ...STATE, filters: [] }, ["A"], null);
     expect(sql).not.toContain("WHERE");

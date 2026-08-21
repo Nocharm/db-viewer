@@ -24,6 +24,7 @@ from app.api import (
     keys,
     me,
     objects,
+    pg_source,
     relations,
     scan,
     snapshots,
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, dependencies=user_gate)
     app.include_router(keys.router, dependencies=user_gate)
     app.include_router(categories.router, dependencies=user_gate)
+    app.include_router(pg_source.router, dependencies=user_gate)
     # me는 토큰만, admin은 자체 sysadmin 게이트 / me needs only a token
     app.include_router(me.router)
     app.include_router(admin.router)

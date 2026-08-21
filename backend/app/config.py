@@ -90,6 +90,20 @@ class Settings(BaseSettings):
     # Tuning: n8n 쿼리 응답 대기 상한(초) — W1 수집 쿼리·W2 검증 쿼리 공용
     n8n_query_timeout: int = 120
 
+    # Environment: 같은 서버의 별도 업무 Postgres — **읽기 전용 계정** DSN
+    # (예: postgresql://viewer_ro:pw@172.17.0.1:5432/bizdb). 비우면 기능 자체가 꺼진다.
+    # MSSQL과 달리 n8n 워크플로가 없어 백엔드가 직결한다 — 연결은 항상 read-only로 연다.
+    # / DSN for the secondary business Postgres; empty disables the feature
+    pg_source_dsn: str = ""
+    # Environment: 화면·감사 로그에 쓰는 소스 표시 이름 / label shown in the UI and audit log
+    pg_source_label: str = "Postgres"
+    # Tuning: 연결·문장 대기 상한(초) — 같은 값을 statement_timeout에도 건다
+    pg_source_timeout: int = 10
+
+    @property
+    def pg_source_enabled(self) -> bool:
+        return bool(self.pg_source_dsn)
+
     # Environment: 사내 LLM OpenAI 호환 베이스 URL (예: http://<llm-host>:11434/v1).
     # 비우면 FakeAiClient — 로컬·CI는 오프라인 유지 / empty keeps the offline fake
     ai_base_url: str = ""

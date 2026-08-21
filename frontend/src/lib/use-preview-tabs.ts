@@ -12,7 +12,14 @@
 import { useCallback, useState } from "react";
 
 import type { PreviewTabState, RefetchOptions } from "@/components/browser/PreviewSection";
-import { fetchObjectPreview } from "@/lib/api";
+import { fetchObjectPreview, type TablePreview } from "@/lib/api";
+import type { PreviewFilterCond, SqlDialect } from "@/lib/preview-utils";
+
+/** 탭 하나의 행을 가져오는 방법 — 화면마다 소스가 다르다(카탈로그 객체 / 업무 Postgres).
+ * How a tab's rows are fetched; the id means whatever the calling screen says it means. */
+export type PreviewFetcher = (
+  id: number, filters?: PreviewFilterCond[], limit?: number,
+) => Promise<TablePreview>;
 
 export interface PreviewTabsController {
   tabs: PreviewTabState[];
@@ -35,7 +42,16 @@ export interface PreviewTabsController {
   error: string | null;
 }
 
-export function usePreviewTabs(): PreviewTabsController {
+export interface PreviewTabsOptions {
+  /** 행을 가져오는 방법 — 생략하면 카탈로그 객체 미리보기 / defaults to the catalog source */
+  fetchPreview?: PreviewFetcher;
+  /** SQL 보기의 방언 — 소스가 곧 방언이라 화면 단위로 정한다 / the source decides */
+  dialect?: SqlDialect;
+}
+
+export function usePreviewTabs(
+  { fetchPreview = fetchObjectPreview, dialect }: PreviewTabsOptions = {},
+): PreviewTabsController {
   const [tabs, setTabs] = useState<PreviewTabState[]>([]);
   const [activeId, setActiveIdState] = useState<number | null>(null);
   const [splitId, setSplitId] = useState<number | null>(null);
@@ -43,7 +59,7 @@ export function usePreviewTabs(): PreviewTabsController {
 
   const refetch = useCallback((id: number, opts: RefetchOptions) => {
     setTabs((cur) => cur.map((tab) => (tab.id === id ? { ...tab, loading: true } : tab)));
-    fetchObjectPreview(id, opts.filters, opts.limit)
+    fetchPreview(id, opts.filters, opts.limit)
       .then((res) => setTabs((cur) => cur.map((tab) =>
         (tab.id === id ? { ...tab, data: res, loading: false } : tab))))
       .catch((e: Error) => {
@@ -51,7 +67,7 @@ export function usePreviewTabs(): PreviewTabsController {
         setTabs((cur) => cur.map((tab) =>
           (tab.id === id ? { ...tab, loading: false } : tab)));
       });
-  }, []);
+  }, [fetchPreview]);
 
   const setHighlight = useCallback((id: number, column: string | null) => {
     setTabs((cur) => cur.map((tab) => (tab.id === id ? { ...tab, highlight: column } : tab)));
@@ -68,12 +84,12 @@ export function usePreviewTabs(): PreviewTabsController {
     } else {
       setTabs((cur) => [...cur, {
         id: objectId, qname, data: null, loading: true,
-        hidden: [], sort: null, order: [], highlight,
+        hidden: [], sort: null, order: [], highlight, dialect,
       }]);
       refetch(objectId, {});
     }
     setActiveIdState(objectId);
-  }, [tabs, refetch, setHighlight]);
+  }, [tabs, refetch, setHighlight, dialect]);
 
   const close = useCallback((id: number) => {
     setTabs((cur) => {

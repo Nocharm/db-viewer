@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   addPreviewAllow,
+  fetchPgStatus,
+  fetchPgTables,
   fetchPreviewAllowlistAdmin,
   fetchSchemaCategories,
   removePreviewAllow,
@@ -14,11 +16,18 @@ import {
   type SchemaCategoryItem,
 } from "@/lib/api";
 
+/** 목록 한 줄 — 카탈로그 스키마와 `pg:` 키를 같은 표에 세운다 / one row, either source. */
+interface AllowRow {
+  schema: string;
+  object_count: number;
+}
+
 export function PreviewAllowlistPanel() {
   const [password, setPassword] = useState("");
   const [entries, setEntries] = useState<PreviewAllowEntry[]>([]);
   const [passwordConfigured, setPasswordConfigured] = useState(true);
   const [schemas, setSchemas] = useState<SchemaCategoryItem[]>([]);
+  const [pgSchemas, setPgSchemas] = useState<AllowRow[]>([]);
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -41,6 +50,28 @@ export function PreviewAllowlistPanel() {
       .catch((e) => setError(e.message));
   }, []);
 
+  // 업무 Postgres는 수집하지 않아 카탈로그에 없다 — 소스에 직접 물어 `pg:` 키로 세운다
+  useEffect(() => {
+    fetchPgStatus()
+      .then((status) => (status.enabled ? fetchPgTables() : null))
+      .then((res) => {
+        if (!res) return;
+        const counts = new Map<string, number>();
+        for (const table of res.items) {
+          counts.set(table.schema, (counts.get(table.schema) ?? 0) + 1);
+        }
+        setPgSchemas([...counts].map(([schema, count]) =>
+          ({ schema: `pg:${schema}`, object_count: count })));
+      })
+      // 소스가 안 붙어 있어도 이 화면의 본 업무(카탈로그 스키마)는 그대로 돌아야 한다
+      .catch(() => setPgSchemas([]));
+  }, []);
+
+  const rows = useMemo<AllowRow[]>(() => [
+    ...schemas.map((item) => ({ schema: item.schema, object_count: item.object_count })),
+    ...pgSchemas,
+  ], [schemas, pgSchemas]);
+
   const allowedBySchema = useMemo(
     () => new Map(entries.map((entry) => [entry.schema, entry])),
     [entries],
@@ -48,16 +79,16 @@ export function PreviewAllowlistPanel() {
 
   const visibleSchemas = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const rows = term
-      ? schemas.filter((item) => item.schema.toLowerCase().includes(term))
-      : schemas;
+    const matched = term
+      ? rows.filter((item) => item.schema.toLowerCase().includes(term))
+      : rows;
     // 허용된 스키마를 위로 — 지금 무엇이 열려 있는지가 이 화면의 첫 질문이다
-    return [...rows].sort((a, b) => {
+    return [...matched].sort((a, b) => {
       const allowedDiff = Number(allowedBySchema.has(b.schema))
         - Number(allowedBySchema.has(a.schema));
       return allowedDiff !== 0 ? allowedDiff : a.schema.localeCompare(b.schema);
     });
-  }, [schemas, query, allowedBySchema]);
+  }, [rows, query, allowedBySchema]);
 
   const canEdit = passwordConfigured && password.length > 0;
 
@@ -77,7 +108,7 @@ export function PreviewAllowlistPanel() {
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium">미리보기 허용 스키마</h2>
         <span className="badge badge--muted" data-testid="AdminPage-previewAllowCount">
-          {entries.length.toLocaleString()} / {schemas.length.toLocaleString()}
+          {entries.length.toLocaleString()} / {rows.length.toLocaleString()}
         </span>
         <input
           className="ml-auto w-56 rounded border px-3 py-1.5 text-sm"
@@ -90,7 +121,8 @@ export function PreviewAllowlistPanel() {
       </div>
       <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
         허용된 스키마의 객체만 실제 값을 미리볼 수 있습니다 (테이블 화면·ERD 공통, 조인 샘플 포함).
-        스키마 1건을 허용하면 그 안의 모든 테이블·뷰가 열립니다. 목록이 비어 있으면 전부 차단됩니다.
+        스키마 1건을 허용하면 그 안의 모든 테이블·뷰가 열립니다. 목록이 비어 있으면 전부 차단됩니다.{" "}
+        <code>pg:</code>로 시작하는 줄은 업무 Postgres 소스의 스키마입니다.
       </p>
 
       {!passwordConfigured ? (

@@ -435,8 +435,9 @@ export interface TablePreview {
   columns: string[];
   rows: Record<string, unknown>[];
   masked_columns: string[];
-  /** 행이 어디서 왔는지 — 0행일 때 "원본이 비었다"와 "실행기 미연결"을 가른다 */
-  source: "live" | "fixture";
+  /** 행이 어디서 왔는지 — 0행일 때 "원본이 비었다"와 "실행기 미연결"을 가른다.
+   * pg = 업무 Postgres 직결 소스 / pg means the secondary Postgres source */
+  source: "live" | "fixture" | "pg";
   limit: number;
   /** 적용된 조건 목록(AND) — 서버가 검증해 되돌려준 값 / server-echoed conditions */
   filters: PreviewFilterCond[];
@@ -535,6 +536,42 @@ export function fetchObjectPreview(
   if (limit !== undefined) params.set("limit", String(limit));
   const suffix = params.size > 0 ? `?${params}` : "";
   return getJson(`/api/objects/${objectId}/preview${suffix}`);
+}
+
+// --- 업무 Postgres 소스 (수집하지 않는 별도 소스) / the secondary Postgres source ---
+
+export interface PgStatus {
+  enabled: boolean;
+  label: string;
+  /** 자격증명을 뺀 접속 대상 — 꺼져 있으면 null */
+  connection: { host: string; port: string; database: string; user: string } | null;
+  /** 미리보기가 열린 스키마(접두어 없는 이름) / allowed schemas, prefix stripped */
+  allowed_schemas: string[];
+}
+
+export interface PgTable {
+  schema: string;
+  name: string;
+  type: "table" | "view";
+  /** ANALYZE 기준 추정 행 수 — 분석 전이면 null / estimate, null before ANALYZE */
+  row_estimate: number | null;
+}
+
+export function fetchPgStatus(): Promise<PgStatus> {
+  return getJson("/api/pg/status");
+}
+
+export function fetchPgTables(): Promise<{ items: PgTable[]; total: number }> {
+  return getJson("/api/pg/tables");
+}
+
+export function fetchPgPreview(
+  schema: string, table: string, filters?: PreviewFilterCond[], limit?: number,
+): Promise<TablePreview> {
+  const params = new URLSearchParams({ schema, table });
+  if (filters && filters.length > 0) params.set("filters", JSON.stringify(filters));
+  if (limit !== undefined) params.set("limit", String(limit));
+  return getJson(`/api/pg/preview?${params}`);
 }
 
 export function fetchColumnsIndex(): Promise<{

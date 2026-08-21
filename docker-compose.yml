@@ -46,6 +46,10 @@ services:
       # 수집(W1a/b)·live 질의(W2) 경로 — 없으면 수집이 픽스처 리플레이로 falls back
       N8N_WEBHOOK_BASE: ${N8N_WEBHOOK_BASE}
       N8N_QUERY_TIMEOUT: ${N8N_QUERY_TIMEOUT:-120}
+      # 업무 Postgres 소스(선택) — 읽기 전용 계정 DSN, 비우면 기능 자체가 꺼진다
+      PG_SOURCE_DSN: ${PG_SOURCE_DSN:-}
+      PG_SOURCE_LABEL: ${PG_SOURCE_LABEL:-Postgres}
+      PG_SOURCE_TIMEOUT: ${PG_SOURCE_TIMEOUT:-10}
       AI_BASE_URL: ${AI_BASE_URL}
       AI_MODEL: ${AI_MODEL}
       AI_API_KEY: ${AI_API_KEY}

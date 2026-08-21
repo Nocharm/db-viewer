@@ -59,8 +59,13 @@ export function buildCsv(columns: string[], rows: PreviewRow[]): string {
   return `﻿${lines.join("\r\n")}`;
 }
 
-function escapeIdentifier(name: string): string {
-  return `[${name.replace(/]/g, "]]")}]`;
+/** 소스 방언 — 미리보기 SQL의 인용·행수 제한 문법이 갈린다 / the source's SQL dialect. */
+export type SqlDialect = "tsql" | "pg";
+
+function escapeIdentifier(name: string, dialect: SqlDialect): string {
+  return dialect === "pg"
+    ? `"${name.replace(/"/g, '""')}"`
+    : `[${name.replace(/]/g, "]]")}]`;
 }
 
 /** 조건 연산자 — 포함/정확과 그 제외형, NULL 검사 / condition operators. */
@@ -84,13 +89,22 @@ export interface PreviewQueryState {
   limit: number;
   /** AND 결합 조건 목록 — 빈 배열이면 무필터 / AND-combined, empty = unfiltered */
   filters: PreviewFilterCond[];
+  /** 생략하면 T-SQL — 업무 Postgres 탭만 "pg" / defaults to T-SQL */
+  dialect?: SqlDialect;
 }
 
-function renderCondSql(cond: PreviewFilterCond): string {
-  const column = escapeIdentifier(cond.column);
+function renderCondSql(cond: PreviewFilterCond, dialect: SqlDialect): string {
+  const column = escapeIdentifier(cond.column, dialect);
   if (cond.op === "is_null") return `${column} IS NULL`;
   if (cond.op === "not_null") return `${column} IS NOT NULL`;
   const value = (cond.value ?? "").replace(/'/g, "''");
+  if (dialect === "pg") {
+    // 백엔드가 실제로 보내는 형태 그대로 — 대소문자 무시 비교와 ILIKE
+    if (cond.op === "eq") return `upper(${column}::text) = upper('${value}')`;
+    if (cond.op === "neq") return `upper(${column}::text) <> upper('${value}')`;
+    if (cond.op === "not_contains") return `${column}::text NOT ILIKE '%${value}%'`;
+    return `${column}::text ILIKE '%${value}%'`;
+  }
   if (cond.op === "eq") return `${column} = N'${value}'`;
   if (cond.op === "neq") return `${column} <> N'${value}'`;
   if (cond.op === "not_contains") return `${column} NOT LIKE N'%${value}%'`;
@@ -105,16 +119,21 @@ export function buildPreviewSql(
   visibleColumns: string[],
   sort: SortSpec | null,
 ): string {
+  const dialect = state.dialect ?? "tsql";
   const [schema, ...rest] = state.object.split(".");
-  const table = `${escapeIdentifier(schema)}.${escapeIdentifier(rest.join("."))}`;
-  const columns = visibleColumns.map(escapeIdentifier).join(",\n       ");
-  let sql = `SELECT TOP ${state.limit}\n       ${columns}\nFROM ${table}`;
+  const quote = (name: string) => escapeIdentifier(name, dialect);
+  const table = `${quote(schema)}.${quote(rest.join("."))}`;
+  const columns = visibleColumns.map(quote).join(",\n       ");
+  const top = dialect === "pg" ? "" : `TOP ${state.limit}`;
+  let sql = `SELECT ${top}\n       ${columns}\nFROM ${table}`.replace("SELECT \n", "SELECT\n");
   if (state.filters.length > 0) {
-    sql += `\nWHERE ${state.filters.map(renderCondSql).join("\n  AND ")}`;
+    sql += `\nWHERE ${state.filters.map((c) => renderCondSql(c, dialect)).join("\n  AND ")}`;
   }
   if (sort) {
-    sql += `\nORDER BY ${escapeIdentifier(sort.column)} ${sort.dir.toUpperCase()}`;
+    sql += `\nORDER BY ${quote(sort.column)} ${sort.dir.toUpperCase()}`;
   }
+  // Postgres는 행수 제한이 문장 끝 / Postgres caps rows at the end of the statement
+  if (dialect === "pg") sql += `\nLIMIT ${state.limit}`;
   return `${sql};`;
 }
 
@@ -126,7 +145,8 @@ export interface SqlToken {
 const SQL_TOKEN_PATTERNS: [SqlToken["type"], RegExp][] = [
   ["string", /^N?'(?:[^']|'')*'/],
   ["identifier", /^\[(?:[^\]]|\]\])*\]/],
-  ["keyword", /^(?:SELECT|TOP|FROM|WHERE|NOT|LIKE|AND|IS|NULL|ORDER|BY|ASC|DESC)\b/i],
+  ["identifier", /^"(?:[^"]|"")*"/],
+  ["keyword", /^(?:SELECT|TOP|LIMIT|FROM|WHERE|NOT|I?LIKE|AND|IS|NULL|ORDER|BY|ASC|DESC)\b/i],
   ["number", /^\d+(?:\.\d+)?/],
 ];
 
