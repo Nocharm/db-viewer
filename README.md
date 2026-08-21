@@ -92,7 +92,13 @@ docker compose up -d --build
   좌측 스키마·카테고리 목록과 테이블 목록에 **이름을 노출할지**만 정하며(기본 숨김), 켜도 컬럼은 열리지 않는다.
   토글 변경은 `PREVIEW_ADMIN_PASSWORD`를 요구하고 감사 로그에 남는다. 숨김 상태에선 관리 화면도
   스키마 이름 대신 건수만 보여준다(표시로 바꾸면 이름이 나온다)
-- **업무 Postgres 소스**: `PG_SOURCE_DSN`(`.env`)을 채우면 `/pg` 화면이 열린다. 연결은 항상 read-only로 열고
+- **업무 Postgres 소스**: `PG_SOURCE_DSN`(`.env`)을 채우면 `/pg` 화면이 열린다. 붙이려면 **두 가지가 따로**
+  필요하다 — ① **계정**: Postgres 인증은 DB마다 독립이라 대상 DB 담당자가 그쪽에 읽기 전용 롤을 만들어 줘야
+  한다(`CREATE ROLE … LOGIN` + `GRANT CONNECT/USAGE/SELECT`). 우리 서비스 DB 계정은 상대 DB에 통하지 않는다.
+  ② **경로**: nginx는 HTTP 프록시라 이 경로와 무관하다(Postgres는 5432 TCP 직접). 대상이 포트를 호스트에
+  열어 뒀으면 `172.48.0.1:<published>`(우리 네트워크 게이트웨이 = 서버 자신)로, 안 열려 있으면 backend를
+  대상 스택의 네트워크에 `external`로 붙여 **컨테이너 이름**으로 접속한다. 확인:
+  `docker compose exec backend python -c "import psycopg,os; psycopg.connect(os.environ['PG_SOURCE_DSN']).close()"` 연결은 항상 read-only로 열고
   (`default_transaction_read_only`) `PG_SOURCE_TIMEOUT`을 statement_timeout으로도 걸지만, **계정 자체를 읽기
   전용으로** 만드는 것이 마지막 방어선이다. 값 노출 게이트는 MSSQL과 공유하되 키에 `pg:` 접두어를 붙여
   (`pg:public`) 같은 이름의 MSSQL 스키마가 함께 열리지 않게 한다

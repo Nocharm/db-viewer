@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     n8n_query_timeout: int = 120
 
     # Environment: 같은 서버의 별도 업무 Postgres — **읽기 전용 계정** DSN
-    # (예: postgresql://viewer_ro:pw@172.17.0.1:5432/bizdb). 비우면 기능 자체가 꺼진다.
+    # (예: postgresql://viewer_ro:pw@172.48.0.1:5433/bizdb). 비우면 기능 자체가 꺼진다.
     # MSSQL과 달리 n8n 워크플로가 없어 백엔드가 직결한다 — 연결은 항상 read-only로 연다.
     # / DSN for the secondary business Postgres; empty disables the feature
     pg_source_dsn: str = ""
