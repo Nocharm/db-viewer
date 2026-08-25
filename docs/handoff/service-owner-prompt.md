@@ -59,6 +59,17 @@ docker network create --subnet 172.50.<n>.0/24 dbv-<서비스키>
 > `docker network ls`로 기존 이름과 겹치지 않는지, `docker network inspect`로 서브넷이
 > 기존 대역(172.36~172.48)과 겹치지 않는지 확인한다.
 
+**아직 안 했다면 `SOURCE_SECRET_KEY`도 미리 준비한다** (db-viewer `.env`, 소스 등록 API가
+이 키 없이는 503) — 최초 1회만 생성하고 이후 안 바꾼다(키를 바꾸면 이미 등록된 소스의
+비밀번호를 전부 다시 넣어야 한다):
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+값을 db-viewer `.env`의 `SOURCE_SECRET_KEY=`에 채우고 backend를 재기동한다. 담당자
+작업과는 무관하지만, ⑥에서 회신받은 정보를 등록하려면 이 키가 먼저 있어야 한다.
+
 ---
 
 ## ② 담당자 사전 확인 (필수 — 건너뛰지 말 것)
@@ -205,7 +216,25 @@ DB명:                 <DB명>
 
 ---
 
-## ⑥ 문제가 생기면
+## ⑥ (db-viewer 운영자) 회신받은 정보 등록하기
+
+담당자의 ⑤ 회신을 받으면 `/admin` → 소스 패널에서 등록한다. 절차와 상세 트러블슈팅은
+`docs/connect-sources.md` §7 — 여기서는 요점만.
+
+1. **등록** — 이름·엔진(PostgreSQL/SQLite)·host(네트워크 별칭, 예: `svca-db`)·port·
+   database·username·password(PostgreSQL) 또는 file_path(SQLite)를 입력해 저장.
+2. **[연결 테스트]** — 저장 직후 반드시 누른다. **네트워크가 붙고 계정이 살아 있어도
+   연결 자체는 항상 성공할 수 있다는 게 함정이다** — 여러 서비스가 `postgres`/`db` 같은
+   흔한 컨테이너명을 쓰기 때문에, host를 잘못 넣어도(다른 서비스의 별칭이거나 오타여도)
+   "어떤" postgres에는 붙어 연결 테스트가 초록으로 뜰 수 있다. 그래서 응답에 실린
+   `database`(현재 붙은 DB명)와 `version`이 **회신받은 값과 정확히 일치하는지 눈으로
+   대조**해야 한다 — 일치하지 않으면 host를 별칭으로 바로잡고 다시 테스트.
+3. **[카탈로그 수집]** → **미리보기 허용 스키마 등록**까지 순서대로 진행 — 등록만으로는
+   화면에 아무것도 안 열린다(기본 전부 차단).
+
+---
+
+## ⑦ 문제가 생기면
 
 | 증상 | 원인·조치 |
 |---|---|

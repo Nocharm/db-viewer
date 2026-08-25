@@ -65,6 +65,10 @@ services:
       LDAP_START_TLS: ${LDAP_START_TLS}
       # 사내 CA 번들 — 경로를 쓰려면 그 파일도 컨테이너에 마운트해야 한다
       LDAP_CA_BUNDLE: ${LDAP_CA_BUNDLE}
+      # 멀티 소스 직결(PostgreSQL/SQLite) — 소스 접속 비밀번호 암호화 키, 비면 소스 등록 503
+      SOURCE_SECRET_KEY: ${SOURCE_SECRET_KEY}
+      SOURCE_CONNECT_TIMEOUT: ${SOURCE_CONNECT_TIMEOUT:-5}
+      SOURCE_QUERY_TIMEOUT: ${SOURCE_QUERY_TIMEOUT:-15}
       # glibc malloc arena를 2개로 제한 — 멀티스레드 상주 메모리 절감 (frontend/postgres는 musl이라 무의미)
       MALLOC_ARENA_MAX: "2"
     depends_on:
@@ -110,3 +114,16 @@ networks:
 
 volumes:
   pgdata:
+
+# ── 멀티 소스 직결(PostgreSQL/SQLite) 합류 방법 ── docs/connect-sources.md
+# 조회 대상 서비스마다 전용 브리지 네트워크를 외부에서 만들고(dbv-<서비스>) 여기에 합류한다.
+# 대상 서비스의 기존 default 네트워크·subnet은 건드리지 않는다. 실제 네트워크명·볼륨명은
+# 배포마다 다르므로 아래는 예시일 뿐 — 이 파일에 직접 반영할 때 실값으로 바꾼다.
+#
+#   backend:
+#     networks: [dbviewer, dbv-svca]
+#     volumes: [svcc_data:/mnt/sources/svcc:ro]   # SQLite 소스는 볼륨을 :ro로 마운트
+# networks:
+#   dbv-svca: { external: true }
+# volumes:
+#   svcc_data: { external: true, name: <서비스C_볼륨명> }
