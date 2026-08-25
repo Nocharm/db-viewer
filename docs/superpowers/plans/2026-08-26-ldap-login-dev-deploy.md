@@ -509,21 +509,30 @@ def test_transport_failure_is_503_not_401(client, ldap_login_on, monkeypatch):
 
 def test_endpoint_is_absent_when_the_flag_is_off(client, monkeypatch):
     """AUTH_LDAP_LOGIN_ENABLED=false면 라우터 자체가 등록되지 않아야 한다."""
-    # Arrange: 앱을 플래그 없이 새로 만든다 (라우터 등록은 create_app 시점 결정)
-    from fastapi.testclient import TestClient
-
+    # Arrange: 라우터 등록은 create_app 시점에 결정된다.
+    # TestClient를 쓰지 않는 이유 — main.py의 @app.on_event("startup")이 실제 DB 세션을 연다.
+    # 라우트 테이블을 직접 보는 편이 더 직접적이고 부작용이 없다.
     monkeypatch.setenv("AUTH_LDAP_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
     from app.main import create_app
 
     # Act
-    with TestClient(create_app()) as off_client:
-        res = off_client.post("/api/auth/ldap-login",
-                              json={"login_id": "hong.gildong", "password": "x"})
+    paths = {getattr(route, "path", None) for route in create_app().routes}
 
     # Assert
-    assert res.status_code == 404
+    assert "/api/auth/ldap-login" not in paths
     get_settings.cache_clear()
+
+
+def test_endpoint_is_registered_when_the_flag_is_on(ldap_login_on):
+    """켜져 있을 때는 반드시 등록된다 — 위 테스트가 오타로 항상 통과하지 않도록."""
+    # Arrange / Act
+    from app.main import create_app
+
+    paths = {getattr(route, "path", None) for route in create_app().routes}
+
+    # Assert
+    assert "/api/auth/ldap-login" in paths
 
 
 @pytest.mark.parametrize(
@@ -777,12 +786,12 @@ def login_with_ldap(req: LdapLoginRequest, db: Session = Depends(get_db)) -> dic
 - [ ] **Step 6: 테스트가 통과하는지 확인한다**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/test_ldap_login.py -q`
-Expected: PASS (13 passed)
+Expected: PASS (14 passed)
 
 - [ ] **Step 7: 회귀 + 커밋**
 
 Run: `cd backend && .venv/bin/python -m pytest -q && .venv/bin/ruff check app tests`
-Expected: 446 passed / 4 skipped
+Expected: 447 passed / 4 skipped
 
 ```bash
 git add backend/app/api/auth_login.py backend/app/ad/client.py backend/app/main.py \
@@ -807,22 +816,13 @@ git commit -m "feat(auth): LDAP credential login endpoint with lockout — LDAP 
 `backend/tests/test_ldap_login.py`에 이어붙인다:
 
 ```python
-def test_issued_token_authenticates_subsequent_requests(client, ldap_login_on, monkeypatch):
-    # Arrange: 로그인해서 토큰을 받는다
-    _patch_ldap(monkeypatch, user=USER, ok=True)
-    token = client.post("/api/auth/ldap-login",
-                        json={"login_id": "hong.gildong", "password": "ok"}
-                        ).json()["access_token"]
-
-    # Act: 그 토큰으로 /api/me 를 부른다
-    res = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
-
-    # Assert: 화이트리스트에 없으므로 신원은 통과하고 게이트에서 막힌다(401이 아니라)
-    assert res.status_code != 401
-
-
 def test_whitelist_still_gates_ldap_logins(client, ldap_login_on, monkeypatch):
-    """LDAP으로 들어와도 화이트리스트에 없으면 조회 API는 403이어야 한다."""
+    """LDAP으로 들어와도 화이트리스트에 없으면 조회 API는 403이어야 한다.
+
+    403은 두 가지를 동시에 증명한다 — 토큰이 `get_current_user`를 통과했고(401이 아님),
+    하류 게이트가 그대로 적용됐다는 것. `/api/me`로는 이걸 못 본다: 그 경로는
+    `ad_service.sync_one`을 부르는데 함수 안에서 모듈을 import하므로 몽키패치가 닿지 않는다.
+    """
     # Arrange
     _patch_ldap(monkeypatch, user=USER, ok=True)
     token = client.post("/api/auth/ldap-login",
@@ -931,10 +931,28 @@ git commit -m "feat(auth): accept locally issued tokens alongside Keycloak — �
 
 `frontend/src/lib/session-token.test.ts`:
 
+`vitest.config.ts`가 `environment: "node"`라 **`localStorage`가 존재하지 않는다.** jsdom을
+설치하지 않는다 — 테스트 한 파일 때문에 devDependency를 늘리지 않고(`dependencies.md`),
+이 모듈이 쓰는 API는 `getItem`/`setItem`/`removeItem` 셋뿐이라 스텁으로 충분하다.
+
 ```typescript
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { clearStoredSession, readStoredSession, storeSession } from "./session-token";
+
+// vitest 환경이 "node"라 localStorage가 없다 — 이 모듈이 쓰는 3개 메서드만 흉내낸다
+function installStorageStub(): void {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string): string | null => store.get(k) ?? null,
+      setItem: (k: string, v: string): void => void store.set(k, v),
+      removeItem: (k: string): void => void store.delete(k),
+      clear: (): void => store.clear(),
+    },
+  });
+}
 
 const VALID = {
   token: "a.b.c",
@@ -944,7 +962,7 @@ const VALID = {
 };
 
 describe("session-token", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => installStorageStub());
 
   it("round-trips a stored session", () => {
     storeSession(VALID);
