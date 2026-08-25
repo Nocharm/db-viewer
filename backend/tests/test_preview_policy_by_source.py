@@ -139,9 +139,12 @@ def test_table_preview_judges_by_the_objects_own_source(
     assert other.status_code == 403
     assert "preview allowlist" in other.json()["error"]["message"]
 
-    # 그 소스에 직접 허용을 주면 그때 열린다 — 게이트가 맞는 소스를 읽고 있다는 증거
+    # 그 소스에 직접 허용을 주면 그때 열린다 — 게이트가 맞는 소스를 읽고 있다는 증거.
+    # "svcb"는 존재하지 않는 host("h")를 가리키는 가짜 direct 소스라 실제 연결은 실패하지만
+    # (502), 여기서 확인할 것은 allowlist 게이트가 더는 막지 않는다는 점(403 아님)이다 —
+    # 아래 join 계열 두 테스트와 같은 패턴
     _allow(client, schema, source_id=other_id)
-    assert client.get(f"/api/objects/{other_obj}/preview").status_code == 200
+    assert client.get(f"/api/objects/{other_obj}/preview").status_code != 403
 
 
 def test_join_sample_judges_by_the_columns_own_source(

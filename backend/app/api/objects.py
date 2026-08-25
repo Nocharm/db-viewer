@@ -1,12 +1,14 @@
 """Object search, detail, and preview. / 객체 검색 + 상세 + 미리보기."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 
 from app.adapters import SyntheticDataRefused, create_table_preview
@@ -31,8 +33,10 @@ from app.services.schema_visibility import (
     is_schema_hidden,
     should_render_hidden_schemas,
 )
+from app.sources.registry import get_source
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
+logger = logging.getLogger(__name__)
 
 
 def resolve_snapshot(
@@ -375,8 +379,8 @@ def get_object_preview(
     # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다.
     # 허용은 소스별이라 이 객체가 속한 소스로 판정한다 — 같은 스키마명이라도 다른 소스면 다른 정책
     snapshot = db.get(Snapshot, obj.snapshot_id)
-    source_id = snapshot.data_source_id if snapshot else MANAGED_MSSQL_SOURCE_ID
-    if not is_preview_allowed(db, source_id, obj.schema):
+    source = get_source(db, snapshot.data_source_id if snapshot else None)
+    if not is_preview_allowed(db, source.id, obj.schema):
         raise HTTPException(403, {
             "message": "preview is not allowed for this schema — an admin must add it "
                        "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
@@ -390,16 +394,27 @@ def get_object_preview(
     conds = parse_preview_filters(filters, {c.name for c in columns})
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
-    # live는 n8n W2 실행기, 그 외는 픽스처 합성 — 팩토리가 게이트 (docs/connect.md)
+    # live는 n8n W2 실행기, direct 소스는 그 소스에 직결, 그 외는 픽스처 합성 — 팩토리가
+    # 게이트 (docs/connect.md)
     try:
-        preview = create_table_preview(settings)
+        preview = create_table_preview(settings, source)
     except SyntheticDataRefused as e:
         raise HTTPException(503, {"message": str(e),
                                   "context": {"source_mode": settings.source_mode}}) from e
-    rows = preview.rows(
-        qname, column_specs, limit,
-        filters=[c.model_dump() for c in conds],
-    )
+    try:
+        rows = preview.rows(
+            qname, column_specs, limit,
+            filters=[c.model_dump() for c in conds],
+        )
+    except SQLAlchemyError as e:
+        # 자격증명은 절대 싣지 않는다 — 어느 소스가 왜 실패했는지까지만
+        logger.warning("source preview failed",
+                       extra={"source_id": source.id, "object": qname})
+        raise HTTPException(502, {
+            "message": "the data source could not be queried",
+            "context": {"source": source.name, "object": qname,
+                        "error": str(e)[:300]},
+        }) from e
 
     masked = [c.name for c in columns if c.masking_policy]
     if masked:
@@ -418,8 +433,12 @@ def get_object_preview(
         "columns": [c.name for c in columns],
         "rows": rows,
         "masked_columns": masked,
-        # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값
-        "source": "live" if settings.source_mode == "live" else "fixture",
+        # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값.
+        # direct 소스는 SOURCE_MODE와 무관하게 항상 실데이터다.
+        "source": ("live" if source.access_mode == "direct"
+                   or settings.source_mode == "live" else "fixture"),
+        "source_id": source.id,
+        "source_name": source.name,
         "limit": limit,
         # 화면 칩·SQL 보기가 그대로 쓰는 서버 echo / server-echoed conditions
         "filters": [c.model_dump() for c in conds],

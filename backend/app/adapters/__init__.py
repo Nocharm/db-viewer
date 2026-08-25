@@ -7,6 +7,7 @@ from app.domain.validation import JoinValidator
 
 if TYPE_CHECKING:
     from app.adapters.collect_runner import CollectRunner
+    from app.models import DataSource
 
 
 class SyntheticDataRefused(RuntimeError):
@@ -31,14 +32,22 @@ def create_join_validator(settings: Settings) -> JoinValidator:
     return FakeJoinValidator(settings.resolved_fixture_dir / "value_sets.json")
 
 
-def create_table_preview(settings: Settings):
+def create_table_preview(settings: Settings, source: "DataSource | None" = None):
     """테이블 미리보기 실행기 — live는 n8n W2, 순수 오프라인만 픽스처 합성 / preview executor.
 
     합성 행은 실값과 겉모습이 같아서(`EMP_CODE` → `EMPCOD001`) 실 카탈로그가 적재된
     화면에서는 검증을 오염시킨다. 실배포 판별은 수집 경로와 같은 신호인
     N8N_WEBHOOK_BASE로 한다 (create_collect_runner 주석 참조) — 원천이 붙어 있는데
     live가 아니면 합성 대신 명시 실패시켜 SOURCE_MODE 전환을 요구한다.
+
+    direct 소스는 SOURCE_MODE와 무관하게 항상 실데이터다. n8n 소스만 기존 게이트를
+    그대로 통과한다 (live 전환은 배포 절차가 지킨다, docs/connect.md).
     """
+    if source is not None and source.access_mode == "direct":
+        from app.sources.connection import get_sa_engine
+        from app.sources.direct_preview import DirectTablePreview
+
+        return DirectTablePreview(get_sa_engine(source))
     if settings.source_mode == "live":
         if not settings.n8n_webhook_base:
             raise RuntimeError("live mode requires N8N_WEBHOOK_BASE (W2 query executor)")
