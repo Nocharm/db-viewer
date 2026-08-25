@@ -41,7 +41,7 @@ def _build_condition(cond: dict, index: int) -> tuple[str, dict[str, str]]:
     holder = f":{key}"
     ci = _CI.format(col=col)
     raw = cond.get("value")
-    value = "" if raw is None else raw
+    value = "" if raw is None else str(raw)
     if op == "eq":
         return f"{ci} = UPPER({holder})", {key: value}
     if op == "neq":
