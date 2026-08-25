@@ -119,6 +119,13 @@ export function fetchDataSources(): Promise<{
   return getJson("/api/sources");
 }
 
+/** 마이그레이션이 시드한 사내 MSSQL 소스 id — 소스 미지정 요청의 백엔드 기본값과 같다.
+ *  뷰 파싱·관계 검증·AI처럼 MSSQL 전용인 화면은 이 값을 명시해야 한다: 스냅샷 id는
+ *  전 소스 공통 시퀀스라 "최신 스냅샷"이 다른 소스 것으로 넘어갈 수 있다.
+ *  The seeded in-house MSSQL source; MSSQL-only screens must pin to it because snapshot
+ *  ids are one global sequence. */
+export const MANAGED_MSSQL_SOURCE_ID = 1;
+
 export interface DataSourceInput {
   name: string;
   engine: "postgres" | "sqlite";
@@ -347,8 +354,13 @@ export interface SnapshotSummary {
   object_count: number;
 }
 
-export function fetchSnapshots(): Promise<{ items: SnapshotSummary[] }> {
-  return getJson("/api/snapshots");
+/** 소스를 생략하면 전 소스의 이력을 준다(관리 콘솔용) — 특정 소스의 "최신 스냅샷"이
+ *  필요한 화면은 반드시 소스를 넘겨야 한다. / omitting the source lists every source's
+ *  history; callers that need one source's latest snapshot must pass it. */
+export function fetchSnapshots(
+  sourceId: number | null = null,
+): Promise<{ items: SnapshotSummary[] }> {
+  return getJson(withSourceParam("/api/snapshots", sourceId));
 }
 
 export interface ParseStats {

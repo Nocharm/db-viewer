@@ -104,6 +104,47 @@ def allow_preview(migrated_engine):
     return allow
 
 
+@pytest.fixture()
+def newer_non_mssql_snapshot(migrated_engine):
+    """비-MSSQL 소스 + 그 소스의 스냅샷 1건을 만든다 — 전역 최신 스냅샷이 된다.
+
+    스냅샷 id는 전 소스 공통 시퀀스라, PG/SQLite 소스를 한 번이라도 수집하면 소스를 안 건
+    "최신 ready 스냅샷" 조회가 조용히 그쪽을 가리킨다. MSSQL 전용 기능이 그 상황에서도
+    자기 소스를 보는지 확인하려면 MSSQL 카탈로그를 적재한 **뒤에** 호출해야 한다.
+    반환: (source_id, object_id, column_id).
+    """
+    from datetime import UTC, datetime
+
+    from app.models import CatalogColumn, CatalogObject, DataSource, Snapshot
+
+    def add(name: str = "svca") -> tuple[int, int, int]:
+        now = datetime.now(UTC)
+        with sessionmaker(bind=migrated_engine)() as db:
+            source = DataSource(name=name, engine="postgres", access_mode="direct",
+                                host="h", port=5432, database="d", username="u",
+                                is_enabled=True, is_managed=False,
+                                created_at=now, updated_at=now)
+            db.add(source)
+            db.flush()
+            snapshot = Snapshot(collected_at=now, source_db=name, status="ready",
+                                data_source_id=source.id)
+            db.add(snapshot)
+            db.flush()
+            obj = CatalogObject(snapshot_id=snapshot.id, schema="public",
+                                name="PG_ONLY", type="table", object_id=1,
+                                dmv_unresolved=False)
+            db.add(obj)
+            db.flush()
+            column = CatalogColumn(object_id=obj.id, name="PG_ID", ordinal=1,
+                                   data_type="int", max_length=4, is_nullable=False,
+                                   is_pk=True, is_computed=False)
+            db.add(column)
+            db.commit()
+            return source.id, obj.id, column.id
+
+    return add
+
+
 @pytest.fixture(scope="session")
 def load_fixture(fixture_dir):
     def load(name: str) -> dict:

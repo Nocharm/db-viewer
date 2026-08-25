@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.adapters.llm_ai import embed_texts
 from app.config import Settings
 from app.models import AiEmbedding, AiJob, AiSummary, CatalogColumn, CatalogObject, Snapshot
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 
 
 def build_embedding_text(qname: str, column_names: list[str],
@@ -31,8 +32,15 @@ def compute_source_hash(text: str, model: str) -> str:
 
 
 def run_embed_index(db: Session, job: AiJob, settings: Settings) -> dict:
+    # AI 제안·임베딩은 사내 MSSQL 전용이다(스펙 비목표) — 스냅샷 id가 전 소스 공통
+    # 시퀀스라 소스를 안 걸면 나중에 수집된 PG/SQLite 스냅샷이 "최신"이 되어, qname을
+    # 키로 쓰는 ai_embeddings에 다른 소스의 qname이 섞인다(조회 쪽 ai.py는 기본 소스로
+    # 해석하므로 인덱스와 조회가 어긋난다). 다른 소스로 일반화하지 말 것.
+    # / AI features are MSSQL-only; without this filter a newer non-MSSQL snapshot would
+    #   fill the qname-keyed embedding table with another source's identifiers
     snapshot = db.execute(
-        select(Snapshot).where(Snapshot.status == "ready")
+        select(Snapshot).where(Snapshot.status == "ready",
+                               Snapshot.data_source_id == MANAGED_MSSQL_SOURCE_ID)
         .order_by(Snapshot.id.desc()).limit(1)
     ).scalar_one_or_none()
     if snapshot is None:

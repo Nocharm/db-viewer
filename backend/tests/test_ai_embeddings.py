@@ -107,6 +107,32 @@ def test_embed_job_cap_rejects_over_2000():
         Settings(_env_file=None, embed_job_cap=2001)
 
 
+def test_run_embed_index_indexes_the_mssql_snapshot_not_the_newest(
+    client, migrated_engine, load_fixture, fake_embed, newer_non_mssql_snapshot,
+):
+    """AI는 사내 MSSQL 전용이다 — 나중에 수집된 다른 소스가 '최신'이어도 그쪽을 담지 않는다.
+
+    ai_embeddings는 qname이 키라 소스 축이 없다. 소스를 안 걸면 PG 스냅샷이 최신이 되어
+    PG qname이 이 표에 들어가는데, 조회(ai.py)는 기본 소스로 해석하므로 인덱스와 조회가
+    조용히 어긋난다.
+    """
+    # Arrange: MSSQL 카탈로그 적재 뒤 더 새로운 PG 스냅샷
+    _seed(client, load_fixture)
+    newer_non_mssql_snapshot()
+    session_factory = sessionmaker(bind=migrated_engine)
+
+    # Act
+    with session_factory() as db:
+        result = run_embed_index(db, _job(db), _settings())
+        db.commit()
+
+    # Assert
+    with session_factory() as db:
+        qnames = {e.object_qname for e in db.execute(select(AiEmbedding)).scalars()}
+    assert result["indexed"] > 0
+    assert "public.PG_ONLY" not in qnames
+
+
 def test_run_embed_index_skips_unchanged_hash_on_rerun(
     client, migrated_engine, load_fixture, fake_embed,
 ):

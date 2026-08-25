@@ -16,6 +16,7 @@ from app.config import Settings
 from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import ScanJob, ScanResult, Snapshot
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.catalog_queries import load_scoring_columns
 from app.services.observations import record_observation
 
@@ -80,8 +81,16 @@ def _execute_scan(
     with session_factory() as db:
         job = db.get(ScanJob, job_id)
         src_ref = _to_ref(job.src_object, job.src_column)
+        # 관계 탐색은 "FK가 13개뿐인 레거시 MSSQL" 전용 기계다(스펙 비목표) — 스냅샷 id는
+        # 전 소스 공통 시퀀스라 소스를 안 걸면 나중에 수집된 PG/SQLite 스냅샷이 "최신"이
+        # 되어, 잡의 src_object가 그 스냅샷에 없다는 이유로 기능이 통째로 죽는다.
+        # 여기를 다른 소스로 일반화하지 말 것 — 검증기 자체가 n8n/MSSQL 전용이다.
+        # / relation scanning is MSSQL-only by design; snapshot ids are one global
+        #   sequence, so without this filter a newer non-MSSQL snapshot wins and the
+        #   feature dies with "source column ... not in latest snapshot"
         snapshot = db.execute(
-            select(Snapshot).where(Snapshot.status == "ready")
+            select(Snapshot).where(Snapshot.status == "ready",
+                                   Snapshot.data_source_id == MANAGED_MSSQL_SOURCE_ID)
             .order_by(Snapshot.id.desc()).limit(1)
         ).scalar_one_or_none()
         if snapshot is None:
