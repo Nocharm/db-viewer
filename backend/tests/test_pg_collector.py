@@ -4,7 +4,7 @@
 import os
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 
 from app.sources.pg_collector import collect_postgres, map_oids_to_object_ids
 
@@ -23,9 +23,14 @@ def test_maps_oids_to_sequential_object_ids():
     assert mapping == {4294967290: 1, 17: 2, 999: 3}
 
 
-@requires_pg
-def test_collects_tables_columns_and_fks():
-    # Arrange
+@pytest.fixture()
+def probe_catalog() -> Engine:
+    """collect_probe 스키마 생성/정리 — teardown은 assertion 실패에도 반드시 돈다.
+
+    parent2/child2는 자연 컬럼 순서(x,y / a,b)와 반대로 FK를 걸어(b,a)->(y,x) 둔다 —
+    ARRAY(...) 서브쿼리 안의 ORDER BY u.ord가 빠지면 우연히 맞는 순서가 나오기 어렵게
+    함정을 드러내려는 의도.
+    """
     engine = create_engine(PG_URL)
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS collect_probe CASCADE"))
@@ -37,16 +42,31 @@ def test_collects_tables_columns_and_fks():
                           " parent_id integer REFERENCES collect_probe.parent(id))"))
         conn.execute(text("CREATE VIEW collect_probe.v_child AS "
                           "SELECT id FROM collect_probe.child"))
+        conn.execute(text("CREATE TABLE collect_probe.parent2 "
+                          "(x integer, y integer, PRIMARY KEY (x, y))"))
+        conn.execute(text("CREATE TABLE collect_probe.child2 "
+                          "(a integer, b integer, "
+                          " FOREIGN KEY (b, a) REFERENCES collect_probe.parent2(y, x))"))
+    yield engine
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS collect_probe CASCADE"))
+
+
+@requires_pg
+def test_collects_tables_columns_and_fks(probe_catalog: Engine):
+    # Arrange: probe_catalog 픽스처가 스키마를 만들고 테스트 종료 시(실패 포함) 지운다
 
     # Act
-    payload = collect_postgres(engine, "probe")
+    payload = collect_postgres(probe_catalog, "probe")
 
     # Assert
     names = {(o.schema_name, o.name, o.type) for o in payload.objects
              if o.schema_name == "collect_probe"}
     assert names == {("collect_probe", "parent", "table"),
                      ("collect_probe", "child", "table"),
-                     ("collect_probe", "v_child", "view")}
+                     ("collect_probe", "v_child", "view"),
+                     ("collect_probe", "parent2", "table"),
+                     ("collect_probe", "child2", "table")}
 
     label = next(c for c in payload.columns
                  if c.name == "label" and c.object_id in
@@ -55,7 +75,7 @@ def test_collects_tables_columns_and_fks():
     assert label.max_length == 50
     assert label.is_nullable is True
 
-    fk = next(f for f in payload.foreign_keys)
+    fk = next(f for f in payload.foreign_keys if len(f.columns) == 1)
     assert [(p.src_column, p.tgt_column) for p in fk.columns] == [("parent_id", "id")]
 
     view = next(o for o in payload.objects if o.name == "v_child")
@@ -63,5 +83,22 @@ def test_collects_tables_columns_and_fks():
                       if d.object_id == view.object_id)
     assert "child" in (definition.definition or "")
 
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA collect_probe CASCADE"))
+
+@requires_pg
+def test_composite_fk_and_pk_preserve_column_order(probe_catalog: Engine):
+    # Arrange: probe_catalog가 parent2(x,y PK)/child2((b,a)->(y,x) FK)를 만든다 — FK 선언
+    # 순서가 테이블의 자연 컬럼 순서와 반대라 내부 ORDER BY 누락 시 정렬이 깨지기 쉽다
+
+    # Act
+    payload = collect_postgres(probe_catalog, "probe")
+
+    # Assert: FK 페어가 선언 순서(b,a)->(y,x) 그대로 나온다 — 정렬이 깨지면
+    # [("a","x"), ("b","y")]로 뒤집혀 실패한다
+    fk2 = next(f for f in payload.foreign_keys if len(f.columns) == 2)
+    assert [(p.src_column, p.tgt_column) for p in fk2.columns] == [("b", "y"), ("a", "x")]
+
+    # Assert: PK 컬럼도 선언 순서(x, y) 그대로 — _KEYS_SQL이 같은 ARRAY(...ORDER BY) 구조
+    pk2 = next(k for k in payload.key_constraints
+               if k.type == "pk" and k.object_id in
+               {o.object_id for o in payload.objects if o.name == "parent2"})
+    assert pk2.columns == ["x", "y"]
