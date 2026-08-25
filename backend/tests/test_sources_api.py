@@ -52,8 +52,9 @@ def test_create_source_never_returns_the_password(client, monkeypatch):
     assert res.status_code == 200
     assert "hunter2" not in res.text
     assert "password" not in res.json()
-    listed = client.get("/api/sources", headers=HEADERS).json()["items"]
-    assert "hunter2" not in str(listed)
+    # 원문 응답 텍스트로 확인 — 파싱된 items만 보면 그 바깥(secret_key_configured,
+    # 나중에 추가될 최상위 필드)이 안 걸린다 (리뷰 M6)
+    assert "hunter2" not in client.get("/api/sources", headers=HEADERS).text
     get_settings.cache_clear()
 
 
@@ -279,19 +280,29 @@ def test_delete_clears_cached_connection_engine(client, monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
-def test_disabled_source_refuses_connection_test(client, monkeypatch):
-    # Arrange: 비활성화하고 연결시도 — 조용히 동작하지 않고 명확히 거부한다 (이월 3)
+def test_disabled_source_allows_connection_test(client, monkeypatch, tmp_path):
+    # Arrange: 비활성화한 소스 — 정상 운영 순서는 "자격증명을 고치고 → 테스트로
+    # 확인하고 → 재활성화"라 테스트 자체를 막으면 확인 없이 먼저 켜야 하는 반대
+    # 순서를 강제하게 된다 (리뷰 I1). 미리보기·수집 트리거는 여전히 막힌다 —
+    # 이 테스트는 /test만 예외임을 확인한다
     _configure(monkeypatch)
+    db_path = tmp_path / "disabled-but-testable.db"
+    sqlite3.connect(str(db_path)).close()
     created = client.post("/api/sources", headers=HEADERS, json={
-        "name": "svcj", "engine": "sqlite", "file_path": "/tmp/does-not-matter.db"}).json()
+        "name": "svcj", "engine": "sqlite", "file_path": str(db_path)}).json()
     client.patch(f"/api/sources/{created['id']}", headers=HEADERS,
                 json={"is_enabled": False})
 
     # Act
     res = client.post(f"/api/sources/{created['id']}/test", headers=HEADERS)
+    collect_res = client.post("/api/collect/catalog", headers=HEADERS,
+                              json={"source_id": created["id"]})
 
-    # Assert: 연결을 실제로 시도하지도 않고 막힌다 (404가 아니라 409 — 소스는 존재)
-    assert res.status_code == 409
+    # Assert: 연결 테스트는 통과(200) — 실접속을 실제로 시도해 성공한다.
+    # 수집 트리거는 여전히 409 — 라이브 연결이 실제로 걸리는 경로만 막힌다
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+    assert collect_res.status_code == 409
     get_settings.cache_clear()
 
 
@@ -386,4 +397,128 @@ def test_connection_test_failure_does_not_leak_driver_text(client, monkeypatch):
     entry = next(item for item in listed if item["id"] == created["id"])
     assert entry["last_error"] == "OperationalError"
     assert "does-not-exist-xyz-12345" not in str(entry["last_error"])
+    get_settings.cache_clear()
+
+
+def test_validation_error_redacts_non_string_password(client, monkeypatch):
+    # Arrange: 리뷰 C1 — 422 핸들러가 jsonable_encoder(exc.errors())를 그대로 실어
+    # pydantic이 거부한 원본값(input)을 되비춘다. 숫자 비밀번호(프론트가 Number(input)을
+    # 하거나 httpie `password:=`를 쓸 때의 현실적 트리거)와 리스트 둘 다 확인한다
+    _configure(monkeypatch)
+
+    # Act
+    list_res = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcp", "engine": "postgres", "host": "h", "port": 5432,
+        "database": "d", "username": "u", "password": ["hunter2"]})
+    numeric_res = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcq", "engine": "postgres", "host": "h", "port": 5432,
+        "database": "d", "username": "u", "password": 12345678})
+
+    # Assert
+    assert list_res.status_code == 422
+    assert "hunter2" not in list_res.text
+    assert numeric_res.status_code == 422
+    assert "12345678" not in numeric_res.text
+    get_settings.cache_clear()
+
+
+def test_patch_validation_error_redacts_password_too(client, monkeypatch):
+    # Arrange: C1은 password: str | None을 받는 두 엔드포인트(POST/PATCH) 모두에서
+    # 도달 가능하다고 지적했다 — PATCH 경로도 확인한다
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcs", "engine": "sqlite", "file_path": "/tmp/s.db"}).json()
+
+    # Act
+    res = client.patch(f"/api/sources/{created['id']}", headers=HEADERS,
+                       json={"password": 999999})
+
+    # Assert
+    assert res.status_code == 422
+    assert "999999" not in res.text
+    get_settings.cache_clear()
+
+
+def test_validation_error_keeps_diagnostic_value_for_non_secret_fields(client, monkeypatch):
+    # Arrange: 리댁션이 password 필드만 지워야 한다 — port 같은 다른 필드의 진단값은
+    # 그대로 남아야 오류 원인을 알 수 있다
+    _configure(monkeypatch)
+
+    # Act
+    res = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svct", "engine": "postgres", "host": "h", "port": "not-a-port",
+        "database": "d", "username": "u"})
+
+    # Assert
+    assert res.status_code == 422
+    assert "not-a-port" in res.text
+    get_settings.cache_clear()
+
+
+def test_disabled_source_test_still_blocks_collect_and_preview(client, monkeypatch):
+    # Arrange: I1 수정(get_source allow_disabled=True)이 /test에만 적용되고 수집
+    # 트리거는 여전히 막히는지 명시적으로 재확인 — test_disabled_source_blocks_collect_trigger
+    # 와 같은 취지를 이 테스트 파일 안에서 중복 확인해 회귀를 잡는다
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcu", "engine": "sqlite", "file_path": "/tmp/u.db"}).json()
+    client.patch(f"/api/sources/{created['id']}", headers=HEADERS,
+                json={"is_enabled": False})
+
+    # Act
+    res = client.post("/api/collect/catalog", headers=HEADERS,
+                      json={"source_id": created["id"]})
+
+    # Assert
+    assert res.status_code == 409
+    get_settings.cache_clear()
+
+
+def test_test_endpoint_rejects_unsupported_engine_combo_cleanly(client, monkeypatch, migrated_engine):
+    # Arrange: direct 소스는 postgres/sqlite만 API로 만들 수 있지만, direct + mssql
+    # 조합은 DB를 직접 편집하면 여전히 도달 가능하다 (리뷰 M3). get_sa_engine이
+    # UnsupportedSource를 올리는데 그게 예전엔 except 튜플 밖이라 500이 났다
+    from datetime import UTC, datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import DataSource
+
+    _configure(monkeypatch)
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        source = DataSource(name="weird-combo", engine="mssql", access_mode="direct",
+                            is_enabled=True, is_managed=False,
+                            created_at=now, updated_at=now)
+        db.add(source)
+        db.commit()
+        sid = source.id
+
+    # Act
+    res = client.post(f"/api/sources/{sid}/test", headers=HEADERS)
+
+    # Assert: 500이 아니라 명확한 400
+    assert res.status_code == 400
+    get_settings.cache_clear()
+
+
+def test_test_endpoint_records_last_error_when_key_missing(client, monkeypatch):
+    # Arrange: 소스는 키가 있을 때 비밀번호와 함께 만들고, 그 뒤 키를 빼고 테스트한다
+    # (리뷰 M4) — CryptoNotConfigured 분기가 last_error를 안 건드리면 키를 돌린 뒤에도
+    # 목록이 낡은 "정상" 상태를 계속 보여준다
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcv", "engine": "postgres", "host": "h", "port": 5432,
+        "database": "d", "username": "u", "password": "p"}).json()
+    monkeypatch.setenv("SOURCE_SECRET_KEY", "")
+    get_settings.cache_clear()
+
+    # Act
+    res = client.post(f"/api/sources/{created['id']}/test", headers=HEADERS)
+
+    # Assert
+    assert res.status_code == 503
+    listed = client.get("/api/sources", headers=HEADERS).json()["items"]
+    entry = next(item for item in listed if item["id"] == created["id"])
+    assert entry["last_error"] == "CryptoNotConfigured"
     get_settings.cache_clear()

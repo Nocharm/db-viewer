@@ -14,7 +14,7 @@ from app.adapters.collect_runner import CollectRunner
 from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
-from app.models import CollectJob, Snapshot
+from app.models import CollectJob, DataSource, Snapshot
 
 router = APIRouter(
     prefix="/api/collect", tags=["collect"], dependencies=[Depends(require_sysadmin)]
@@ -76,15 +76,20 @@ def _create_job(db: Session, mode: str, triggered_by: str) -> CollectJob:
 
 def _is_direct_source_job(db: Session, job: CollectJob) -> bool:
     """이 잡의 스냅샷이 direct 소스에 속하는가 — direct 소스는 뷰 의존 단계가 없어
-    run_catalog가 catalog_done을 거치지 않고 곧장 ready로 끝난다(direct_runner.py)."""
+    run_catalog가 catalog_done을 거치지 않고 곧장 ready로 끝난다(direct_runner.py).
+
+    registry.get_source가 아니라 db.get을 직접 쓴다 — 여기는 access_mode만 읽는
+    상태 조회이지 실접속이 아니다. get_source를 쓰면 잡 완료 후 소스가 비활성화됐을 때
+    이 멱등 조회까지 409로 막혀, 이미 끝난 잡의 상태를 물어보는 것뿐인 호출이 거짓
+    실패를 내게 된다(Task 10에서 없앤 거짓 409가 다른 경로로 돌아오는 셈).
+    """
     if job.snapshot_id is None:
         return False
-    from app.sources.registry import get_source
-
     snapshot = db.get(Snapshot, job.snapshot_id)
     if snapshot is None:
         return False
-    return get_source(db, snapshot.data_source_id).access_mode == "direct"
+    source = db.get(DataSource, snapshot.data_source_id)
+    return source is not None and source.access_mode == "direct"
 
 
 def _mark_failed(session_factory: sessionmaker, job_id: int, error: str) -> None:

@@ -33,6 +33,17 @@ from app.api import (
 )
 from app.auth import require_ingest_access, require_whitelisted
 
+# 422 상세에 원문 그대로 실리면 안 되는 요청 필드 — pydantic 검증 오류는 거부된 값
+# (exc.errors()[i]["input"])을 그대로 담아서, 소스 생성/수정처럼 비밀번호를 받는
+# 엔드포인트에서 타입 오류(문자열 대신 숫자·리스트)만 나도 비밀번호가 새 나간다
+SECRET_FIELDS = {"password"}
+
+
+def _redact_validation_error(err: dict) -> dict:
+    """비밀 필드의 거부값만 지운다 — port·engine 같은 다른 필드의 진단값은 남긴다."""
+    loc = {str(part) for part in err.get("loc", ())}
+    return {**err, "input": "***"} if SECRET_FIELDS & loc else err
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="db-viewer")
@@ -95,11 +106,12 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = [_redact_validation_error(e) for e in exc.errors()[:5]]
         return JSONResponse(
             status_code=422,
             content={"error": {
                 "code": 422, "message": "request validation failed",
-                "context": jsonable_encoder(exc.errors()[:5]),
+                "context": jsonable_encoder(errors),
             }},
         )
 

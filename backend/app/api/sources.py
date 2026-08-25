@@ -16,7 +16,7 @@ from app.db import get_db
 from app.models import AuditLog, DataSource, PreviewAllowlist, SchemaCategory, Snapshot
 from app.sources.connection import clear_sa_engine, get_sa_engine
 from app.sources.crypto import CryptoNotConfigured, encrypt_secret, is_crypto_configured
-from app.sources.registry import get_source, list_sources
+from app.sources.registry import UnsupportedSource, get_source, list_sources
 
 logger = logging.getLogger(__name__)
 
@@ -203,26 +203,42 @@ def delete_data_source(
 def test_data_source(source_id: int, db: Session = Depends(get_db)) -> dict:
     """실제로 붙은 DB의 이름·버전을 회신한다 — 흔한 컨테이너명 오접속을 눈으로 잡는다.
 
-    get_source를 거친다 — 존재하지 않거나(404) 비활성(409, 이월 3)이면 실제 접속
-    시도 전에 걸러진다.
+    get_source(allow_disabled=True)를 거친다 — 존재하지 않으면(404) 걸러지지만,
+    비활성 소스는 여기서 막지 않는다: "자격증명을 고치고 → 테스트로 확인하고 →
+    재활성화"가 정상 운영 순서라, 테스트까지 막으면 확인 없이 먼저 켜야 하는 반대
+    순서를 강제하게 된다. 라이브 연결이 실제로 걸리는 미리보기·수집 트리거는 이
+    예외 없이 여전히 막힌다(get_source 기본값).
     """
-    source = get_source(db, source_id)
+    source = get_source(db, source_id, allow_disabled=True)
     if source.access_mode != "direct":
         raise HTTPException(400, {"message": "this source is served through n8n",
                                   "context": {"source_id": source_id}})
-    probe = ("SELECT version() AS version, current_database() AS database"
-             if source.engine == "postgres"
-             else "SELECT sqlite_version() AS version, 'main' AS database")
+    if source.engine == "postgres":
+        probe = "SELECT version() AS version, current_database() AS database"
+    elif source.engine == "sqlite":
+        probe = "SELECT sqlite_version() AS version, 'main' AS database"
+    else:
+        # access_mode='direct'인데 엔진이 postgres/sqlite가 아닌 행 — API로는 못 만들지만
+        # DB를 직접 편집하면 도달 가능. 붙어보지도 않고 여기서 명확히 거부한다
+        raise HTTPException(400, {"message": "no connection test for this engine",
+                                  "context": {"source_id": source_id,
+                                              "engine": source.engine}})
     started = time.monotonic()
     now = datetime.now(UTC)
     try:
         with get_sa_engine(source).connect() as conn:
             row = conn.execute(text(probe)).mappings().one()
-    except CryptoNotConfigured as e:
-        # 소스 장애가 아니라 이쪽 설정 문제(키 교체·미설정) — 메시지가 고정 문구뿐이라
-        # str(e)를 그대로 노출해도 자격증명이 섞이지 않는다 (objects.py와 같은 관용)
+    except (CryptoNotConfigured, UnsupportedSource) as e:
+        # 소스 장애가 아니라 이쪽 설정 문제(키 교체·미설정) 또는 조합 자체가 지원 안 됨 —
+        # 메시지가 고정 문구뿐이라 str(e)를 그대로 노출해도 자격증명이 섞이지 않는다
+        # (objects.py와 같은 관용). last_error도 갱신해 콘솔이 "마지막으로 성공"인 채
+        # 낡지 않게 한다 — DBAPIError 분기와 같은 이유(이 함수에서 이미 한 번 겪은 버그)
+        error_type = type(e).__name__
         logger.warning("source connection test misconfigured",
-                       extra={"source_id": source.id, "error_type": type(e).__name__})
+                       extra={"source_id": source.id, "error_type": error_type})
+        source.last_error = error_type
+        source.updated_at = now
+        db.commit()
         raise HTTPException(503, {"message": str(e),
                                   "context": {"source": source.name}}) from e
     except (DBAPIError, SATimeoutError, DisconnectionError) as e:
