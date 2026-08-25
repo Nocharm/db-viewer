@@ -146,11 +146,43 @@ export function updateDataSource(
   return patchJson(`/api/sources/${id}`, input, { "X-Preview-Password": password });
 }
 
-/** is_managed거나 스냅샷·정책 행이 남아있으면 409(컨텍스트에 각 개수가 실려온다). */
-export function deleteDataSource(
+export interface DeleteBlockedContext {
+  snapshots?: number;
+  preview_allowlist?: number;
+  schema_categories?: number;
+}
+
+/** 삭제 차단(409) 안내 문구를 조립한다 — 백엔드는 context에 개수를 실어 보내는데 공용
+ * handle()은 message만 남기고 context를 버린다. 그 개수가 없으면 "무엇이 얼마나 막고
+ * 있는지"를 안내할 수 없어, deleteDataSource만 이 함수로 직접 조립한다. */
+export function formatDeleteBlockedMessage(
+  context: DeleteBlockedContext | null | undefined,
+  fallback: string,
+): string {
+  if (!context) return fallback;
+  const counts = [
+    context.snapshots ? `스냅샷 ${context.snapshots}건` : null,
+    context.preview_allowlist ? `허용 목록 ${context.preview_allowlist}건` : null,
+    context.schema_categories ? `카테고리 ${context.schema_categories}건` : null,
+  ].filter((part): part is string => part !== null);
+  if (counts.length === 0) return fallback;
+  return `${counts.join("·")}이 이 소스를 참조하고 있어 삭제할 수 없습니다 — `
+    + "비활성화하거나 먼저 정리하세요.";
+}
+
+/** is_managed거나 스냅샷·정책 행이 남아있으면 409 — 공용 handle()을 거치지 않고 직접
+ * 응답을 읽어 context의 개수를 메시지에 싣는다(공유 헬퍼는 그대로 둔다). */
+export async function deleteDataSource(
   id: number, password: string,
 ): Promise<{ id: number; removed: boolean }> {
-  return deleteJson(`/api/sources/${id}`, { "X-Preview-Password": password });
+  const res = await fetch(`/api/sources/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(), "X-Preview-Password": password },
+  });
+  if (res.ok) return res.json();
+  const body = await res.json().catch(() => null);
+  const fallback = body?.error?.message ?? `request failed (${res.status})`;
+  throw new Error(formatDeleteBlockedMessage(body?.error?.context, fallback));
 }
 
 /** 연결 테스트 — sysadmin이면 비밀번호 없이 호출. 비활성 소스도 테스트 가능(의도적).

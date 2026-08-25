@@ -262,13 +262,17 @@ export function DataSourcePanel() {
             )}
 
             <div className="flex flex-wrap gap-2">
-              <button
-                className="icon-button"
-                onClick={() => handleTest(item)}
-                data-testid={`DataSourcePanel-testButton-${item.id}`}
-              >
-                연결 테스트
-              </button>
+              {/* n8n 경유 소스(관리형 사내 MSSQL)는 access_mode!="direct"라 백엔드가 테스트를
+                  항상 400으로 거부한다 — 눌러도 절대 성공 못 하는 버튼을 아예 안 보여준다. */}
+              {!item.is_managed && (
+                <button
+                  className="icon-button"
+                  onClick={() => handleTest(item)}
+                  data-testid={`DataSourcePanel-testButton-${item.id}`}
+                >
+                  연결 테스트
+                </button>
+              )}
               {!item.is_managed && editingId !== item.id && (
                 <>
                   <button
@@ -384,7 +388,12 @@ export function DataSourcePanel() {
                 </button>
                 <button
                   className="icon-button"
-                  onClick={() => setEditingId(null)}
+                  onClick={() => {
+                    // 폼도 같이 비운다 — 안 그러면 취소한 접속 비밀번호가 다음 편집까지
+                    // 컴포넌트 상태에 남는다(렌더·전송·로깅은 안 되지만 불필요한 잔류).
+                    setEditingId(null);
+                    setEditForm(EMPTY_FORM);
+                  }}
                   data-testid={`DataSourcePanel-cancelEditButton-${item.id}`}
                 >
                   취소
