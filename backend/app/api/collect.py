@@ -1,6 +1,7 @@
 """Button-triggered collection — stepwise or full, 202 + polling. / 버튼 트리거 수집 API."""
 
 import json
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -15,6 +16,8 @@ from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
 from app.models import CollectJob, DataSource, Snapshot
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/collect", tags=["collect"], dependencies=[Depends(require_sysadmin)]
@@ -102,11 +105,27 @@ def _mark_failed(session_factory: sessionmaker, job_id: int, error: str) -> None
             db.commit()
 
 
+def _record_step_failure(
+    session_factory: sessionmaker, job_id: int, step: str, e: Exception,
+) -> None:
+    """예외 종류만 잡에 남기고 전문은 로그로 / job keeps the type, the log keeps the text.
+
+    `collect_jobs.error`는 API 응답(`_job_payload`)을 거쳐 관리 화면에 그대로 렌더된다 —
+    이 경로는 복호화된 자격증명을 지역변수로 들고 있어서, 드라이버 원문이 섞이면
+    접속 계정·파일경로가 화면까지 나간다. sources.py·objects.py의 502 핸들러와 같은 관용.
+    """
+    error_type = type(e).__name__
+    logger.warning("collect step failed",
+                   extra={"job_id": job_id, "step": step, "error_type": error_type},
+                   exc_info=True)
+    _mark_failed(session_factory, job_id, f"{step} step failed: {error_type}")
+
+
 def _run_catalog_step(session_factory: sessionmaker, runner: CollectRunner, job_id: int) -> None:
     try:
         runner.run_catalog(job_id)
     except Exception as e:  # 배경 작업 — 실패는 잡에 격리 / isolate failures on the job
-        _mark_failed(session_factory, job_id, f"catalog step failed: {e}")
+        _record_step_failure(session_factory, job_id, "catalog", e)
 
 
 def _run_deps_step(
@@ -115,7 +134,7 @@ def _run_deps_step(
     try:
         runner.run_view_deps(job_id, snapshot_id)
     except Exception as e:
-        _mark_failed(session_factory, job_id, f"view-deps step failed: {e}")
+        _record_step_failure(session_factory, job_id, "view-deps", e)
 
 
 def _run_full(session_factory: sessionmaker, runner: CollectRunner, job_id: int) -> None:
@@ -123,7 +142,7 @@ def _run_full(session_factory: sessionmaker, runner: CollectRunner, job_id: int)
     try:
         runner.run_catalog(job_id)
     except Exception as e:
-        _mark_failed(session_factory, job_id, f"catalog step failed: {e}")
+        _record_step_failure(session_factory, job_id, "catalog", e)
         return
 
     deadline = time.monotonic() + CHAIN_TIMEOUT

@@ -79,7 +79,12 @@ def test_runner_failure_marks_job_failed(cclient):
     res = cclient.post("/api/collect/catalog", json={})
     job = cclient.get(f"/api/collect/jobs/{res.json()['job_id']}").json()
     assert job["stage"] == "failed"
-    assert "boom" in job["error"]
+    # 예외 종류는 남고 원문은 안 남는다 — 이 값은 API 응답을 거쳐 관리 화면에 그대로
+    # 렌더되는데, 수집 경로는 복호화된 자격증명을 들고 있다 (전문은 로그에만)
+    # / the type survives, the message text does not: this string is rendered in the admin
+    #   UI and the collect path holds a decrypted credential
+    assert "RuntimeError" in job["error"]
+    assert "boom" not in job["error"]
 
 
 def test_jobs_list_recent_first(cclient):
