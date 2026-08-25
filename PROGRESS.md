@@ -8,6 +8,7 @@
 ## 2026-08-25
 
 - **멀티 소스 DB 조회 설계 확정** (`docs/superpowers/specs/2026-08-25-multi-source-db-design.md`). 같은 71번 서버의 다른 도커 서비스 DB(PostgreSQL/SQLite)를 db-viewer에서 조회하기 위한 설계. 네 갈림길 결정: ① 범위는 탐색·미리보기·FK ERD까지 — 뷰 lineage·관계 온디맨드 발견·AI는 "FK 13개짜리 레거시 MSSQL"용 기계라 비-MSSQL에는 안 얹는다, ② 신규 소스만 백엔드 직결(psycopg·stdlib sqlite3 — 새 드라이버 0), 사내 MSSQL은 n8n 경유 유지, ③ 소스 등록은 관리자 UI + Fernet 암호화 저장(키 없으면 등록 자체 503), ④ 네트워크는 **B′ — 서비스당 전용 브리지 네트워크**. 핵심은 기존 `CatalogPayload` ingest 계약을 엔진별 수집기가 채우게 해 하류(lineage·ERD·검색·정책)를 통째로 재사용하는 것. 필수 변경 1건: `preview_allowlist` PK가 `schema` 단독이라 소스가 늘면 A서비스 `public` 허용이 B서비스 `public`까지 여는 사고 — `(data_source_id, schema)`로 확장한다.
+- **멀티 소스 구현 계획 + 담당자 전달 문서** (`docs/superpowers/plans/2026-08-25-multi-source-db.md`, `docs/handoff/service-owner-prompt.md`). 15개 태스크 5페이즈 — 페이즈1(소스 축 도입)은 화면 무변경이 성공 기준이다. 계획 작성 중 스펙 오류 1건 정정: PG `pg_class.oid`는 unsigned 32bit라 `objects.object_id`(int4)를 넘길 수 있어 SQLite와 같은 **스냅샷 내 일련번호**로 사상한다. 발견한 단순화: PG/SQLite는 미리보기 용도에서 문법이 같고(`"`인용·LIMIT·CAST AS TEXT·LIKE ESCAPE) SQLAlchemy `text()` named 파라미터를 쓰면 paramstyle 차이도 없어 **SQL 빌더가 하나로 족하다**. 담당자 문서는 ①값표 → ②볼륨 사전확인(없으면 중단) → ③Claude Code 프롬프트 → ④읽기전용 계정 → ⑤보고양식 구성.
 - **네트워크 대안 검토 기록** — A안(대상 기존 네트워크에 db-viewer가 합류)은 대상 무수정이지만 흔한 컨테이너명(`postgres`/`db`) DNS 충돌 + 대상 `compose down` 시 db-viewer 기동 불가. B안(공용 네트워크 1개)은 후자를 풀지만 서비스 간 격리를 깬다. B′는 대상 수정량이 B와 같으면서 둘 다 없앤다. 기존 subnet(172.36~46)·db-viewer(172.48)은 무변경, 신규는 172.50.x.0/24.
 
 ## 2026-08-11

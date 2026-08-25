@@ -144,7 +144,7 @@ class TablePreview(Protocol):
 
 | CatalogPayload | 출처 |
 |---|---|
-| `object_id` | `pg_class.oid` |
+| `object_id` | **스냅샷 내 일련번호** (SQLite와 동일). 수집 중에만 `oid → 일련번호` 사전을 들고 제약을 해석한다 |
 | `schema` / `name` | `pg_namespace.nspname` / `pg_class.relname` |
 | `type` | `relkind IN ('r','p')` → `table`, `('v','m')` → `view` |
 | `row_count` | `pg_class.reltuples::bigint` (음수면 NULL — 미분석) |
@@ -161,6 +161,11 @@ class TablePreview(Protocol):
 
 `reltuples`는 추정치다 — MSSQL 쪽에서 쓰는 `dm_db_partition_stats`와 같은 성격이라
 화면 의미가 어긋나지 않는다.
+
+**`oid`를 `object_id`로 그대로 쓰지 않는 이유.** PostgreSQL의 oid는 unsigned 32bit라
+최대 4,294,967,295인데 `objects.object_id`는 `Integer`(int4, 최대 2,147,483,647)다. 오래
+돌아간 DB에서 oid가 그 선을 넘으면 적재가 터진다. 계약이 요구하는 건
+`UniqueConstraint(snapshot_id, object_id)`뿐이므로 일련번호로 충분하다.
 
 ### 2.2 SQLite 매핑
 
