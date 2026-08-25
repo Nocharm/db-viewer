@@ -24,11 +24,32 @@ from app.sources.preview_sql import quote_ident
 
 SQLITE_SCHEMA = "main"
 
+# `CatalogConstraint.name` 컬럼 길이 / the constraint-name column width.
+# SQLite에는 식별자 길이 제한이 없어 이름을 조합하면 이 폭을 넘길 수 있다. 넘기면
+# PostgreSQL(운영 DB)은 "value too long for type character varying(128)"으로 적재를 통째로
+# 실패시키고, SQLite(개발·테스트)는 조용히 받아준다 — 그래서 여기서 맞춰 넣는다.
+_CONSTRAINT_NAME_LIMIT = 128
+
 _OBJECTS_SQL = (
     "SELECT type, name, sql FROM sqlite_master "
     "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' "
     "ORDER BY type, name"
 )
+
+
+def build_fk_name(src_name: str, tgt_name: str, fk_id: int) -> str:
+    """`{src}_{tgt}_{id}` — 컬럼 폭을 넘으면 테이블명만 줄인다 / trims the table names only.
+
+    `_{id}` 접미사는 무슨 일이 있어도 남긴다: 한 테이블이 같은 대상으로 FK를 여러 개
+    걸었을 때 이름을 구분하는 유일한 조각이다. 짧은 쪽이 안 쓴 자리는 긴 쪽에 넘겨,
+    잘라야 할 때도 가능한 한 많은 원래 이름이 남고 결과가 결정론적이도록 한다.
+    """
+    suffix = f"_{fk_id}"
+    budget = _CONSTRAINT_NAME_LIMIT - len(suffix) - 1  # 두 이름 사이의 '_' 한 칸
+    src_keep = min(len(src_name), budget // 2)
+    tgt_keep = min(len(tgt_name), budget - src_keep)
+    src_keep = min(len(src_name), budget - tgt_keep)  # 대상명이 남긴 몫을 되돌려준다
+    return f"{src_name[:src_keep]}_{tgt_name[:tgt_keep]}{suffix}"
 
 
 def _collect_primary_key(columns: list[dict[str, Any]]) -> list[str]:
@@ -97,7 +118,9 @@ def collect_sqlite(sa_engine: Engine, source_db: str) -> CatalogPayload:
             if pk_columns:
                 pk_by_name[name] = pk_columns
                 key_constraints.append(RawKeyConstraint(
-                    name=f"pk_{name}", type="pk", object_id=object_id, columns=pk_columns))
+                    # PK 이름도 조합이라 같은 폭 제한을 받는다 (FK와 같은 이유)
+                    name=f"pk_{name}"[:_CONSTRAINT_NAME_LIMIT],
+                    type="pk", object_id=object_id, columns=pk_columns))
             for column in table_info:
                 columns.append(RawColumn(
                     # cid는 0-base — pg_collector의 attnum(1-base, MSSQL column_id와
@@ -126,7 +149,7 @@ def collect_sqlite(sa_engine: Engine, source_db: str) -> CatalogPayload:
         if pairs is None:
             continue  # 해석 못 한 컬럼이 하나라도 있으면 FK 전체를 버린다
         foreign_keys.append(RawForeignKey(
-            name=f"{src_name}_{tgt_name}_{group[0]['id']}",
+            name=build_fk_name(src_name, tgt_name, group[0]["id"]),
             src_object_id=object_id_by_name[src_name],
             tgt_object_id=tgt_object_id, columns=pairs,
         ))

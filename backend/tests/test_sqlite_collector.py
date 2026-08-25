@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 from sqlalchemy import Engine, create_engine
 
-from app.sources.sqlite_collector import collect_sqlite
+from app.sources.sqlite_collector import build_fk_name, collect_sqlite
 
 
 def _make_engine(tmp_path, script: str, name: str) -> Engine:
@@ -149,3 +149,28 @@ def test_excludes_internal_sqlite_objects(probe_db):
 
     # Assert
     assert not any(o.name.startswith("sqlite_") for o in payload.objects)
+
+
+def test_fk_name_fits_the_constraint_column_and_keeps_the_id_suffix():
+    """긴 테이블명 두 개를 이어도 `constraints.name`(varchar 128)을 넘지 않는다.
+
+    넘기면 PostgreSQL이 "value too long"으로 적재 전체를 실패시킨다 — SQLite는 조용히
+    받아들여 개발 중에는 보이지 않는다. `_{id}` 접미사는 같은 대상으로 걸린 FK들을
+    구분하는 유일한 조각이라 잘림에 관계없이 남아야 한다.
+    """
+    # Arrange: 각각 100자짜리 테이블명 두 개
+    src, tgt = "s" * 100, "t" * 100
+
+    # Act
+    first = build_fk_name(src, tgt, 0)
+    second = build_fk_name(src, tgt, 1)
+
+    # Assert
+    assert len(first) <= 128
+    assert first.endswith("_0") and second.endswith("_1")
+    assert first != second
+    # 짧은 쪽은 잘리지 않고, 남은 자리를 긴 쪽이 가져간다 (128 - "_7" - 사이의 "_" = 125)
+    lopsided = build_fk_name("short", "t" * 200, 7)
+    assert lopsided == f"short_{'t' * 120}_7" and len(lopsided) == 128
+    # 폭 안에 들어가는 평범한 이름은 원본 그대로
+    assert build_fk_name("child", "parent", 0) == "child_parent_0"
