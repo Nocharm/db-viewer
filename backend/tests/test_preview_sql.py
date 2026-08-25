@@ -85,3 +85,23 @@ def test_rejects_select_columns_outside_the_catalog():
     # Act / Assert
     with pytest.raises(UnknownIdentifier):
         build_preview_sql("public", "orders", ["id", "evil"], [], 20, ALLOWED)
+
+
+def test_falsy_value_numeric_zero_not_collapsed():
+    # Arrange/Act: numeric 0 is falsy but should not collapse to "" (only None does)
+    _, params = build_preview_sql(
+        "public", "orders", COLUMNS,
+        [{"column": "id", "op": "eq", "value": 0}], 20, ALLOWED)
+
+    # Assert: value should be preserved as-is (not converted to "")
+    assert params == {"p0": 0}
+
+
+def test_falsy_value_empty_string_preserved():
+    # Arrange/Act: "" should remain "" (falsy but not None)
+    _, params = build_preview_sql(
+        "public", "orders", COLUMNS,
+        [{"column": "status", "op": "contains", "value": ""}], 20, ALLOWED)
+
+    # Assert
+    assert params == {"p0": "%%"}
