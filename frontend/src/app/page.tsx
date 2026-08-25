@@ -16,6 +16,7 @@ import {
 } from "@/components/browser/PreviewSection";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
+import { SourceSelector } from "@/components/SourceSelector";
 import {
   assignSchemaCategory,
   fetchAllObjects,
@@ -31,7 +32,9 @@ import {
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import { matchTable } from "@/lib/search";
+import { readSourceId } from "@/lib/source-param";
 import type { ObjectSummary } from "@/lib/types";
+import { useDataSources } from "@/lib/use-data-sources";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 
@@ -47,6 +50,20 @@ function HomeInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tableParam = params.get("table");
+  // useSearchParams()에서 초기값을 뽑는다 — window.location은 SSR(standalone 출력)에서
+  // 없다. 이후 갱신은 history.replaceState가 맡고 이 state가 진실 소스가 된다(Next 라우터를
+  // 거치지 않는 replaceState는 useSearchParams()에 반영되지 않는다) / seeded from the
+  // router's searchParams (SSR-safe, unlike window.location); later changes go through
+  // this state directly since a plain history.replaceState never updates useSearchParams().
+  const [sourceId, setSourceId] = useState<number | null>(
+    () => readSourceId(`?${params.toString()}`),
+  );
+  const sources = useDataSources();
+  const selectedSource = sourceId !== null ? sources.find((s) => s.id === sourceId) : null;
+  // 기본 소스(null)는 항상 MSSQL — 아직 목록이 안 실렸을 때도 헤더 링크를 숨기지 않는다
+  const sourceEngine = sourceId === null ? null : (selectedSource?.engine ?? null);
+  // 검증 화면은 항상 기본(MSSQL) 소스만 본다 — 다른 소스를 보는 중엔 진입시키지 않는다
+  const isMssqlSource = sourceEngine === null || sourceEngine === "mssql";
 
   const [tables, setTables] = useState<ObjectSummary[]>([]);
   const [columnsIndex, setColumnsIndex] = useState<Map<number, string[]>>(new Map());
@@ -67,24 +84,54 @@ function HomeInner() {
   const [splitPreviewId, setSplitPreviewId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
-  const previewAllowed = usePreviewAllowlist();
+  const previewAllowed = usePreviewAllowlist(sourceId);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
+  // 카탈로그 조회 — 소스가 바뀔 때마다 다시 조회한다 / re-fetched whenever the source changes
   useEffect(() => {
-    fetchAllObjects()
+    fetchAllObjects(sourceId)
       .then((res) => setTables(res.items))
       .catch((e) => setError(e.message));
-    fetchJoinKeys()
+    fetchJoinKeys(sourceId)
       .then((res) => setJoinKeys(res.items))
       .catch(() => undefined); // 키 집계 실패는 브라우징을 막지 않는다
-    fetchColumnsIndex()
+    fetchColumnsIndex(sourceId)
       .then((res) => setColumnsIndex(
         new Map(res.items.map((item) => [item.object_id, item.columns]))))
       .catch(() => undefined); // 컬럼 검색만 비활성화될 뿐 / only degrades column search
-    fetchSchemaCategories()
+    fetchSchemaCategories(sourceId)
       .then((res) => setSchemas(res.items))
       .catch(() => undefined); // 매핑 실패 시 스키마명이 곧 카테고리 / falls back by design
+  }, [sourceId]);
+
+  // DB 필터는 개인 설정 — 마운트 시 1회만 브라우저 저장값을 불러온다(소스 전환과 무관)
+  useEffect(() => {
     setDbFilter(loadDbFilter());
+  }, []);
+
+  // 소스 전환 — 이전 소스의 선택·미리보기·필터가 새 소스에 없는 객체를 가리킬 수 있어
+  // 목록이 갱신되기 전에 먼저 지운다. dbFilter는 []로 리셋: 이전 소스의 스키마명이 새
+  // 소스에 없으면 목록이 통째로 빈 것처럼 보인다(버그로 오인하기 쉽다).
+  // / switching sources: clear anything that might point at the old source's objects
+  // before the new catalog loads; dbFilter resets to [] since a stale schema-name filter
+  // would otherwise silently empty the whole list on the new source.
+  const changeSource = useCallback((nextSourceId: number | null) => {
+    setSourceId(nextSourceId);
+    setSelected(null);
+    setDetail(null);
+    setPreviewTabs([]);
+    setActivePreviewId(null);
+    setSplitPreviewId(null);
+    setSelectedKey(null);
+    setCategory(null);
+    setDbFilter([]);
+    setError(null);
+
+    const url = new URL(window.location.href);
+    if (nextSourceId === null) url.searchParams.delete("source");
+    else url.searchParams.set("source", String(nextSourceId));
+    url.searchParams.delete("table"); // 방금 지운 선택과 URL을 맞춘다
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }, []);
 
   const changeDbFilter = useCallback((next: string[]) => {
@@ -93,11 +140,11 @@ function HomeInner() {
   }, []);
 
   const assignCategory = useCallback((schema: string, next: string) => {
-    assignSchemaCategory(schema, next)
+    assignSchemaCategory(schema, next, sourceId)
       .then((updated) => setSchemas((current) => current.map(
         (item) => (item.schema === schema ? { ...item, ...updated } : item))))
       .catch((e) => setError(e.message));
-  }, []);
+  }, [sourceId]);
 
   const categoryBySchema = useMemo<SchemaCategoryMap>(
     () => new Map(schemas.filter((s) => s.mapped).map((s) => [s.schema, s.category])),
@@ -264,8 +311,10 @@ function HomeInner() {
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
-    router.push(`/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`);
-  }, [router, selected]);
+    let url = `/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`;
+    if (sourceId !== null) url += `&source=${sourceId}`; // 지금 보던 소스 그대로 연다
+    router.push(url);
+  }, [router, selected, sourceId]);
 
   // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
   // 상한: 카테고리는 행 라벨+카운트, 목록은 검색줄+타입 칩이 min을 정하고, max는 상세가
@@ -290,13 +339,16 @@ function HomeInner() {
   };
 
   // 컬럼 클릭 → 조인 검증 페이지로 직행 — 소스 테이블·컬럼 프리필, target이 실려 오면
-  // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다
+  // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다.
+  // 검증은 항상 기본(MSSQL) 소스만 보므로, 다른 소스를 보는 중엔 엉뚱한 소스의 검증
+  // 화면으로 이어지지 않도록 조용히 막는다 / verify always targets the default source, so
+  // block the jump while browsing a non-mssql source instead of landing on the wrong data.
   const handleOpenColumn = useCallback(
     (
       columnId: number,
       target?: { qname: string; columnId: number; column: string },
     ) => {
-      if (!selected) return;
+      if (!selected || !isMssqlSource) return;
       const label = `${selected.schema}.${selected.name}`;
       let url = `/verify?src=${selected.id}&srcLabel=${encodeURIComponent(label)}`
         + `&srcCol=${columnId}`;
@@ -305,12 +357,13 @@ function HomeInner() {
       }
       router.push(url);
     },
-    [router, selected],
+    [router, selected, isMssqlSource],
   );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <AppHeader>
+      <AppHeader sourceEngine={sourceEngine}>
+        <SourceSelector value={sourceId} onChange={changeSource} />
         {error && (
           <span className="text-sm" style={{ color: "var(--error)" }}
                 data-testid="Home-errorText">

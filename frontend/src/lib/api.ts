@@ -1,6 +1,7 @@
 /** 백엔드 조회 API 클라이언트 / thin fetch wrappers for the query API. */
 
 import type { PreviewFilterCond } from "./preview-utils";
+import { withSourceParam } from "./source-param";
 import type {
   AiTableHit,
   CandidatesResponse,
@@ -83,6 +84,31 @@ export function fetchMe(): Promise<Me> {
   return getJson("/api/me");
 }
 
+export interface DataSourceItem {
+  id: number;
+  name: string;
+  engine: string;
+  access_mode: string;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  username: string | null;
+  file_path: string | null;
+  has_password: boolean;
+  is_enabled: boolean;
+  is_managed: boolean;
+  last_ok_at: string | null;
+  last_error: string | null;
+}
+
+/** 등록된 소스 목록 — sysadmin 전용, 일반 사용자는 403(호출부가 감내한다). */
+export function fetchDataSources(): Promise<{
+  items: DataSourceItem[];
+  secret_key_configured: boolean;
+}> {
+  return getJson("/api/sources");
+}
+
 export interface WhitelistEntry {
   login_id: string;
   name: string | null;
@@ -133,15 +159,17 @@ export function fetchUsers(
   return getJson(`/api/admin/users?${params}`);
 }
 
-export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {
+export function searchObjects(
+  q: string, type?: "table" | "view", sourceId: number | null = null,
+): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   if (type) params.set("type", type);
-  return getJson(`/api/objects?${params}`);
+  return getJson(withSourceParam(`/api/objects?${params}`, sourceId));
 }
 
 /** confirmed+FK만 담은 읽기 전용 전체 그래프 — /erd 전용(앵커·검색 없음). */
-export function fetchErdGraph(): Promise<ErdResponse> {
-  return getJson("/api/erd");
+export function fetchErdGraph(sourceId: number | null = null): Promise<ErdResponse> {
+  return getJson(withSourceParam("/api/erd", sourceId));
 }
 
 export function fetchCandidates(columnId: number): Promise<CandidatesResponse> {
@@ -258,8 +286,8 @@ export interface JoinKeyItem {
   table_ids: number[];
 }
 
-export function fetchJoinKeys(): Promise<{ items: JoinKeyItem[] }> {
-  return getJson("/api/join-keys");
+export function fetchJoinKeys(sourceId: number | null = null): Promise<{ items: JoinKeyItem[] }> {
+  return getJson(withSourceParam("/api/join-keys", sourceId));
 }
 
 // 서버 페이지 상한과 동일 — 왕복 수를 최소화한다 / matches the server-side page cap
@@ -271,12 +299,14 @@ const OBJECTS_PAGE_SIZE = 1000;
  * 한 방이라 2,224개가 조용히 잘렸고, 목록에 없는 테이블이 링크로만 열렸다.
  * 목록·카테고리 집계·초성/컬럼 검색이 모두 이 전량 집합을 쓰므로 여기서 다 모은다
  * (렌더는 TableList가 무한 스크롤로 잘라서 그린다). */
-export async function fetchAllObjects(): Promise<SearchResponse> {
-  const first = await getJson<SearchResponse>(`/api/objects?limit=${OBJECTS_PAGE_SIZE}`);
+export async function fetchAllObjects(sourceId: number | null = null): Promise<SearchResponse> {
+  const first = await getJson<SearchResponse>(
+    withSourceParam(`/api/objects?limit=${OBJECTS_PAGE_SIZE}`, sourceId),
+  );
   const items = [...first.items];
   while (items.length < first.total) {
     const page = await getJson<SearchResponse>(
-      `/api/objects?limit=${OBJECTS_PAGE_SIZE}&offset=${items.length}`,
+      withSourceParam(`/api/objects?limit=${OBJECTS_PAGE_SIZE}&offset=${items.length}`, sourceId),
     );
     if (page.items.length === 0) break; // 서버가 빈 페이지를 주면 중단 — 무한 루프 방지
     items.push(...page.items);
@@ -293,16 +323,21 @@ export interface SchemaCategoryItem {
   object_count: number;
 }
 
-export function fetchSchemaCategories(): Promise<{ items: SchemaCategoryItem[] }> {
-  return getJson("/api/schema-categories");
+export function fetchSchemaCategories(
+  sourceId: number | null = null,
+): Promise<{ items: SchemaCategoryItem[] }> {
+  return getJson(withSourceParam("/api/schema-categories", sourceId));
 }
 
 /** 스키마 하나의 카테고리 지정 — 빈 문자열이면 해제. 그 DB의 테이블이 통째로 이동한다.
  * Assigning moves every table of that schema at once; "" clears the mapping. */
 export function assignSchemaCategory(
-  schema: string, category: string,
+  schema: string, category: string, sourceId: number | null = null,
 ): Promise<SchemaCategoryItem> {
-  return putJson(`/api/schema-categories/${encodeURIComponent(schema)}`, { category });
+  return putJson(
+    withSourceParam(`/api/schema-categories/${encodeURIComponent(schema)}`, sourceId),
+    { category },
+  );
 }
 
 export interface ObjectDetail {
@@ -442,9 +477,11 @@ export interface TablePreview {
   filters: PreviewFilterCond[];
 }
 
-/** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
-export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
-  return getJson("/api/objects/preview-allowlist");
+/** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). 허용은 소스별. */
+export function fetchPreviewAllowlist(
+  sourceId: number | null = null,
+): Promise<{ items: string[] }> {
+  return getJson(withSourceParam("/api/objects/preview-allowlist", sourceId));
 }
 
 /** 컬럼을 감춘 스키마(HIDDEN_SCHEMAS, 소문자) + 좌측 목록 렌더 토글. */
@@ -537,10 +574,10 @@ export function fetchObjectPreview(
   return getJson(`/api/objects/${objectId}/preview${suffix}`);
 }
 
-export function fetchColumnsIndex(): Promise<{
+export function fetchColumnsIndex(sourceId: number | null = null): Promise<{
   items: { object_id: number; columns: string[] }[];
 }> {
-  return getJson("/api/objects/columns-index");
+  return getJson(withSourceParam("/api/objects/columns-index", sourceId));
 }
 
 export interface AiJobStatus {

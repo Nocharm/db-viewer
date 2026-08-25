@@ -160,6 +160,8 @@ interface Props {
   /** ?focus= 로 들어온 대상 — 그래프에 있으면 센터링, 없으면 배너 */
   focusId: number | null;
   focusLabel: string | null;
+  /** 선택된 소스 — null이면 기본 소스 / null means the default source. */
+  sourceId: number | null;
 }
 
 export function ErdViewer(props: Props) {
@@ -170,10 +172,10 @@ export function ErdViewer(props: Props) {
   );
 }
 
-function ErdViewerInner({ focusId, focusLabel }: Props) {
+function ErdViewerInner({ focusId, focusLabel, sourceId }: Props) {
   const { t } = useI18n();
   const router = useRouter();
-  const previewAllowed = usePreviewAllowlist();
+  const previewAllowed = usePreviewAllowlist(sourceId);
   const [graph, setGraph] = useState<ErdResponse | null>(null);
   // 좌측 스키마 필터 — null이면 전체. 필터된 그래프가 레이아웃·검색의 입력이 된다
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
@@ -214,10 +216,10 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
   const pendingCenterIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    fetchErdGraph()
+    fetchErdGraph(sourceId)
       .then(setGraph)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [sourceId]);
 
   const toggleNode = useCallback((id: number) => {
     setExpandedNodes((current) => {
@@ -259,6 +261,11 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
     setNodeMenu(null);
     router.push(href);
   }, [router]);
+
+  // 홈으로 되돌아가는 메뉴 링크에 덧붙일 쿼리 — 없으면 홈이 기본 소스로 되돌아가 지금
+  // 보던 소스의 노드를 찾지 못한다 / appended to menu links back to the home page; without
+  // it the home page falls back to the default source and can't find this source's node.
+  const sourceQuery = sourceId !== null ? `&source=${sourceId}` : "";
 
   const handleSchemaFilter = useCallback((schema: string | null) => {
     setSchemaFilter(schema);
@@ -614,12 +621,13 @@ function ErdViewerInner({ focusId, focusLabel }: Props) {
                   disabled={!previewAllowed.has(nodeMenu.schema)}
                   title={previewAllowed.has(nodeMenu.schema)
                     ? undefined : t("preview.notAllowedHint")}
-                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}&preview=1`)}
+                  onClick={() => menuNavigate(
+                    `/?table=${nodeMenu.nodeId}&preview=1${sourceQuery}`)}
                   data-testid="ErdViewer-nodeMenuPreview">
             {t("erd.menuPreview")}
           </button>
           <button className="pressable erd-menu__item"
-                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}`)}
+                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}${sourceQuery}`)}
                   data-testid="ErdViewer-nodeMenuDetail">
             {t("erd.menuDetail")}
           </button>
