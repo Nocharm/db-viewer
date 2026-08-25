@@ -1,7 +1,5 @@
 # Progress
 
-### Aug 25, 2026
-11:42p 🟣 Task 5 커밋 완료 — feat(sources): source registry and per-source engine cache — 소스 조회·엔진 캐시
 
 ## Aug 7, 2026
 - Task 3: 타입 패밀리 판정. TDD로 `get_type_family(data_type: str) -> str` 구현 완료 — 테스트 9/9 통과
@@ -18,6 +16,7 @@
 - **멀티 소스 구현 계획 + 담당자 전달 문서** (`docs/superpowers/plans/2026-08-25-multi-source-db.md`, `docs/handoff/service-owner-prompt.md`). 15개 태스크 5페이즈 — 페이즈1(소스 축 도입)은 화면 무변경이 성공 기준이다. 계획 작성 중 스펙 오류 1건 정정: PG `pg_class.oid`는 unsigned 32bit라 `objects.object_id`(int4)를 넘길 수 있어 SQLite와 같은 **스냅샷 내 일련번호**로 사상한다. 발견한 단순화: PG/SQLite는 미리보기 용도에서 문법이 같고(`"`인용·LIMIT·CAST AS TEXT·LIKE ESCAPE) SQLAlchemy `text()` named 파라미터를 쓰면 paramstyle 차이도 없어 **SQL 빌더가 하나로 족하다**. 담당자 문서는 ①값표 → ②볼륨 사전확인(없으면 중단) → ③Claude Code 프롬프트 → ④읽기전용 계정 → ⑤보고양식 구성.
 - **네트워크 대안 검토 기록** — A안(대상 기존 네트워크에 db-viewer가 합류)은 대상 무수정이지만 흔한 컨테이너명(`postgres`/`db`) DNS 충돌 + 대상 `compose down` 시 db-viewer 기동 불가. B안(공용 네트워크 1개)은 후자를 풀지만 서비스 간 격리를 깬다. B′는 대상 수정량이 B와 같으면서 둘 다 없앤다. 기존 subnet(172.36~46)·db-viewer(172.48)은 무변경, 신규는 172.50.x.0/24.
 - **Task 4: Fernet 기반 소스 접속 비밀번호 암호화 + 설정** (`backend/app/sources/__init__.py`, `backend/app/sources/crypto.py`, `backend/app/config.py`, `backend/requirements.txt`, `backend/tests/test_source_crypto.py`). `is_crypto_configured()` / `encrypt_secret(plain)` / `decrypt_secret(token)` 3개 함수 + `CryptoNotConfigured` 예외. 핵심은 **키가 없으면 조용히 평문을 저장하지 않고 명시적으로 거부한다** — 발생 지점(`_get_cipher`)에서 RuntimeError 상속 예외를 던져 호출부가 리스너를 등록할 때까지 거부 상태가 유지된다. 복호화 실패(`InvalidToken`)도 거부(키 교체 신호) — 빈 값이나 기본값을 돌려주지 않는다. Settings에 `source_secret_key`(ENV, Fernet urlsafe base64 32B) / `source_connect_timeout`(5s, 튜닝) / `source_query_timeout`(15s, 튜닝) 세 필드 추가. 의존성: `cryptography==50.0.0`(브리프 지시 44.0.0이 아니라 현재 설치 버전으로 핀) — pyjwt[crypto]로 이미 설치되지만 직접 쓰므로 명시. TDD: 테스트 먼저 작성(ModuleNotFoundError 확인) → 구현 → 345 passed(+2), ruff 클린.
+- **Task 5: 소스 레지스트리 + 연결 캐시** (`backend/app/sources/registry.py`, `backend/app/sources/connection.py`, `backend/tests/test_source_registry.py`). 두 모듈로 책임 분리 — registry는 소스 조회(`get_source`, `list_sources`) 및 URL 조립(`build_sa_url`), connection은 엔진 생명주기 관리(`get_sa_engine`, `clear_sa_engine`, `_engines` 캐시). URL 인코딩이 핵심 — 비밀번호에 `@`나 `/`가 들어가면 `urllib.parse.quote(..., safe="")` 없이는 파싱이 깨진다. 캐시는 FastAPI 스레드풀 환경에서 race condition 방지를 위해 `threading.Lock`으로 보호(`_engines_lock`) — check→create→store 구간과 pop 구간을 감싼다(double-check 패턴). Postgres는 `pool_size=2, max_overflow=1` + 연결/문장 타임아웃, SQLite는 `mode=ro` 읽기전용 URI + `check_same_thread=False`. TDD: 테스트 먼저(postgres URL 인코딩, sqlite 읽기전용, n8n 거부) → RED 확인 → 구현 → 345→348 passed(+3), 동시성 테스트 추가(concurrent.futures로 5개 스레드가 같은 소스에서 엔진 요청, 동일 인스턴스 검증), ruff 클린.
 
 ## 2026-08-11
 
