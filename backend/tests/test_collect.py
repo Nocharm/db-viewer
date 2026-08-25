@@ -328,3 +328,81 @@ def test_ingest_skips_unresolvable_fk_instead_of_failing(client, migrated_engine
     assert counts["foreign_keys_skipped"] == 1
     # 정상 FK는 그대로 적재 / the healthy FKs still land
     assert counts["foreign_keys"] == len(payload["foreign_keys"]) - 1
+
+
+@pytest.fixture()
+def direct_sqlite_source_id(migrated_engine, tmp_path):
+    """direct 소스로 쓸 실 SQLite 파일 + 등록 행 — source_id 라우팅 테스트용.
+
+    소스 id는 자동증가라 테스트마다 값이 겹친다(사내 MSSQL이 id=1을 차지해 항상 2부터
+    시작) — 엔진 캐시(app.sources.connection)는 프로세스 전역이라 이전 테스트가 같은 id로
+    남긴 캐시를 걷어내고, 다음 테스트를 위해 끝나고도 비운다(test_direct_preview.py와 동일 관용).
+    """
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from app.models import DataSource
+    from app.sources.connection import clear_sa_engine
+
+    path = tmp_path / "direct-src.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        source = DataSource(name="direct-src", engine="sqlite", access_mode="direct",
+                            file_path=str(path), is_enabled=True, is_managed=False,
+                            created_at=now, updated_at=now)
+        db.add(source)
+        db.commit()
+        source_id = source.id
+    clear_sa_engine(source_id)
+    yield source_id
+    clear_sa_engine(source_id)
+
+
+def test_catalog_trigger_routes_source_id_to_direct_runner(
+    cclient, migrated_engine, direct_sqlite_source_id,
+):
+    """source_id가 direct 소스를 가리키면 API 트리거가 DirectCollectRunner로 라우팅된다 —
+    cclient가 오버라이드한 FixtureCollectRunner(기본 러너)는 이 요청에 쓰이지 않는다."""
+    # Arrange
+    source_id = direct_sqlite_source_id
+
+    # Act
+    res = cclient.post("/api/collect/catalog",
+                       json={"triggered_by": "test", "source_id": source_id})
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    # Assert: direct 소스는 뷰 의존 단계 없이 run_catalog 하나로 곧장 ready 마감된다
+    job = cclient.get(f"/api/collect/jobs/{job_id}").json()
+    assert job["stage"] == "ready"
+    assert _snapshot_status(migrated_engine, job["snapshot_id"]) == "ready"
+
+
+def test_full_trigger_direct_source_does_not_hang_on_view_deps_wait(
+    cclient, migrated_engine, direct_sqlite_source_id, monkeypatch,
+):
+    """direct 소스는 run_catalog가 곧장 'ready'로 마감하고 'catalog_done'을 거치지 않는다 —
+    full 체인이 그 값을 기다리다 타임아웃 뒤 오탐으로 failed를 덮어쓰면 안 된다(회귀 가드).
+    타임아웃 상수를 줄여, 게이트가 없으면 이 테스트가 15분 대기 대신 즉시 실패하게 한다.
+    """
+    from app.api import collect as collect_module
+
+    monkeypatch.setattr(collect_module, "CHAIN_TIMEOUT", 1)
+    monkeypatch.setattr(collect_module, "CHAIN_POLL_INTERVAL", 0.05)
+    # Arrange
+    source_id = direct_sqlite_source_id
+
+    # Act
+    res = cclient.post("/api/collect/full",
+                       json={"triggered_by": "test", "source_id": source_id})
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    # Assert
+    job = cclient.get(f"/api/collect/jobs/{job_id}").json()
+    assert job["stage"] == "ready"
+    assert _snapshot_status(migrated_engine, job["snapshot_id"]) == "ready"

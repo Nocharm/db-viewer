@@ -32,17 +32,37 @@ def get_collect_session_factory() -> sessionmaker:
 
 
 def get_collect_runner() -> CollectRunner:
-    """설정 기반 러너 — 테스트는 이 의존성을 오버라이드한다 / DI point for tests."""
+    """설정 기반 러너(기본 소스) — 테스트는 이 의존성을 오버라이드한다 / DI point for tests."""
     return create_collect_runner(get_settings(), get_session_factory())
+
+
+def get_collect_runner_for(
+    source_id: int | None, db: Session, session_factory: sessionmaker,
+) -> CollectRunner:
+    """요청이 지정한 소스의 러너 — source_id 없으면 기본(사내 MSSQL)과 동일하게 라우팅된다.
+
+    session_factory는 호출부의 Depends(get_collect_session_factory) 결과를 그대로 받는다 —
+    여기서 get_session_factory()를 새로 부르면 테스트가 오버라이드한 세션 팩토리를 우회해
+    실제 서비스 DB로 적재해버린다.
+    """
+    from app.sources.registry import get_source
+
+    source = get_source(db, source_id)
+    # 배경 작업은 요청의 db 세션이 커밋·종료된 뒤에 실행된다 — expunge하지 않으면 커밋이
+    # 만료시킨 속성을 다시 읽으려다 "not bound to a Session"으로 죽는다
+    db.expunge(source)
+    return create_collect_runner(get_settings(), session_factory, source)
 
 
 class TriggerRequest(BaseModel):
     triggered_by: str = "local"
+    source_id: int | None = None
 
 
 class StepRequest(BaseModel):
     job_id: int
     triggered_by: str = "local"
+    source_id: int | None = None
 
 
 def _create_job(db: Session, mode: str, triggered_by: str) -> CollectJob:
@@ -93,7 +113,9 @@ def _run_full(session_factory: sessionmaker, runner: CollectRunner, job_id: int)
     while time.monotonic() < deadline:
         with session_factory() as db:
             job = db.get(CollectJob, job_id)
-            if job is None or job.stage == "failed":
+            # direct 소스는 뷰 의존 단계가 없어 run_catalog가 곧장 'ready'로 마감한다 —
+            # 'catalog_done'을 영원히 기다리다 15분 뒤 오탐으로 failed 처리되면 안 된다
+            if job is None or job.stage in ("failed", "ready"):
                 return
             if job.stage == "catalog_done" and job.snapshot_id is not None:
                 snapshot_id = job.snapshot_id
@@ -128,6 +150,8 @@ def trigger_catalog_step(
     session_factory: sessionmaker = Depends(get_collect_session_factory),
 ) -> dict:
     """1단계 — 카탈로그 수집(객체·컬럼·키·FK·뷰 정의) 트리거."""
+    if req.source_id is not None:
+        runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = _create_job(db, "step", req.triggered_by)
     background.add_task(_run_catalog_step, session_factory, runner, job.id)
     return _job_payload(job)
@@ -142,6 +166,8 @@ def trigger_view_deps_step(
     session_factory: sessionmaker = Depends(get_collect_session_factory),
 ) -> dict:
     """2단계 — 뷰 의존 수집 + lineage·파싱. 1단계 완료(catalog_done)가 선행 조건."""
+    if req.source_id is not None:
+        runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = db.get(CollectJob, req.job_id)
     if job is None:
         raise HTTPException(404, {"message": "collect job not found",
@@ -166,6 +192,8 @@ def trigger_full_collection(
     session_factory: sessionmaker = Depends(get_collect_session_factory),
 ) -> dict:
     """전체 실행 — 카탈로그 → 뷰 의존을 자동 체인."""
+    if req.source_id is not None:
+        runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = _create_job(db, "full", req.triggered_by)
     background.add_task(_run_full, session_factory, runner, job.id)
     return _job_payload(job)
