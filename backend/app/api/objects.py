@@ -8,7 +8,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import func, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, DisconnectionError
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import Session, aliased
 
 from app.adapters import SyntheticDataRefused, create_table_preview
@@ -418,10 +419,14 @@ def get_object_preview(
             "message": str(e),
             "context": {"source": source.name, "object": qname},
         }) from e
-    except DBAPIError as e:
+    except (DBAPIError, SATimeoutError, DisconnectionError) as e:
         # 드라이버 원문(예: 인증 실패 메시지에 담긴 접속 계정명)은 절대 클라이언트로 안 보낸다
-        # — 종류(error_type)까지만. SQLAlchemyError 전체가 아니라 DBAPIError로 좁힌 이유:
-        # CompileError·ArgumentError 같은 조립 버그는 소스 장애로 위장하지 않고 500으로 드러나야 한다.
+        # — 종류(error_type)까지만. SQLAlchemyError 전체가 아니라 이 세 타입으로 좁힌 이유:
+        # CompileError·ArgumentError 같은 조립 버그는 소스 장애로 위장하지 않고 500으로 드러나야
+        # 한다. TimeoutError(sqlalchemy.exc — 빌트인과 이름이 겹쳐 별칭)·DisconnectionError는
+        # DBAPIError의 하위가 아니지만 "소스가 힘들어한다"는 같은 신호다 — postgres 커넥션 풀을
+        # 작게 잡아 둔 설계(connection.py) 탓에 동시 요청이 몰리면 풀 체크아웃이 TimeoutError로
+        # 떨어질 수 있다.
         logger.warning("source preview failed",
                        extra={"source_id": source.id, "object": qname}, exc_info=True)
         raise HTTPException(502, {

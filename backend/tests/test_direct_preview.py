@@ -4,6 +4,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.exc import CompileError
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import sessionmaker
 
 from app.api import objects
@@ -11,7 +13,6 @@ from app.config import get_settings
 from app.models import CatalogColumn, CatalogObject, DataSource, PreviewAllowlist, Snapshot
 from app.sources.connection import clear_sa_engine, get_sa_engine
 from app.sources.direct_preview import DirectTablePreview
-from app.sources.preview_sql import UnknownIdentifier
 
 COLUMNS = [{"name": "id", "data_type": "INTEGER"},
            {"name": "status", "data_type": "TEXT"}]
@@ -196,29 +197,72 @@ def test_missing_secret_key_returns_503_not_500(client, migrated_engine, monkeyp
     assert "SOURCE_SECRET_KEY" in res.json()["error"]["message"]
 
 
+class _BoomPreview:
+    """create_table_preview가 돌려주는 실행기를 흉내낸다 — .rows()에서만 지정한 예외를 낸다.
+
+    fault-injection 지점을 preview.rows() 안으로 두는 이유: create_table_preview(...) 자체를
+    raise하게 패치하면 예전(구) objects.py처럼 두 호출이 서로 다른 try 블록에 있던 코드에서는
+    애초에 그 try가 create_table_preview를 감싸지 않아 except 좁히기와 무관하게 항상 미처리로
+    새 버렸다 — 그래서는 이 테스트가 좁히기 자체를 증명하지 못한다. rows()에서 내면 구코드의
+    두 번째 try, 지금 코드의 병합된 try 양쪽 다 실제로 감싸는 지점이라 except 타입만이 변수가 된다.
+    """
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def rows(self, *args, **kwargs):
+        raise self._exc
+
+
 def test_assembly_bug_is_not_reported_as_a_source_failure(
     client, migrated_engine, monkeypatch
 ):
-    """조립 단계 버그(build_preview_sql의 UnknownIdentifier 같은 ValueError)는 DBAPIError가
-    아니므로 502(소스 탓)로 위장돼선 안 된다 — 502를 SQLAlchemyError 전체가 아니라 DBAPIError로
-    좁힌 이유를 직접 확인한다.
+    """조립 단계 버그(sqlalchemy.exc.CompileError)는 502(소스 탓)로 위장돼선 안 된다.
+
+    CompileError는 SQLAlchemyError의 하위지만 DBAPIError는 아니다 — 드라이버가 낸 오류가
+    아니라 우리 쪽 SQL 조립·바인딩 버그라는 뜻이다. 바꿔 말해 이 예외는 "SQLAlchemyError 전체를
+    잡던 예전 코드"에서는 502로 잡히고, "DBAPIError(+TimeoutError·DisconnectionError)로 좁힌
+    지금 코드"에서는 안 잡혀야 한다 — 그 경계 자체가 이 테스트의 대상이다(bare ValueError로는
+    이 경계를 증명하지 못한다: 그런 예외는 SQLAlchemyError였던 적이 없어 예전 코드에서도 이미
+    안 잡혔다).
 
     실제 엔드포인트에서 필터 컬럼은 parse_preview_filters가 카탈로그와 대조해 400으로 먼저
-    거르므로 UnknownIdentifier가 자연 상태로 여기까지 올 경로는 없다 — create_table_preview가
+    거르므로 CompileError가 자연 상태로 여기까지 올 경로는 없다 — create_table_preview가
     돌려주는 실행기 자체가 조립 버그를 냈다고 가정해(fault injection) objects.py의 except 절이
     그걸 502로 오분류하지 않는지 확인한다.
     """
-    # Arrange: 정상적인 direct 소스(카탈로그·allowlist까지) + create_table_preview가 조립
-    # 버그를 낸다고 가정
+    # Arrange: 정상적인 direct 소스(카탈로그·allowlist까지) + 실행기의 rows()가 조립 버그를 낸다고 가정
     object_id = _seed_direct_sqlite_source(migrated_engine, "assembly-bug",
                                            "/nonexistent/unused.db")
+    boom = _BoomPreview(CompileError("could not compile the preview SELECT"))
+    monkeypatch.setattr(objects, "create_table_preview",
+                        lambda settings, source=None: boom)
 
-    def _raise_unknown_identifier(settings, source=None):
-        raise UnknownIdentifier("column not in the catalog: ghost")
-
-    monkeypatch.setattr(objects, "create_table_preview", _raise_unknown_identifier)
-
-    # Act / Assert: DBAPIError가 아니라서 502 핸들러가 잡지 않는다 — 미처리로 드러난다
-    # (TestClient 기본값 raise_server_exceptions=True라 그대로 재발생하고, 502로 둔갑하지 않는다)
-    with pytest.raises(UnknownIdentifier):
+    # Act / Assert: DBAPIError·SATimeoutError·DisconnectionError 어디에도 안 속해서 502
+    # 핸들러가 잡지 않는다 — 미처리로 드러난다(TestClient 기본값 raise_server_exceptions=True라
+    # 그대로 재발생하고, 502로 둔갑하지 않는다)
+    with pytest.raises(CompileError):
         client.get(f"/api/objects/{object_id}/preview")
+
+
+def test_pool_timeout_is_treated_as_a_source_failure(client, migrated_engine, monkeypatch):
+    """풀 체크아웃 타임아웃(sqlalchemy.exc.TimeoutError)은 소스 장애로서 502가 나야 한다.
+
+    TimeoutError는 SQLAlchemyError의 직계 하위지만 DBAPIError는 아니다(드라이버가 낸 오류가
+    아니라 SQLAlchemy 커넥션 풀 자체가 올리는 예외라서). connection.py가 postgres 소스에
+    일부러 작은 풀(pool_size=2, max_overflow=1)을 걸어 뒀으므로 동시 요청이 몰리면 실제로
+    벌어질 수 있는 상황이다 — DBAPIError만 잡던 상태에서는 이게 미처리 500으로 샜다.
+    """
+    # Arrange: 정상적인 direct 소스 + 실행기의 rows()가 풀 타임아웃을 냈다고 가정
+    object_id = _seed_direct_sqlite_source(migrated_engine, "pool-timeout",
+                                           "/nonexistent/unused.db")
+    boom = _BoomPreview(SATimeoutError("QueuePool limit reached, connection timed out"))
+    monkeypatch.setattr(objects, "create_table_preview",
+                        lambda settings, source=None: boom)
+
+    # Act
+    res = client.get(f"/api/objects/{object_id}/preview")
+
+    # Assert: 소스가 힘들어하는 상황이라 502로 격리된다 — 500으로 안 샌다
+    assert res.status_code == 502
+    assert "could not be queried" in res.json()["error"]["message"]
