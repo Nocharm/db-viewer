@@ -100,7 +100,10 @@ def collect_sqlite(sa_engine: Engine, source_db: str) -> CatalogPayload:
                     name=f"pk_{name}", type="pk", object_id=object_id, columns=pk_columns))
             for column in table_info:
                 columns.append(RawColumn(
-                    object_id=object_id, name=column["name"], ordinal=column["cid"],
+                    # cid는 0-base — pg_collector의 attnum(1-base, MSSQL column_id와
+                    # 같은 관례)에 맞춰 +1. 지금은 상대순서만 쓰이지만 "첫 컬럼" 의미를
+                    # 소스 간에 맞춰 둔다.
+                    object_id=object_id, name=column["name"], ordinal=column["cid"] + 1,
                     # 선언 타입이 비면 SQLite의 동적 타입 — BLOB으로 표기한다
                     data_type=column["type"] or "BLOB",
                     # SQLite는 길이 제약을 저장하지 않는다 (MSSQL의 varchar(max)와 같은 -1)

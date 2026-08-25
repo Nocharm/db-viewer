@@ -26,7 +26,13 @@ _SCHEMA_FILTER = (
 _OBJECTS_SQL = f"""
 SELECT c.oid AS oid, n.nspname AS schema_name, c.relname AS name,
        CASE WHEN c.relkind IN ('v', 'm') THEN 'view' ELSE 'table' END AS type,
-       CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::bigint END AS row_count,
+       -- 뷰는 저장된 카디널리티가 없다(ANALYZE 대상도 아니다) — matview는 REFRESH+ANALYZE
+       -- 후 실제 값을 갖지만, 언제 마지막 REFRESH됐는지 이 컬럼만으로는 알 수 없어 신뢰할
+       -- 수 없는 스냅샷이다. 내부 reltuples 표현(비분석 시 -1)에 기대지 않고 항상 NULL로
+       -- 명시한다.
+       CASE WHEN c.relkind IN ('v', 'm') THEN NULL
+            WHEN c.reltuples < 0 THEN NULL
+            ELSE c.reltuples::bigint END AS row_count,
        CASE WHEN c.relkind IN ('v', 'm')
             THEN pg_get_viewdef(c.oid, true) END AS definition
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

@@ -82,6 +82,8 @@ def test_collects_tables_columns_and_fks(probe_catalog: Engine):
     definition = next(d for d in payload.view_definitions
                       if d.object_id == view.object_id)
     assert "child" in (definition.definition or "")
+    # 뷰는 저장된 카디널리티가 없다 — row_count는 항상 NULL로 나가야 한다
+    assert view.row_count is None
 
 
 @requires_pg

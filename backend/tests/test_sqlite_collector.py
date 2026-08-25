@@ -25,7 +25,7 @@ def sample_db(tmp_path) -> Engine:
         CREATE TABLE parent (id INTEGER PRIMARY KEY, label TEXT NOT NULL);
         CREATE TABLE child (
             id INTEGER PRIMARY KEY,
-            parent_id INTEGER REFERENCES parent(id)
+            parent_id INTEGER REFERENCES parent
         );
         CREATE VIEW v_child AS SELECT id FROM child;
         INSERT INTO parent VALUES (1, 'a'), (2, 'b');
@@ -61,9 +61,18 @@ def test_collects_columns_and_primary_key(sample_db):
     assert pk.type == "pk"
     assert pk.columns == ["id"]
 
+    # Assert: ordinal은 1-base — table_info의 cid(0-base)를 그대로 안 쓴다.
+    # pg_collector의 attnum(1-base, MSSQL column_id와 같은 관례)에 맞춘다.
+    id_col = next(c for c in payload.columns
+                  if c.object_id == parent_id and c.name == "id")
+    assert id_col.ordinal == 1
+    assert label.ordinal == 2
+
 
 def test_resolves_implicit_fk_target_to_primary_key(sample_db):
-    # Act: `REFERENCES parent(id)`가 아니라 컬럼이 생략된 경우도 PK로 해석돼야 한다
+    # Act: `child.parent_id REFERENCES parent` — 대상 컬럼을 생략한 진짜 암묵 참조.
+    # PRAGMA foreign_key_list가 이 DDL에 대해 to=NULL을 돌려주므로 _resolve_fk_pairs의
+    # PK 폴백 경로를 실제로 지나간다.
     payload = collect_sqlite(sample_db, "svcc")
 
     # Assert
