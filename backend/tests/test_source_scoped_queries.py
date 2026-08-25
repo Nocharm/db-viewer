@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import sessionmaker
 
 from app.models import (
+    AiSummary,
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
@@ -99,6 +100,58 @@ def _seed_join_keys(migrated_engine) -> int:
                             src_column_id=child_col.id, tgt_column_id=parent_col.id))
         db.commit()
         return other.id
+
+
+def _seed_colliding_objects(migrated_engine) -> tuple[int, int]:
+    """두 소스에 같은 `schema.name` 객체 + 그 qname의 확정 관계·AI 요약.
+
+    relations·ai_summaries에는 소스 축이 없다(qname이 키) — 이름이 겹치면 다른 소스
+    객체가 사내 MSSQL의 관계·요약을 자기 것처럼 달고 나온다. 반환: (mssql_obj, other_obj).
+    """
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        other = DataSource(name="svcd", engine="postgres", access_mode="direct",
+                           host="h", port=5432, database="d", username="u",
+                           is_enabled=True, is_managed=False,
+                           created_at=now, updated_at=now)
+        db.add(other)
+        db.flush()
+        object_ids: list[int] = []
+        for source_id in (MANAGED_MSSQL_SOURCE_ID, other.id):
+            snap = Snapshot(collected_at=now, source_db="x", status="ready",
+                            data_source_id=source_id)
+            db.add(snap)
+            db.flush()
+            obj = CatalogObject(snapshot_id=snap.id, schema="dbo", name="EMPLOYEE",
+                                type="table", object_id=1, dmv_unresolved=False)
+            db.add(obj)
+            db.flush()
+            object_ids.append(obj.id)
+        db.add(Relation(src_object="dbo.EMPLOYEE", src_column="EMP_NO",
+                        tgt_object="dbo.PEER", tgt_column="EMP_NO",
+                        status="confirmed", origin="user", created_at=now))
+        db.add(AiSummary(object_qname="dbo.EMPLOYEE", summary="직원 마스터",
+                         created_at=now))
+        db.commit()
+        return object_ids[0], object_ids[1]
+
+
+def test_detail_keeps_relations_and_ai_summary_inside_the_mssql_source(
+    client, migrated_engine
+):
+    """상세 패널의 관계·AI 요약은 MSSQL 전용 개념이다 — 동명 PG 객체가 물려받으면 안 된다."""
+    # Arrange
+    mssql_object, other_object = _seed_colliding_objects(migrated_engine)
+
+    # Act
+    mssql = client.get(f"/api/objects/{mssql_object}/detail").json()
+    other = client.get(f"/api/objects/{other_object}/detail").json()
+
+    # Assert: MSSQL 쪽은 그대로 나와야 차단이 공허하지 않다
+    assert [r["other"] for r in mssql["relations"]] == ["dbo.PEER"]
+    assert mssql["ai_summary"] == "직원 마스터"
+    assert other["relations"] == []
+    assert other["ai_summary"] is None
 
 
 def test_search_is_scoped_to_the_requested_source(client, migrated_engine):

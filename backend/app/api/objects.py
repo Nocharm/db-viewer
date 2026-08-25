@@ -22,6 +22,7 @@ from app.models import (
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
+    DataSource,
     FkColumn,
     Relation,
     Snapshot,
@@ -128,6 +129,20 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     qname = f"{obj.schema}.{obj.name}"
 
+    # relations·ai_summaries는 qname만으로 조회한다 — 그 표들에는 소스 축이 없다. 소스가
+    # 여럿이면 'public.users'처럼 schema.name이 겹치는 다른 소스 객체가 사내 MSSQL의 확정
+    # 관계·AI 요약을 자기 것처럼 달고 나온다. 둘 다 MSSQL 전용 개념이므로(스펙 비목표)
+    # 비-MSSQL 소스에서는 조회 자체를 건너뛴다. 표에 소스 컬럼을 추가하는 것은 마이그레이션과
+    # 백필이 따로 필요한 별건이라 후속 과제.
+    # / both tables are keyed by bare qname and carry no source axis, so a colliding
+    #   schema.name in another source would inherit the MSSQL object's relations/summary.
+    #   Relations and AI summaries are MSSQL-only concepts — skip them elsewhere.
+    snapshot = db.get(Snapshot, obj.snapshot_id)
+    source = db.get(DataSource, snapshot.data_source_id) if snapshot is not None else None
+    # 소스 행을 못 찾는 경우는 FK상 없다 — 있더라도 기본 소스(사내 MSSQL)로 본다
+    # (같은 파일의 미리보기 경로가 쓰는 폴백과 같은 규약)
+    is_mssql_source = source is None or source.engine == "mssql"
+
     columns = db.execute(
         select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
         .order_by(CatalogColumn.ordinal)
@@ -197,24 +212,26 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
     ]
 
     # 추론·확정 관계 (텍스트 식별자 매칭) / inferred and confirmed relations
-    relations = [
-        {
-            "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
-            "src_column": rel.src_column, "tgt_column": rel.tgt_column,
-            "status": rel.status, "confidence": rel.confidence,
-            "cardinality": rel.cardinality, "reason": rel.reason,
-        }
-        for rel in db.execute(
-            select(Relation).where(
-                Relation.status.in_(["validated", "confirmed"]),
-                (Relation.src_object == qname) | (Relation.tgt_object == qname),
-            )
-        ).scalars()
-    ]
-
-    summary = db.execute(
-        select(AiSummary.summary).where(AiSummary.object_qname == qname)
-    ).scalar_one_or_none()
+    relations: list[dict] = []
+    summary: str | None = None
+    if is_mssql_source:
+        relations = [
+            {
+                "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
+                "src_column": rel.src_column, "tgt_column": rel.tgt_column,
+                "status": rel.status, "confidence": rel.confidence,
+                "cardinality": rel.cardinality, "reason": rel.reason,
+            }
+            for rel in db.execute(
+                select(Relation).where(
+                    Relation.status.in_(["validated", "confirmed"]),
+                    (Relation.src_object == qname) | (Relation.tgt_object == qname),
+                )
+            ).scalars()
+        ]
+        summary = db.execute(
+            select(AiSummary.summary).where(AiSummary.object_qname == qname)
+        ).scalar_one_or_none()
 
     fk_column_ids = {
         cid for (cid,) in db.execute(
