@@ -30,6 +30,11 @@ def probe_catalog() -> Engine:
     parent2/child2는 자연 컬럼 순서(x,y / a,b)와 반대로 FK를 걸어(b,a)->(y,x) 둔다 —
     ARRAY(...) 서브쿼리 안의 ORDER BY u.ord가 빠지면 우연히 맞는 순서가 나오기 어렵게
     함정을 드러내려는 의도.
+
+    mv_child(matview)는 v_child(일반 뷰)와 짝을 이뤄 row_count 처리가 갈리는 것을 보인다 —
+    단 CREATE MATERIALIZED VIEW ... WITH DATA 자체는 reltuples를 안 갱신한다(실측: 생성
+    직후에도 -1, 테이블과 동일). matview가 일반 뷰와 다른 지점은 ANALYZE가 통한다는 것
+    (일반 뷰는 "cannot analyze non-tables"로 거부됨) — 그래서 명시적으로 ANALYZE해 둔다.
     """
     engine = create_engine(PG_URL)
     with engine.begin() as conn:
@@ -42,6 +47,14 @@ def probe_catalog() -> Engine:
                           " parent_id integer REFERENCES collect_probe.parent(id))"))
         conn.execute(text("CREATE VIEW collect_probe.v_child AS "
                           "SELECT id FROM collect_probe.child"))
+        conn.execute(text("INSERT INTO collect_probe.parent VALUES (1, 'a'), (2, 'b')"))
+        conn.execute(text("INSERT INTO collect_probe.child (id, parent_id) "
+                          "VALUES (1, 1), (2, 2)"))
+        conn.execute(text("CREATE MATERIALIZED VIEW collect_probe.mv_child AS "
+                          "SELECT id FROM collect_probe.child WITH DATA"))
+        # matview는 저장소가 있어 ANALYZE가 통한다(일반 뷰는 거부된다) — 이걸 해야
+        # reltuples가 -1(미분석)에서 실제 행수로 바뀐다. CREATE만으로는 안 바뀐다.
+        conn.execute(text("ANALYZE collect_probe.mv_child"))
         conn.execute(text("CREATE TABLE collect_probe.parent2 "
                           "(x integer, y integer, PRIMARY KEY (x, y))"))
         conn.execute(text("CREATE TABLE collect_probe.child2 "
@@ -65,6 +78,7 @@ def test_collects_tables_columns_and_fks(probe_catalog: Engine):
     assert names == {("collect_probe", "parent", "table"),
                      ("collect_probe", "child", "table"),
                      ("collect_probe", "v_child", "view"),
+                     ("collect_probe", "mv_child", "view"),
                      ("collect_probe", "parent2", "table"),
                      ("collect_probe", "child2", "table")}
 
@@ -82,8 +96,18 @@ def test_collects_tables_columns_and_fks(probe_catalog: Engine):
     definition = next(d for d in payload.view_definitions
                       if d.object_id == view.object_id)
     assert "child" in (definition.definition or "")
-    # 뷰는 저장된 카디널리티가 없다 — row_count는 항상 NULL로 나가야 한다
+    # 일반 뷰는 저장된 카디널리티가 없다 — row_count는 항상 NULL로 나가야 한다
     assert view.row_count is None
+
+    # matview는 다르다 — ANALYZE가 통해(픽스처에서 실행) reltuples가 실제 행수를 담는다.
+    # child에 넣은 2행이 mv_child에 그대로 반영되는지까지 확인한다(작은 테이블에서
+    # ANALYZE는 표본이 아니라 전수를 보므로 정확값을 기대할 수 있다 — 그래도 reltuples가
+    # 원리상 추정치 타입이라는 점을 감안해 None이 아니고 음수가 아닌지도 함께 본다).
+    matview = next(o for o in payload.objects if o.name == "mv_child")
+    assert matview.type == "view"
+    assert matview.row_count is not None
+    assert matview.row_count >= 0
+    assert matview.row_count == 2
 
 
 @requires_pg

@@ -26,11 +26,14 @@ _SCHEMA_FILTER = (
 _OBJECTS_SQL = f"""
 SELECT c.oid AS oid, n.nspname AS schema_name, c.relname AS name,
        CASE WHEN c.relkind IN ('v', 'm') THEN 'view' ELSE 'table' END AS type,
-       -- 뷰는 저장된 카디널리티가 없다(ANALYZE 대상도 아니다) — matview는 REFRESH+ANALYZE
-       -- 후 실제 값을 갖지만, 언제 마지막 REFRESH됐는지 이 컬럼만으로는 알 수 없어 신뢰할
-       -- 수 없는 스냅샷이다. 내부 reltuples 표현(비분석 시 -1)에 기대지 않고 항상 NULL로
-       -- 명시한다.
-       CASE WHEN c.relkind IN ('v', 'm') THEN NULL
+       -- 일반 뷰는 저장소가 없어 ANALYZE 자체가 거부된다("cannot analyze non-tables")
+       -- — reltuples가 생성 시점 기본값(-1)에서 영영 못 벗어나 NULL로 명시한다. matview는
+       -- 실제 heap을 갖는 storage라 ANALYZE(수동 또는 autovacuum)가 통하고, 분석되면
+       -- 테이블과 동일하게 실제 카디널리티를 담는다(단 CREATE/REFRESH 직후 자체는 통계를
+       -- 안 갱신한다 — 실측: 1000행으로 만들어도 ANALYZE 전엔 -1). 그래서 테이블과 같은
+       -- reltuples 분기로 되돌린다 — "분석 전엔 NULL, 분석되면 실값"이라는 대우가 테이블과
+       -- matview에 동일하게 적용되는 것이 이 값의 자연스러운 의미다.
+       CASE WHEN c.relkind = 'v' THEN NULL
             WHEN c.reltuples < 0 THEN NULL
             ELSE c.reltuples::bigint END AS row_count,
        CASE WHEN c.relkind IN ('v', 'm')
