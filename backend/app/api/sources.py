@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
-from sqlalchemy.exc import DBAPIError, DisconnectionError
+from sqlalchemy.exc import DBAPIError, DisconnectionError, IntegrityError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import Session
 
@@ -128,7 +128,31 @@ def create_data_source(
         is_enabled=True, is_managed=False, created_at=now, updated_at=now,
     )
     db.add(source)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as e:
+        # 이름 UNIQUE 위반이 통상 원인이고, PK 충돌도 같은 예외로 온다 — 잡지 않으면
+        # 운영자가 원인 없는 500만 보고 재시도한다. 드라이버 원문은 로그에만 남긴다
+        # (test_data_source 502 핸들러와 같은 관용).
+        # / a duplicate name is the usual cause; an unhandled flush would surface as a
+        #   bare 500 with nothing actionable in it
+        db.rollback()
+        error_type = type(e).__name__
+        # extra 키는 source_name — 'name'은 LogRecord 예약어라 덮어쓰면 로깅이 KeyError로
+        # 죽는다(원래 예외를 가려버린다) / 'name' is a reserved LogRecord attribute
+        logger.warning("data source create conflicted",
+                       extra={"source_name": req.name.strip(),
+                              "error_type": error_type},
+                       exc_info=True)
+        raise HTTPException(409, {
+            # 이름 중복이 통상이지만 PK 충돌도 같은 예외라 원인을 단정하지 않는다 —
+            # 조치 가능한 첫 수(이름 바꾸기)와 다음 확인처(로그)를 함께 준다
+            "message": "could not register this data source — it conflicts with an "
+                       "existing row (a duplicate name is the usual cause). Pick another "
+                       "name; if the name is new, check the backend log for the "
+                       "violated constraint.",
+            "context": {"name": req.name.strip(), "error_type": error_type},
+        }) from e
     db.add(AuditLog(action="source_create", detail=f"{source.name} ({source.engine})",
                     requested_by=admin, requested_at=now))
     return _serialize(source)

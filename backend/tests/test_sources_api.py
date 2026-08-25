@@ -522,3 +522,25 @@ def test_test_endpoint_records_last_error_when_key_missing(client, monkeypatch):
     entry = next(item for item in listed if item["id"] == created["id"])
     assert entry["last_error"] == "CryptoNotConfigured"
     get_settings.cache_clear()
+
+
+def test_duplicate_name_is_a_conflict_not_a_500(client, monkeypatch):
+    """PK·이름 UNIQUE 충돌은 409 + 안내 문구로 나온다 — 맨 500은 재시도밖에 못 하게 한다.
+
+    운영에서 이 경로에 도달하는 두 가지: 같은 이름 재등록, 그리고 PostgreSQL에서
+    시퀀스가 시드 행(id=1) 뒤로 전진하지 않은 상태의 첫 등록(마이그레이션 0015의 setval).
+    """
+    # Arrange
+    _configure(monkeypatch)
+    body = {"name": "svca", "engine": "sqlite", "file_path": "/tmp/a.db"}
+    assert client.post("/api/sources", headers=HEADERS, json=body).status_code == 200
+
+    # Act
+    res = client.post("/api/sources", headers=HEADERS, json=body)
+
+    # Assert: 드라이버 원문은 응답에 없다 — 종류(error_type)까지만
+    assert res.status_code == 409
+    assert "conflicts with an existing row" in res.json()["error"]["message"]
+    assert "UNIQUE constraint" not in res.text
+    get_settings.cache_clear()
+
