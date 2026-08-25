@@ -6,6 +6,11 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-08-26
+
+- **LDAP 로그인 병행 + 개발 서버 배포 설계 확정** (`docs/superpowers/specs/2026-08-26-ldap-login-dev-deploy-design.md`). 지금 로그인은 Keycloak 전용이고 LDAP은 서비스 계정으로 사용자 목록만 읽는 동기화 용도다. 세 갈림길 결정: ① 폴백은 **병행**(사용자가 고름) ② 바인드는 **백엔드 직결**(Keycloak에 의존하면 폴백이 성립하지 않는다) ③ **12시간 단일 토큰, 갱신 없음**. 핵심은 `get_current_user`가 `iss`로 라우팅하되 **두 경로 모두 알고리즘을 고정**하는 것 — 고정하지 않으면 `iss`를 주장하는 다른 알고리즘 토큰이 통과한다. 하류 게이트(화이트리스트·sysadmin)는 손대지 않아도 자동 적용된다.
+- **설계 자체 검토에서 결함 2건 정정** — (1) IP축 잠금을 뺐다: 백엔드가 프론트 프록시 뒤라 peer 주소가 항상 프록시 컨테이너다. 두면 한 명의 오타가 전원을 잠그거나 `X-Forwarded-For` 위조로 우회된다. 축은 `login_id` 하나. (2) 개발 스택에서 `NEEXT_PUBLIC_KEYCLOAK_*`를 비우는 안이 `makeManager()`의 issuer 존재 가정과 충돌 — 조건부 마운트 확인을 구현 단계 요구사항으로 명시. 그리고 `.env.dev`는 커밋하지 않는다(`.env.dev.example` + gitignore) — 이름으로 커밋 가능한 비밀 파일을 만들면 누군가 채워서 커밋한다.
+
 ## 2026-08-25
 
 - **Task 1: 소스 등록부 모델 + 마이그레이션 0015** (`backend/app/models/sources.py`, `backend/alembic/versions/0015_data_sources.py`). `DataSource` 모델(17 컬럼) + 사내 MSSQL 시드 행(id=1, is_managed) — TDD 테스트 2/2(마이그레이션 시드, unique 제약), 파이썬 타입 힌트·import 3그룹·CheckConstraint 엔진/access_mode. 테스트 336→338 passed, ruff clean.
