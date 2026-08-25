@@ -71,6 +71,16 @@ async function deleteJson<T>(
   }));
 }
 
+async function patchJson<T>(
+  url: string, body: unknown, extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return handle(await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
+    body: JSON.stringify(body),
+  }));
+}
+
 export interface Me {
   login_id: string;
   name: string;
@@ -107,6 +117,48 @@ export function fetchDataSources(): Promise<{
   secret_key_configured: boolean;
 }> {
   return getJson("/api/sources");
+}
+
+export interface DataSourceInput {
+  name: string;
+  engine: "postgres" | "sqlite";
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  // 쓰기 전용 — 응답에는 절대 실리지 않는다 / write-only, never echoed back
+  password?: string;
+  file_path?: string;
+}
+
+/** 소스 등록 — SOURCE_SECRET_KEY 미설정이면 503, 필수 필드 누락이면 400. */
+export function createDataSource(
+  input: DataSourceInput, password: string,
+): Promise<DataSourceItem> {
+  return postJson("/api/sources", input, { "X-Preview-Password": password });
+}
+
+/** 소스 부분 수정 — is_enabled 전환도 여기서. is_managed 소스는 백엔드가 409로 거부. */
+export function updateDataSource(
+  id: number, input: Partial<DataSourceInput> & { is_enabled?: boolean },
+  password: string,
+): Promise<DataSourceItem> {
+  return patchJson(`/api/sources/${id}`, input, { "X-Preview-Password": password });
+}
+
+/** is_managed거나 스냅샷·정책 행이 남아있으면 409(컨텍스트에 각 개수가 실려온다). */
+export function deleteDataSource(
+  id: number, password: string,
+): Promise<{ id: number; removed: boolean }> {
+  return deleteJson(`/api/sources/${id}`, { "X-Preview-Password": password });
+}
+
+/** 연결 테스트 — sysadmin이면 비밀번호 없이 호출. 비활성 소스도 테스트 가능(의도적).
+ * 흔한 컨테이너명 오접속을 잡기 위해 실제로 붙은 DB의 이름·버전을 회신한다. */
+export function testDataSource(id: number): Promise<{
+  ok: boolean; version: string; database: string; latency_ms: number;
+}> {
+  return postJson(`/api/sources/${id}/test`, {});
 }
 
 export interface WhitelistEntry {
@@ -411,8 +463,10 @@ export interface CollectJob {
   updated_at: string;
 }
 
-export function triggerCollectCatalog(): Promise<CollectJob> {
-  return postJson("/api/collect/catalog", {});
+/** source_id 생략 시 기본 소스(사내 MSSQL) — DataSourcePanel이 신규 등록 소스를 지정해 쓴다.
+ * direct 소스(postgres/sqlite)는 뷰 의존 단계가 없어 이 한 번의 호출로 수집이 끝난다. */
+export function triggerCollectCatalog(sourceId: number | null = null): Promise<CollectJob> {
+  return postJson("/api/collect/catalog", sourceId !== null ? { source_id: sourceId } : {});
 }
 
 export function triggerCollectViewDeps(jobId: number): Promise<CollectJob> {
@@ -541,23 +595,31 @@ export interface PreviewAllowlistAdmin {
   items: PreviewAllowEntry[];
 }
 
-export function fetchPreviewAllowlistAdmin(): Promise<PreviewAllowlistAdmin> {
-  return getJson("/api/admin/preview-allowlist");
+/** 허용 목록 PK가 (data_source_id, schema)라 조회도 소스별 — 미지정 시 사내 MSSQL. */
+export function fetchPreviewAllowlistAdmin(
+  sourceId: number | null = null,
+): Promise<PreviewAllowlistAdmin> {
+  return getJson(withSourceParam("/api/admin/preview-allowlist", sourceId));
 }
 
 // 비밀번호는 헤더로만 실어 보낸다 — URL·본문에 남기지 않는다 (로그·히스토리 노출 방지)
 export function addPreviewAllow(
-  schema: string, password: string, note?: string,
+  schema: string, password: string, note?: string, sourceId: number | null = null,
 ): Promise<{ created: boolean }> {
-  return postJson("/api/admin/preview-allowlist", { schema, note },
-                  { "X-Preview-Password": password });
+  return postJson(
+    "/api/admin/preview-allowlist",
+    { schema, note, ...(sourceId !== null ? { source_id: sourceId } : {}) },
+    { "X-Preview-Password": password },
+  );
 }
 
 export function removePreviewAllow(
-  schema: string, password: string,
+  schema: string, password: string, sourceId: number | null = null,
 ): Promise<{ removed: boolean }> {
-  return deleteJson(`/api/admin/preview-allowlist/${encodeURIComponent(schema)}`,
-                    { "X-Preview-Password": password });
+  return deleteJson(
+    withSourceParam(`/api/admin/preview-allowlist/${encodeURIComponent(schema)}`, sourceId),
+    { "X-Preview-Password": password },
+  );
 }
 
 export function fetchObjectPreview(
