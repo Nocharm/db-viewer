@@ -1,5 +1,8 @@
 # Progress
 
+### Aug 25, 2026
+11:42p 🟣 Task 5 커밋 완료 — feat(sources): source registry and per-source engine cache — 소스 조회·엔진 캐시
+
 ## Aug 7, 2026
 - Task 3: 타입 패밀리 판정. TDD로 `get_type_family(data_type: str) -> str` 구현 완료 — 테스트 9/9 통과
 
