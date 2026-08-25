@@ -1,10 +1,14 @@
 """소스 → 접속 URL 조립. / building a connection URL from a source row."""
 
+import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import create_engine
 
 from app.config import get_settings
 from app.models import DataSource
@@ -61,21 +65,46 @@ def test_rejects_n8n_source():
         build_sa_url(source)
 
 
-def test_concurrent_first_touch_returns_same_engine():
-    # Arrange: 캐시 초기화 후 SQLite 소스(실제 DB 파일 불필요)
+def test_concurrent_first_touch_creates_engine_once():
+    """락이 없으면 경쟁 시 엔진을 N번 생성하는 버그를 잡는다.
+
+    GIL 때문에 sqlite create_engine이 블로킹 없이 끝나므로 스레드가 겹치지 않는다.
+    따라서:
+    1. create_engine을 패치해서 sleep(0.05)를 넣어 GIL을 양보시킨다.
+    2. threading.Barrier로 5개 스레드를 동시에 출발시킨다.
+    3. create_engine 호출 횟수를 단언한다 — 1회만 호출되어야 한다.
+       (락이 없으면 5회 호출, 각각 다른 엔진 생성 → 버그)
+    """
+    # Arrange
     clear_sa_engine(999)
     source = _source(id=999, engine="sqlite", file_path="/tmp/test_concurrent.db")
+    barrier = threading.Barrier(5)
+    call_count = {"value": 0}
 
-    # Act: 5개 스레드가 동시에 같은 소스에서 엔진 요청
-    def get_engine_for_source():
+    def patched_create_engine(*args, **kwargs):
+        # sleep을 넣어 GIL을 양보 — 다른 스레드의 임계구역 진입을 허락
+        time.sleep(0.05)
+        call_count["value"] += 1
+        # 원본 create_engine 호출
+        return create_engine(*args, **kwargs)
+
+    def get_engine_with_barrier():
+        # 5개 스레드를 모두 도착시킨 후 동시에 출발
+        barrier.wait()
         return get_sa_engine(source)
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        engines = list(executor.map(lambda _: get_engine_for_source(), range(5)))
+    # Act: create_engine 패치 + 5개 스레드 동시 경쟁
+    with patch("app.sources.connection.create_engine", side_effect=patched_create_engine):
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            engines = list(executor.map(lambda _: get_engine_with_barrier(), range(5)))
 
-    # Assert: 모두 같은 엔진 인스턴스를 받아야 함 (id() 비교, 동일성 보장)
+    # Assert: create_engine은 정확히 1회만 호출되어야 한다
+    assert call_count["value"] == 1, \
+        f"engine should be created exactly once, but was called {call_count['value']} times"
+
+    # Assert: 모든 스레드가 같은 엔진 인스턴스를 받아야 한다
     assert all(engine is engines[0] for engine in engines), \
-        "Concurrent first-touch should return identical engine instance"
+        "all concurrent threads should receive identical engine instance"
 
     # Cleanup
     clear_sa_engine(999)
