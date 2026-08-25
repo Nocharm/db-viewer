@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
-from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
+from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory, Snapshot
 from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 from app.services.observations import record_observation
@@ -45,6 +45,18 @@ def resolve_column_ref(db: Session, column_id: int) -> tuple[ColumnRef, CatalogC
                                   "context": {"column_id": column_id}})
     col, obj = row
     return ColumnRef(obj.schema, obj.name, col.name), col
+
+
+def resolve_column_source_id(db: Session, col: CatalogColumn) -> int:
+    """컬럼이 속한 소스 / the source that owns this column.
+
+    `ColumnRef`는 스냅샷 독립 텍스트라 소스를 담지 못한다 — 미리보기 허용은 소스별이므로
+    객체→스냅샷을 되짚어 복원해야 한다. 이걸 기본 소스로 하드코딩하면 소스 1에서 'public'을
+    허용한 것이 소스 2의 'public' 객체까지 열어주는, 이 표의 PK를 바꾼 이유 그 자체가 된다.
+    """
+    obj = db.get(CatalogObject, col.object_id)
+    snapshot = db.get(Snapshot, obj.snapshot_id) if obj is not None else None
+    return snapshot.data_source_id if snapshot is not None else MANAGED_MSSQL_SOURCE_ID
 
 
 def _pair_filter(src: ColumnRef, tgt: ColumnRef):
@@ -208,11 +220,12 @@ def run_preview(
     tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
     ensure_not_hidden(src_ref, tgt_ref)
     # 조인 샘플도 양쪽 테이블의 실값을 내보낸다 — 테이블 미리보기와 같은 허용 목록을 쓴다
-    # (여기가 열려 있으면 허용 목록이 우회된다). 검증기는 사내 MSSQL 실행기 하나뿐이라
-    # 기본 소스로 판정한다 — 다른 소스의 값은 애초에 이 경로로 나올 수 없다
-    blocked = [ref.object_qname for ref in (src_ref, tgt_ref)
-               if not is_preview_allowed(db, MANAGED_MSSQL_SOURCE_ID,
-                                         ref.object_qname.split(".", 1)[0])]
+    # (여기가 열려 있으면 허용 목록이 우회된다). 판정은 각 컬럼이 실제로 속한 소스로 한다:
+    # column_id는 클라이언트가 주는 값이라 어느 소스의 객체든 가리킬 수 있다
+    blocked = [ref.object_qname
+               for ref, col in ((src_ref, src_col), (tgt_ref, tgt_col))
+               if not is_preview_allowed(db, resolve_column_source_id(db, col),
+                                         ref.schema)]
     if blocked:
         raise HTTPException(403, {
             "message": "preview is not allowed for these objects — an admin must add "

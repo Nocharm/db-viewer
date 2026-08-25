@@ -8,11 +8,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String
 from sqlalchemy.orm import Session
 
-from app.api.validate import ensure_not_hidden, get_join_validator, resolve_column_ref
+from app.api.validate import (
+    ensure_not_hidden,
+    get_join_validator,
+    resolve_column_ref,
+    resolve_column_source_id,
+)
 from app.db import get_db
 from app.domain.validation import JoinStepRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog
-from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.preview_policy import is_preview_allowed
 
 router = APIRouter(prefix="/api/join", tags=["join"])
@@ -121,15 +125,17 @@ def run_join_preview(
 
     refs: list[JoinStepRef] = []
     masked_keys: set[str] = set()
-    # 등장 순서를 지키며 중복 제거 — 한 테이블이 여러 스텝에 걸쳐도 오류에 한 번만 싣는다
+    # 등장 순서를 지키며 중복 제거 — 한 테이블이 여러 스텝에 걸쳐도 오류에 한 번만 싣는다.
+    # 값은 (소스, 스키마) — 허용 판정이 소스별이라 스키마명만으로는 키가 안 된다
     # / dedupe while preserving order: a table spanning several steps is reported once
-    involved: dict[str, str] = {}
+    involved: dict[str, tuple[int, str]] = {}
     for step in req.steps:
         left_ref, left_col = resolve_column_ref(db, step.left_column_id)
         right_ref, right_col = resolve_column_ref(db, step.right_column_id)
         ensure_not_hidden(left_ref, right_ref)
-        for ref in (left_ref, right_ref):
-            involved.setdefault(f"{ref.schema}.{ref.table}", ref.schema)
+        for ref, col in ((left_ref, left_col), (right_ref, right_col)):
+            involved.setdefault(f"{ref.schema}.{ref.table}",
+                                (resolve_column_source_id(db, col), ref.schema))
         refs.append(JoinStepRef(
             left_schema=left_ref.schema, left_table=left_ref.table,
             left_column=left_ref.column,
@@ -153,9 +159,10 @@ def run_join_preview(
     # uses the same allowlist as validate.py's /preview. One closed schema blocks the whole
     # request — a joined row carries open and closed columns side by side, so there is no
     # meaningful "partially allowed" result to return.
-    # 검증기는 사내 MSSQL 실행기 하나뿐이라 기본 소스로 판정한다 (validate.py:/preview 동일)
-    blocked = [qname for qname, schema in involved.items()
-               if not is_preview_allowed(db, MANAGED_MSSQL_SOURCE_ID, schema)]
+    # 판정은 각 테이블이 실제로 속한 소스로 한다 (validate.py:/preview 동일) — column_id는
+    # 클라이언트가 주는 값이라 어느 소스의 객체든 가리킬 수 있다
+    blocked = [qname for qname, (source_id, schema) in involved.items()
+               if not is_preview_allowed(db, source_id, schema)]
     if blocked:
         raise HTTPException(403, {
             "message": "preview is not allowed for these objects — an admin must add "

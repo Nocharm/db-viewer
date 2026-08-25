@@ -190,7 +190,9 @@ def add_preview_allow(
                                 added_by=admin, created_at=now))
     else:
         row.note = req.note
-    db.add(AuditLog(action="preview_allow_add", detail=schema,
+    # 소스까지 남긴다 — 허용 키가 (소스, 스키마)라 스키마명만으로는 "어느 DB를 열었나"에
+    # 답할 수 없다. 실값 반출의 유일한 출구를 남기는 기록이라 모호하면 안 된다
+    db.add(AuditLog(action="preview_allow_add", detail=f"source={source_id} {schema}",
                     requested_by=admin, requested_at=now))
     return {"schema": schema, "created": row is None}
 
@@ -291,7 +293,7 @@ def remove_preview_allow(
         raise HTTPException(404, {"message": "not in the preview allowlist",
                                   "context": {"schema": schema, "source_id": source_id}})
     db.delete(row)
-    db.add(AuditLog(action="preview_allow_remove", detail=schema,
+    db.add(AuditLog(action="preview_allow_remove", detail=f"source={source_id} {schema}",
                     requested_by=admin, requested_at=datetime.now(UTC)))
     return {"schema": schema, "removed": True}
 

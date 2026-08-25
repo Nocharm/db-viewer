@@ -46,7 +46,8 @@ def test_preview_allowlist_edits_are_recorded(client, load_fixture, preview_pass
     assert [i["action"] for i in body["items"]] == [
         "preview_allow_remove", "preview_allow_add",
     ]
-    assert all(i["detail"] == SCHEMA for i in body["items"])
+    # 허용 키가 (소스, 스키마)라 어느 DB를 열었는지까지 남아야 한다 / the source is part of the key
+    assert all(i["detail"] == f"source=1 {SCHEMA}" for i in body["items"])
 
 
 def test_whitelist_edits_are_recorded(client):
