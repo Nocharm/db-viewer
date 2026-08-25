@@ -199,22 +199,40 @@ compose의 build args에 실어야 한다.
 | 항목 | 값 | 이유 |
 |---|---|---|
 | `name:` | `dbviewer-dev` | 컨테이너·네트워크·볼륨 이름이 운영과 충돌하지 않게 |
-| 공개 포트 | `.env.dev`의 `APP_PORT` | 운영과 다른 포트 |
+| 공개 포트 | `${DEV_APP_PORT:-6679}` | 운영 compose는 `"6678:3000"`으로 **하드코딩**돼 있다. 운영 파일은 건드리지 않고, 신규 dev compose에서만 변수로 뺀다 |
 | DB 볼륨 | `pgdata-dev` (별도) | **운영 데이터를 절대 공유하지 않는다** |
 | 네트워크 서브넷 | `172.49.0.0/16` | 운영(172.48/16)과 소스 네트워크(172.50.x/24) 사이의 빈 자리 |
 | env | `env_file: .env.dev` | |
 
-### B.3 비밀 파일 취급 — 요청과 다르게 가는 지점
+### B.3 `.env.dev` — 예시 파일을 만들지 않고 델타만 문서화한다
 
-요청은 "`.env.dev` 작성해서 푸쉬"였다. **`.env.dev`를 커밋하지 않는다.**
+`.env.dev.example`을 따로 두지 않는다. `.env.example`과 45개 키 중 40개가 같아서 **사실상 같은
+파일이 하나 더 생기고, 그 둘은 반드시 어긋난다.** 키 목록의 단일 출처는 `.env.example`로 남긴다.
 
-대신:
-- **`.env.dev.example`을 커밋한다** — 플레이스홀더만 든 템플릿
-- **`.env.dev`를 `.gitignore`에 추가한다**
+대신 런북에 **`cp .env.example .env.dev` 후 무엇을 바꿔야 하는지**만 적는다:
 
-이유: `.env`가 이미 gitignore이고 (`rules/common/security.md`: 비밀을 절대 커밋하지 않는다),
-`.env.dev`라는 이름으로 커밋 가능한 파일을 만들면 누군가 값을 채워 넣고 그대로 커밋한다.
-운영자는 `cp .env.dev.example .env.dev` 후 채운다. **산출물은 그대로 얻고 사고 경로만 닫는다.**
+| 키 | 개발값 | 왜 |
+|---|---|---|
+| `DEV_APP_PORT` | 운영과 다른 포트 | dev compose 전용 신규 키 (§B.2) |
+| `DATABASE_URL` | dev postgres를 가리키게 | 별도 DB |
+| `POSTGRES_PASSWORD` | 다른 값 | |
+| **`SESSION_SECRET_KEY`** | **새로 생성** | **운영과 공유하면 개발에서 발급한 토큰이 운영에서 통한다** |
+| **`SOURCE_SECRET_KEY`** | **새로 생성** | 개발 DB는 별도라 운영 암호문을 못 읽는다. 공유하면 개발 유출이 운영 소스 자격증명을 푼다 |
+| `PREVIEW_ADMIN_PASSWORD` / `INGEST_API_KEY` | 다른 값 | |
+| `AUTH_ENABLED` | `true` | LDAP 로그인을 시험하려면 켜야 한다 |
+| `AUTH_LDAP_LOGIN_ENABLED` | `true` | |
+| `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` | 비움 또는 개발 전용 클라이언트 | 비우면 Keycloak 버튼이 숨는다 (§A.9) |
+| **`N8N_WEBHOOK_BASE`** | **비움** | **개발 서버가 운영 n8n을 두들기지 않게** |
+| `SOURCE_MODE` | `fixture` | |
+| `DBV_SYSADMINS` | 본인 login_id | |
+
+나머지 키는 `.env.example` 값 그대로 둔다.
+
+**`.env.dev`는 `.gitignore`에 추가한다.** 실제 비밀이 들어가는 파일이고 `.env`와 같은 취급이다
+(`rules/common/security.md`).
+
+두 비밀 키를 굵게 쓴 이유: **운영 키를 그대로 복사하는 것이 가장 하기 쉬운 실수**이고,
+`SESSION_SECRET_KEY`의 경우 그 결과가 "개발 서버에서 아무나 만든 토큰이 운영에서 유효"다.
 
 ### B.4 Keycloak 쪽 작업
 
@@ -276,7 +294,7 @@ LDAP 로그인만 쓸 거라면 Keycloak 등록 없이 `AUTH_LDAP_LOGIN_ENABLED=
 | 2 | `verify_credentials` + 로그인 엔드포인트 + 잠금 | 열거 방지·잠금·503·플래그 |
 | 3 | `get_current_user` 분기 | 라우팅 3케이스 + 기존 Keycloak 테스트 그린 |
 | 4 | 프론트 로그인 폼 + 저장 + 401 처리 | 순수 함수 vitest, 게이트 4종 |
-| 5 | `.env.dev.example` + `docker-compose-dev.yml` + `.gitignore` + 런북 | `docker compose -f ... config -q` |
+| 5 | `docker-compose-dev.yml` + `.gitignore` + 런북(`.env.dev` 델타 표) | `docker compose -f ... config -q` |
 
 1~3은 백엔드만이라 독립적으로 검증 가능하다. 4가 붙어야 사람이 쓸 수 있다. 5는 A와 무관하다.
 
