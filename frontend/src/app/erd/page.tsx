@@ -60,6 +60,7 @@ function ErdPageInner() {
         <ErdViewer
           key={sourceId ?? "default"}
           sourceId={sourceId}
+          sourceEngine={sourceEngine}
           focusId={Number.isInteger(parsedFocus) ? parsedFocus : null}
           focusLabel={params.get("label")}
         />

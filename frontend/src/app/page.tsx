@@ -32,7 +32,7 @@ import {
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import { matchTable } from "@/lib/search";
-import { readSourceId } from "@/lib/source-param";
+import { readSourceId, withSourceQuery } from "@/lib/source-param";
 import type { ObjectSummary } from "@/lib/types";
 import { useDataSources } from "@/lib/use-data-sources";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
@@ -172,9 +172,11 @@ function HomeInner() {
       .finally(() => setDetailLoading(false));
   }, [tableParam, tables, selected]);
 
+  // withSourceQuery로 ?source=를 지금 선택된 값 그대로 실어 보낸다 — 안 그러면 테이블을
+  // 클릭할 때마다 URL에서 소스가 빠져 새로고침·공유가 조용히 기본 소스로 돌아간다
   const selectTable = useCallback((table: ObjectSummary) => {
-    router.push(`/?table=${table.id}`, { scroll: false });
-  }, [router]);
+    router.push(withSourceQuery(`/?table=${table.id}`, sourceId), { scroll: false });
+  }, [router, sourceId]);
 
   // 카테고리를 바꾸면 선택된 표가 목록에서 빠질 수 있다 — 목록에 없는 표의 상세가 남으면
   // 무엇을 보고 있는지 어긋난다 / drop the selection when the new category filters it out
@@ -182,9 +184,9 @@ function HomeInner() {
     setCategory(code);
     if (!selected || code === null) return;
     if (resolveCategory(selected.schema, categoryBySchema) !== code) {
-      router.push("/", { scroll: false });
+      router.push(withSourceQuery("/", sourceId), { scroll: false });
     }
-  }, [selected, categoryBySchema, router]);
+  }, [selected, categoryBySchema, router, sourceId]);
 
   const selectByQname = useCallback((qname: string) => {
     const [schema, name] = qname.split(".", 2);
@@ -291,8 +293,8 @@ function HomeInner() {
   useEffect(() => {
     if (previewParam !== "1" || !selected) return;
     if (previewAllowed.has(selected.schema)) openPreview();
-    router.replace(`/?table=${selected.id}`, { scroll: false });
-  }, [previewParam, selected, previewAllowed, openPreview, router]);
+    router.replace(withSourceQuery(`/?table=${selected.id}`, sourceId), { scroll: false });
+  }, [previewParam, selected, previewAllowed, openPreview, router, sourceId]);
 
   const closePreview = useCallback((id: number) => {
     setPreviewTabs((cur) => {
@@ -311,9 +313,8 @@ function HomeInner() {
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
-    let url = `/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`;
-    if (sourceId !== null) url += `&source=${sourceId}`; // 지금 보던 소스 그대로 연다
-    router.push(url);
+    const url = `/erd?focus=${selected.id}&label=${selected.schema}.${selected.name}`;
+    router.push(withSourceQuery(url, sourceId)); // 지금 보던 소스 그대로 연다
   }, [router, selected, sourceId]);
 
   // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
@@ -413,6 +414,7 @@ function HomeInner() {
               previewAllowed={
                 selected !== null && previewAllowed.has(selected.schema)
               }
+              isMssqlSource={isMssqlSource}
               onPreview={openPreview}
               onOpenErd={handleOpenErd}
               onSelectTable={selectByQname}

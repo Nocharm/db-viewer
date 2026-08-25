@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readSourceId, withSourceParam } from "./source-param";
+import { readSourceId, withSourceParam, withSourceQuery } from "./source-param";
 
 describe("readSourceId", () => {
   it("reads a numeric source from the query string", () => {
@@ -24,5 +24,22 @@ describe("withSourceParam", () => {
 
   it("leaves the path untouched for the default source", () => {
     expect(withSourceParam("/api/objects", null)).toBe("/api/objects");
+  });
+});
+
+describe("withSourceQuery", () => {
+  // page.tsx의 selectTable/changeCategory 같은 router.push 경로용 — 테이블을 클릭할
+  // 때마다 ?source=가 사라지면 새로고침이 조용히 기본 소스로 돌아간다
+  it("preserves the selected source across a table-selection navigation", () => {
+    expect(withSourceQuery("/?table=42", 3)).toBe("/?table=42&source=3");
+  });
+
+  it("leaves the path untouched for the default source", () => {
+    expect(withSourceQuery("/", null)).toBe("/");
+  });
+
+  it("appends with & when the path already has a query string", () => {
+    expect(withSourceQuery("/erd?focus=1&label=dbo.orders", 5))
+      .toBe("/erd?focus=1&label=dbo.orders&source=5");
   });
 });
