@@ -20,7 +20,9 @@ def _to_jsonable(value: object) -> object:
     if isinstance(value, datetime | date):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
+        # float()은 정밀도를 잃고 NUMERIC 'NaN'은 float('nan')이 돼 Starlette JSONResponse
+        # (allow_nan=False)를 500으로 터뜨린다 — str()은 두 문제를 한 번에 피한다
+        return str(value)
     if isinstance(value, bytes | bytearray | memoryview):
         return base64.b64encode(bytes(value)).decode()
     return value

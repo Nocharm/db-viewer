@@ -144,7 +144,7 @@ def test_table_preview_judges_by_the_objects_own_source(
     # (502), 여기서 확인할 것은 allowlist 게이트가 더는 막지 않는다는 점(403 아님)이다 —
     # 아래 join 계열 두 테스트와 같은 패턴
     _allow(client, schema, source_id=other_id)
-    assert client.get(f"/api/objects/{other_obj}/preview").status_code != 403
+    assert client.get(f"/api/objects/{other_obj}/preview").status_code == 502
 
 
 def test_join_sample_judges_by_the_columns_own_source(

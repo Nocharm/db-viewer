@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
 from app.adapters import SyntheticDataRefused, create_table_preview
@@ -33,7 +33,8 @@ from app.services.schema_visibility import (
     is_schema_hidden,
     should_render_hidden_schemas,
 )
-from app.sources.registry import get_source
+from app.sources.crypto import CryptoNotConfigured
+from app.sources.registry import UnsupportedSource, get_source
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 logger = logging.getLogger(__name__)
@@ -395,25 +396,38 @@ def get_object_preview(
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
     # live는 n8n W2 실행기, direct 소스는 그 소스에 직결, 그 외는 픽스처 합성 — 팩토리가
-    # 게이트 (docs/connect.md)
+    # 게이트 (docs/connect.md). 소스 준비(엔진 URL 조립·복호화)와 실행을 한 가드 안에 둬서
+    # 어느 단계에서 터지든 500으로 새지 않게 한다.
     try:
         preview = create_table_preview(settings, source)
-    except SyntheticDataRefused as e:
-        raise HTTPException(503, {"message": str(e),
-                                  "context": {"source_mode": settings.source_mode}}) from e
-    try:
         rows = preview.rows(
             qname, column_specs, limit,
             filters=[c.model_dump() for c in conds],
         )
-    except SQLAlchemyError as e:
-        # 자격증명은 절대 싣지 않는다 — 어느 소스가 왜 실패했는지까지만
+    except SyntheticDataRefused as e:
+        raise HTTPException(503, {"message": str(e),
+                                  "context": {"source_mode": settings.source_mode}}) from e
+    except (CryptoNotConfigured, UnsupportedSource) as e:
+        # 소스 장애(502)가 아니라 이쪽 설정 문제 — 키 교체·SOURCE_SECRET_KEY 미설정·direct로
+        # 못 붙는 엔진 조합. 두 예외 다 메시지가 고정 문구뿐이라 str(e)를 그대로 노출해도
+        # 자격증명이 섞이지 않는다(CryptoNotConfigured.decrypt_secret 참조).
+        logger.warning("source preview misconfigured",
+                       extra={"source_id": source.id, "object": qname,
+                              "error_type": type(e).__name__})
+        raise HTTPException(503, {
+            "message": str(e),
+            "context": {"source": source.name, "object": qname},
+        }) from e
+    except DBAPIError as e:
+        # 드라이버 원문(예: 인증 실패 메시지에 담긴 접속 계정명)은 절대 클라이언트로 안 보낸다
+        # — 종류(error_type)까지만. SQLAlchemyError 전체가 아니라 DBAPIError로 좁힌 이유:
+        # CompileError·ArgumentError 같은 조립 버그는 소스 장애로 위장하지 않고 500으로 드러나야 한다.
         logger.warning("source preview failed",
-                       extra={"source_id": source.id, "object": qname})
+                       extra={"source_id": source.id, "object": qname}, exc_info=True)
         raise HTTPException(502, {
             "message": "the data source could not be queried",
             "context": {"source": source.name, "object": qname,
-                        "error": str(e)[:300]},
+                        "error_type": type(e).__name__},
         }) from e
 
     masked = [c.name for c in columns if c.masking_policy]
