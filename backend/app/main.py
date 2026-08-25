@@ -27,6 +27,7 @@ from app.api import (
     relations,
     scan,
     snapshots,
+    sources,
     validate,
     views,
 )
@@ -62,6 +63,8 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     # 수집 트리거는 관리 작업 — 라우터 자체가 sysadmin 게이트를 갖는다
     app.include_router(collect.router)
+    # 소스 등록도 관리 작업 — collect와 같은 관용(자체 sysadmin 게이트)
+    app.include_router(sources.router)
 
     # 승인된 에러 규약: {"error": {code, message, context}} / approved error envelope
     @app.exception_handler(StarletteHTTPException)

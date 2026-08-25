@@ -16,12 +16,23 @@ class UnsupportedSource(RuntimeError):
 
 
 def get_source(db: Session, source_id: int | None) -> DataSource:
-    """소스 1건 — 생략하면 기본 소스(사내 MSSQL) / one source, default when omitted."""
+    """소스 1건 — 생략하면 기본 소스(사내 MSSQL) / one source, default when omitted.
+
+    비활성 소스는 여기서 막는다 — 미리보기(objects.py)·수집 트리거(collect.py)·연결
+    테스트(sources.py)가 모두 이 함수를 거쳐 소스를 얻으므로, 한 곳만 지키면
+    "비활성 소스로 조용히 동작"하는 경로가 전부 막힌다. 관리 API의 목록·수정·삭제는
+    이 함수를 쓰지 않는다 — 비활성 소스도 계속 보이고 다시 켤 수 있어야 하기 때문
+    (관리 API가 이 게이트에 걸리면 다시 켤 방법이 없어진다).
+    """
     target = source_id if source_id is not None else MANAGED_MSSQL_SOURCE_ID
     source = db.get(DataSource, target)
     if source is None:
         raise HTTPException(404, {"message": "data source not found",
                                   "context": {"source_id": target}})
+    if not source.is_enabled:
+        raise HTTPException(409, {
+            "message": "this data source is disabled — enable it before connecting",
+            "context": {"source_id": source.id, "name": source.name}})
     return source
 
 
