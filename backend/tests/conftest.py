@@ -85,17 +85,19 @@ def allow_preview(migrated_engine):
 
     기본 정책이 "전부 차단"이라, 실값을 보는 테스트는 무엇을 열었는지 명시해야 한다.
     호출부는 qname("schema.name")을 그대로 넘겨도 된다 — 스키마만 떼어 등록한다.
+    허용은 소스별이라 소스를 안 주면 기본 소스(시드된 사내 MSSQL)에 등록한다.
     """
     from datetime import UTC, datetime
 
     from app.models import PreviewAllowlist
 
-    def allow(*qnames: str) -> None:
+    def allow(*qnames: str, source_id: int = 1) -> None:
         with sessionmaker(bind=migrated_engine)() as db:
             for schema in {qname.split(".", 1)[0] for qname in qnames}:
-                if db.get(PreviewAllowlist, schema) is not None:
+                if db.get(PreviewAllowlist, (source_id, schema)) is not None:
                     continue
-                db.add(PreviewAllowlist(schema=schema, note=None, added_by="test",
+                db.add(PreviewAllowlist(data_source_id=source_id, schema=schema,
+                                        note=None, added_by="test",
                                         created_at=datetime.now(UTC)))
             db.commit()
 

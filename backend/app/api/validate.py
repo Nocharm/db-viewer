@@ -13,6 +13,7 @@ from app.db import get_db
 from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 from app.services.observations import record_observation
 from app.services.preview_policy import is_preview_allowed
@@ -207,9 +208,11 @@ def run_preview(
     tgt_ref, tgt_col = resolve_column_ref(db, req.tgt_column_id)
     ensure_not_hidden(src_ref, tgt_ref)
     # 조인 샘플도 양쪽 테이블의 실값을 내보낸다 — 테이블 미리보기와 같은 허용 목록을 쓴다
-    # (여기가 열려 있으면 허용 목록이 우회된다)
+    # (여기가 열려 있으면 허용 목록이 우회된다). 검증기는 사내 MSSQL 실행기 하나뿐이라
+    # 기본 소스로 판정한다 — 다른 소스의 값은 애초에 이 경로로 나올 수 없다
     blocked = [ref.object_qname for ref in (src_ref, tgt_ref)
-               if not is_preview_allowed(db, ref.object_qname.split(".", 1)[0])]
+               if not is_preview_allowed(db, MANAGED_MSSQL_SOURCE_ID,
+                                         ref.object_qname.split(".", 1)[0])]
     if blocked:
         raise HTTPException(403, {
             "message": "preview is not allowed for these objects — an admin must add "

@@ -19,7 +19,9 @@ from app.models import (
     CatalogObject,
     LoginWhitelist,
     PreviewAllowlist,
+    Snapshot,
 )
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.schema_visibility import get_hidden_schemas, should_render_hidden_schemas
 
 router = APIRouter(
@@ -130,10 +132,14 @@ def list_users(
 
 
 @router.get("/preview-allowlist")
-def list_preview_allowlist(db: Session = Depends(get_db)) -> dict:
+def list_preview_allowlist(
+    source_id: int = MANAGED_MSSQL_SOURCE_ID, db: Session = Depends(get_db)
+) -> dict:
     """허용 스키마 + 등록 정보 — 읽기는 관리자 게이트만, 수정만 비밀번호를 요구한다."""
     rows = db.execute(
-        select(PreviewAllowlist).order_by(PreviewAllowlist.schema)
+        select(PreviewAllowlist)
+        .where(PreviewAllowlist.data_source_id == source_id)
+        .order_by(PreviewAllowlist.schema)
     ).scalars().all()
     return {
         "password_configured": bool(get_settings().preview_admin_password),
@@ -153,6 +159,7 @@ class PreviewAllowRequest(BaseModel):
     # alias 자체는 동작한다 (test_preview_allowlist가 {"schema": …}로 검증)
     schema_name: str = Field(alias="schema")
     note: str | None = None
+    source_id: int = MANAGED_MSSQL_SOURCE_ID
 
 
 @router.post("/preview-allowlist", dependencies=[Depends(require_preview_admin)])
@@ -161,21 +168,26 @@ def add_preview_allow(
     db: Session = Depends(get_db),
     admin: str = Depends(require_sysadmin),
 ) -> dict:
-    """스키마 하나를 미리보기 허용으로 등록 — 그 스키마의 모든 객체가 열린다."""
+    """한 소스의 스키마 하나를 미리보기 허용으로 등록 — 그 스키마의 모든 객체가 열린다."""
     schema = req.schema_name.strip()
-    # 오타로 유령 허용이 쌓이면 목록만 늘고 아무 테이블도 안 열린다 (schema_categories 동일 관용)
+    source_id = req.source_id
+    # 오타로 유령 허용이 쌓이면 목록만 늘고 아무 테이블도 안 열린다 (schema_categories 동일 관용).
+    # 그 소스의 카탈로그로 좁힌다 — 다른 소스에만 있는 이름을 근거로 열어주면 안 된다
     exists = db.execute(
-        select(CatalogObject.id).where(CatalogObject.schema == schema).limit(1)
+        select(CatalogObject.id)
+        .join(Snapshot, Snapshot.id == CatalogObject.snapshot_id)
+        .where(CatalogObject.schema == schema, Snapshot.data_source_id == source_id)
+        .limit(1)
     ).scalar_one_or_none()
     if exists is None:
         raise HTTPException(400, {"message": "unknown schema in the catalog",
-                                  "context": {"schema": schema}})
+                                  "context": {"schema": schema, "source_id": source_id}})
 
     now = datetime.now(UTC)
-    row = db.get(PreviewAllowlist, schema)
+    row = db.get(PreviewAllowlist, (source_id, schema))
     if row is None:
-        db.add(PreviewAllowlist(schema=schema, note=req.note, added_by=admin,
-                                created_at=now))
+        db.add(PreviewAllowlist(data_source_id=source_id, schema=schema, note=req.note,
+                                added_by=admin, created_at=now))
     else:
         row.note = req.note
     db.add(AuditLog(action="preview_allow_add", detail=schema,
@@ -270,13 +282,14 @@ def set_hidden_schema_render(
                dependencies=[Depends(require_preview_admin)])
 def remove_preview_allow(
     schema: str,
+    source_id: int = MANAGED_MSSQL_SOURCE_ID,
     db: Session = Depends(get_db),
     admin: str = Depends(require_sysadmin),
 ) -> dict:
-    row = db.get(PreviewAllowlist, schema)
+    row = db.get(PreviewAllowlist, (source_id, schema))
     if row is None:
         raise HTTPException(404, {"message": "not in the preview allowlist",
-                                  "context": {"schema": schema}})
+                                  "context": {"schema": schema, "source_id": source_id}})
     db.delete(row)
     db.add(AuditLog(action="preview_allow_remove", detail=schema,
                     requested_by=admin, requested_at=datetime.now(UTC)))

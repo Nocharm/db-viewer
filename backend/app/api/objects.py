@@ -321,13 +321,16 @@ def format_filter_note(conds: list[PreviewFilterCond]) -> str:
 
 
 @router.get("/preview-allowlist")
-def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
+def get_preview_allowlist(
+    source_id: int | None = None, db: Session = Depends(get_db)
+) -> dict:
     """미리보기가 허용된 스키마 목록 — 화면이 버튼 활성 여부를 정하는 근거.
 
     목록 자체는 카탈로그 메타(이미 노출되는 이름)라 일반 사용자도 읽을 수 있다.
-    수정은 관리 API(비밀번호 게이트)에서만 한다.
+    수정은 관리 API(비밀번호 게이트)에서만 한다. 허용은 소스별이라 소스를 생략하면
+    기본 소스의 목록을 준다 — 소스 개념이 없던 화면이 그대로 동작해야 한다.
     """
-    return {"items": list_allowed_schemas(db)}
+    return {"items": list_allowed_schemas(db, source_id or MANAGED_MSSQL_SOURCE_ID)}
 
 
 @router.get("/hidden-schemas")
@@ -369,8 +372,11 @@ def get_object_preview(
                        "(HIDDEN_SCHEMAS)",
             "context": {"object": qname, "schema": obj.schema},
         })
-    # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다
-    if not is_preview_allowed(db, obj.schema):
+    # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다.
+    # 허용은 소스별이라 이 객체가 속한 소스로 판정한다 — 같은 스키마명이라도 다른 소스면 다른 정책
+    snapshot = db.get(Snapshot, obj.snapshot_id)
+    source_id = snapshot.data_source_id if snapshot else MANAGED_MSSQL_SOURCE_ID
+    if not is_preview_allowed(db, source_id, obj.schema):
         raise HTTPException(403, {
             "message": "preview is not allowed for this schema — an admin must add it "
                        "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",

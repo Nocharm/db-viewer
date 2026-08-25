@@ -7,7 +7,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.catalog import Base
@@ -18,6 +18,8 @@ class SchemaCategory(Base):
 
     __tablename__ = "schema_categories"
 
+    # 같은 스키마명이 여러 소스에 존재한다 — 소스가 PK의 일부여야 매핑이 섞이지 않는다
+    data_source_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     schema_name: Mapped[str] = mapped_column(String(128), primary_key=True)
     category: Mapped[str] = mapped_column(String(100))
     updated_by: Mapped[str] = mapped_column(String(100))

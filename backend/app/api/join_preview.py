@@ -12,6 +12,7 @@ from app.api.validate import ensure_not_hidden, get_join_validator, resolve_colu
 from app.db import get_db
 from app.domain.validation import JoinStepRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.preview_policy import is_preview_allowed
 
 router = APIRouter(prefix="/api/join", tags=["join"])
@@ -152,8 +153,9 @@ def run_join_preview(
     # uses the same allowlist as validate.py's /preview. One closed schema blocks the whole
     # request — a joined row carries open and closed columns side by side, so there is no
     # meaningful "partially allowed" result to return.
+    # 검증기는 사내 MSSQL 실행기 하나뿐이라 기본 소스로 판정한다 (validate.py:/preview 동일)
     blocked = [qname for qname, schema in involved.items()
-               if not is_preview_allowed(db, schema)]
+               if not is_preview_allowed(db, MANAGED_MSSQL_SOURCE_ID, schema)]
     if blocked:
         raise HTTPException(403, {
             "message": "preview is not allowed for these objects — an admin must add "

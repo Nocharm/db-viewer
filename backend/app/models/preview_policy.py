@@ -8,7 +8,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.catalog import Base
@@ -19,6 +19,8 @@ class PreviewAllowlist(Base):
 
     __tablename__ = "preview_allowlist"
 
+    # 같은 스키마명이 여러 소스에 존재한다 — 소스가 PK의 일부여야 허용이 새지 않는다
+    data_source_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # CatalogObject.schema와 같은 길이 / mirrors the catalog column
     schema: Mapped[str] = mapped_column(String(128), primary_key=True)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
