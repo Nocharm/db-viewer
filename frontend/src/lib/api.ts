@@ -126,6 +126,19 @@ export function fetchDataSources(): Promise<{
  *  ids are one global sequence. */
 export const MANAGED_MSSQL_SOURCE_ID = 1;
 
+/** 소스 선택기용 최소 목록 — 접속정보 없음, 일반 사용자도 읽는다(조회 API와 같은 게이트).
+ *  관리 콘솔은 전체 레코드가 필요해 계속 `fetchDataSources`를 쓴다. */
+export interface SourceOption {
+  id: number;
+  name: string;
+  engine: string;
+  is_enabled: boolean;
+}
+
+export function fetchSourceOptions(): Promise<{ items: SourceOption[] }> {
+  return getJson("/api/sources/options");
+}
+
 export interface DataSourceInput {
   name: string;
   engine: "postgres" | "sqlite";

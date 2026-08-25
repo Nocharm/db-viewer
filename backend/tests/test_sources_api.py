@@ -1,9 +1,11 @@
 """소스 관리 API — 비밀 미노출·게이트·보호. / source admin API."""
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
 
@@ -544,3 +546,45 @@ def test_duplicate_name_is_a_conflict_not_a_500(client, monkeypatch):
     assert "UNIQUE constraint" not in res.text
     get_settings.cache_clear()
 
+
+def test_source_options_are_readable_by_a_non_sysadmin_without_connection_details(
+    client, migrated_engine, monkeypatch
+):
+    """일반 사용자도 소스를 고를 수 있어야 한다 — 접속정보는 한 필드도 안 나간다.
+
+    스펙 비목표: 소스별 사용자 권한 분리는 하지 않는다(앱에 들어온 사람은 등록된 모든
+    소스를 본다). 관리용 목록만 있던 동안에는 일반 사용자가 403 → 빈 목록 → 선택기 숨김이라
+    멀티 소스 기능 자체가 관리자에게만 보였다.
+    """
+    # Arrange: 접속정보가 채워진 소스 1건 + 화이트리스트 일반 사용자(비 sysadmin)
+    from app import auth as auth_module
+    from app.models import DataSource, LoginWhitelist
+
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        db.add(DataSource(name="svca", engine="postgres", access_mode="direct",
+                          host="svca-db", port=5432, database="app",
+                          username="viewer", password_enc="gAAAA-ciphertext",
+                          is_enabled=True, is_managed=False,
+                          created_at=now, updated_at=now))
+        db.add(LoginWhitelist(login_id="hong.gil", note=None, added_by="admin.sys",
+                              created_at=now))
+        db.commit()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "dbv_sysadmins", "admin.sys")
+    client.app.dependency_overrides[auth_module.get_current_user] = lambda: "hong.gil"
+
+    # Act
+    options = client.get("/api/sources/options")
+    admin_list = client.get("/api/sources")
+
+    # Assert
+    assert options.status_code == 200
+    assert {item["name"] for item in options.json()["items"]} == {"사내 MSSQL", "svca"}
+    assert all(set(item) == {"id", "name", "engine", "is_enabled"}
+               for item in options.json()["items"])
+    for secret in ("svca-db", "viewer", "gAAAA-ciphertext", "5432"):
+        assert secret not in options.text
+    # 관리용 전체 목록은 여전히 sysadmin 전용
+    assert admin_list.status_code == 403

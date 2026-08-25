@@ -69,6 +69,9 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, dependencies=user_gate)
     app.include_router(keys.router, dependencies=user_gate)
     app.include_router(categories.router, dependencies=user_gate)
+    # 소스 선택기가 읽는 최소 목록 — 조회 API와 같은 게이트. 관리용 전체 목록(sources.router,
+    # sysadmin)과 경로 접두사를 공유하지만 겹치는 라우트가 없다
+    app.include_router(sources.browse_router, dependencies=user_gate)
     # me는 토큰만, admin은 자체 sysadmin 게이트 / me needs only a token
     app.include_router(me.router)
     app.include_router(admin.router)

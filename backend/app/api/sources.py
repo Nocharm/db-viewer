@@ -24,6 +24,13 @@ router = APIRouter(
     prefix="/api/sources", tags=["sources"], dependencies=[Depends(require_sysadmin)]
 )
 
+# 일반 사용자용 — 소스 선택기가 읽는 최소 목록. 위 관리 라우터와 달리 sysadmin 게이트가
+# 없고(main.py가 조회 API와 같은 화이트리스트 게이트로 마운트한다) 접속정보를 한 필드도
+# 싣지 않는다. 스펙 비목표: "소스별 사용자 권한 분리 없음 — 앱에 들어온 사람은 등록된
+# 모든 소스를 본다". sysadmin 전용 목록만 있으면 일반 사용자에게는 선택기가 영영 안 뜬다.
+# / minimal list for the source picker: no connection details, same gate as the browse API
+browse_router = APIRouter(prefix="/api/sources", tags=["sources"])
+
 
 class SourceCreateRequest(BaseModel):
     name: str
@@ -106,6 +113,22 @@ def list_data_sources(db: Session = Depends(get_db)) -> dict:
         "secret_key_configured": is_crypto_configured(),
         "items": [_serialize(source) for source in list_sources(db)],
     }
+
+
+@browse_router.get("/options")
+def list_source_options(db: Session = Depends(get_db)) -> dict:
+    """소스 선택기용 최소 목록 — id·이름·엔진·활성 여부뿐 / picker payload, nothing else.
+
+    host·port·database·username·has_password·last_error는 의도적으로 빠져 있다:
+    일반 사용자에게 필요한 것은 "무엇을 고를 수 있는가"뿐이고, 접속 대상·자격증명 유무는
+    관리 정보다. 그쪽이 필요한 관리 콘솔은 sysadmin 게이트가 걸린 `GET /api/sources`를
+    계속 쓴다.
+    """
+    return {"items": [
+        {"id": source.id, "name": source.name, "engine": source.engine,
+         "is_enabled": source.is_enabled}
+        for source in list_sources(db)
+    ]}
 
 
 @router.post("", dependencies=[Depends(require_preview_admin)])
