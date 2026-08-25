@@ -48,6 +48,7 @@ def list_schema_categories(
     }
     return {
         "snapshot_id": snapshot.id,
+        "source_id": snapshot.data_source_id,
         "items": [
             {
                 "schema": schema,

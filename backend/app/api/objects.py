@@ -72,6 +72,7 @@ def search_objects(
     q: str = "",
     type_filter: Literal["table", "view"] | None = Query(None, alias="type"),
     snapshot_id: int | None = None,
+    source_id: int | None = None,
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -81,7 +82,7 @@ def search_objects(
     total 없이 잘린 목록만 주면 화면이 "이게 전부"라고 거짓말한다 (실규모 3,224 객체 >
     페이지 상한 1,000). 클라이언트는 total까지 offset으로 페이징해 전량을 모은다.
     """
-    snapshot = resolve_snapshot(db, snapshot_id)
+    snapshot = resolve_snapshot(db, snapshot_id, source_id)
     column_count = (
         select(func.count())
         .where(CatalogColumn.object_id == CatalogObject.id)
@@ -113,7 +114,10 @@ def search_objects(
         }
         for obj, col_count in db.execute(stmt)
     ]
-    return {"snapshot_id": snapshot.id, "total": total, "items": items}
+    return {
+        "snapshot_id": snapshot.id, "source_id": snapshot.data_source_id,
+        "total": total, "items": items,
+    }
 
 
 @router.get("/{object_id}/detail")
@@ -467,10 +471,11 @@ def get_object_preview(
 
 @router.get("/columns-index")
 def get_columns_index(
-    snapshot_id: int | None = None, db: Session = Depends(get_db)
+    snapshot_id: int | None = None, source_id: int | None = None,
+    db: Session = Depends(get_db),
 ) -> dict:
     """테이블별 컬럼명 인덱스 — 브라우저 컬럼 검색용 / column-name index for client search."""
-    snapshot = resolve_snapshot(db, snapshot_id)
+    snapshot = resolve_snapshot(db, snapshot_id, source_id)
     hidden = get_hidden_schemas()
     index: dict[int, list[str]] = {}
     for object_id, schema, name in db.execute(
@@ -484,7 +489,7 @@ def get_columns_index(
             continue
         index.setdefault(object_id, []).append(name)
     return {
-        "snapshot_id": snapshot.id,
+        "snapshot_id": snapshot.id, "source_id": snapshot.data_source_id,
         "items": [{"object_id": oid, "columns": cols} for oid, cols in index.items()],
     }
 
