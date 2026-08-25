@@ -3,6 +3,9 @@
 서비스 계층의 불변식 1건 + 실값이 나가는 세 경로(테이블 미리보기·2-way 조인 샘플·N-way
 조인 미리보기)가 **각자 객체의 소스로** 판정하는지. 세 경로 모두 클라이언트가 준 id를
 그대로 해석하므로, 기본 소스로 하드코딩하면 소스 1의 허용이 소스 2를 열어버린다.
+
+조인 두 경로는 MSSQL 전용 기능이라 이제 허용목록(403)보다 앞선 소스 엔진 게이트(400)에서
+막힌다 — 그래도 확인할 것은 같다: 다른 소스의 id가 소스 1의 판정을 얻어내지 못한다.
 """
 
 from datetime import UTC, datetime
@@ -171,11 +174,13 @@ def test_join_sample_judges_by_the_columns_own_source(
     managed = client.post("/api/validate/preview", json=ids_for(managed_snapshot))
     other = client.post("/api/validate/preview", json=ids_for(other_snapshot))
 
-    # Assert: 허용된 소스는 통과(403 아님), 다른 소스는 같은 스키마명이어도 차단
+    # Assert: 허용된 소스는 통과(403 아님), 다른 소스는 같은 스키마명이어도 차단.
+    # 차단은 이제 허용목록(403)보다 한 단계 앞선 MSSQL 전용 경계(400)에서 걸린다 —
+    # 조인 검증은 n8n/MSSQL 검증기를 부르는 기능이라 PG 컬럼 id는 판정 이전에 거부된다
+    # (`validate.resolve_column_ref`). 교차 소스 누출은 더 이른 지점에서 닫힌다.
     assert managed.status_code != 403
-    assert other.status_code == 403
-    assert other.json()["error"]["context"]["objects"] == [rel["src_object"],
-                                                           rel["tgt_object"]]
+    assert other.status_code == 400
+    assert "MSSQL source only" in other.json()["error"]["message"]
 
 
 def test_n_way_join_preview_judges_by_the_columns_own_source(
@@ -203,8 +208,7 @@ def test_n_way_join_preview_judges_by_the_columns_own_source(
     managed = client.post("/api/join/preview", json=body_for(managed_snapshot))
     other = client.post("/api/join/preview", json=body_for(other_snapshot))
 
-    # Assert
+    # Assert: 위 2-way 조인 샘플과 같은 이유로 400 — 조인 미리보기도 MSSQL 전용 경로다
     assert managed.status_code != 403
-    assert other.status_code == 403
-    assert other.json()["error"]["context"]["objects"] == [rel["src_object"],
-                                                           rel["tgt_object"]]
+    assert other.status_code == 400
+    assert "MSSQL source only" in other.json()["error"]["message"]

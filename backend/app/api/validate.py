@@ -12,7 +12,14 @@ from app.config import get_settings
 from app.db import get_db
 from app.domain import scoring
 from app.domain.validation import ColumnRef, JoinValidator, ValidationDataMissing
-from app.models import AuditLog, CatalogColumn, CatalogObject, JoinValidationHistory, Snapshot
+from app.models import (
+    AuditLog,
+    CatalogColumn,
+    CatalogObject,
+    DataSource,
+    JoinValidationHistory,
+    Snapshot,
+)
 from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.catalog_queries import load_pair_sets, load_scoring_columns
 from app.services.observations import record_observation
@@ -33,18 +40,10 @@ class ContainmentRequest(BaseModel):
     triggered_by: str = "local"
 
 
-def resolve_column_ref(db: Session, column_id: int) -> tuple[ColumnRef, CatalogColumn]:
-    """컬럼 id → 스냅샷 독립 텍스트 식별자 / snapshot id to textual identity."""
-    row = db.execute(
-        select(CatalogColumn, CatalogObject)
-        .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
-        .where(CatalogColumn.id == column_id)
-    ).one_or_none()
-    if row is None:
-        raise HTTPException(404, {"message": "column not found",
-                                  "context": {"column_id": column_id}})
-    col, obj = row
-    return ColumnRef(obj.schema, obj.name, col.name), col
+def resolve_object_source_id(db: Session, obj: CatalogObject) -> int:
+    """객체가 속한 소스 / the source that owns this object."""
+    snapshot = db.get(Snapshot, obj.snapshot_id)
+    return snapshot.data_source_id if snapshot is not None else MANAGED_MSSQL_SOURCE_ID
 
 
 def resolve_column_source_id(db: Session, col: CatalogColumn) -> int:
@@ -55,8 +54,48 @@ def resolve_column_source_id(db: Session, col: CatalogColumn) -> int:
     허용한 것이 소스 2의 'public' 객체까지 열어주는, 이 표의 PK를 바꾼 이유 그 자체가 된다.
     """
     obj = db.get(CatalogObject, col.object_id)
-    snapshot = db.get(Snapshot, obj.snapshot_id) if obj is not None else None
-    return snapshot.data_source_id if snapshot is not None else MANAGED_MSSQL_SOURCE_ID
+    return resolve_object_source_id(db, obj) if obj is not None else MANAGED_MSSQL_SOURCE_ID
+
+
+def ensure_mssql_source(db: Session, source_id: int, context: dict) -> None:
+    """관계 검증·조인 검증은 사내 MSSQL 전용 기계다 — 다른 엔진의 식별자는 400으로 막는다.
+
+    화면은 이미 비-MSSQL 소스에서 이 진입점들을 감추지만 UI 게이팅은 경계가 아니다:
+    백엔드는 클라이언트가 준 object_id/column_id를 그대로 해석하므로, 북마크해 둔
+    `/verify?src=<pg_object_id>`나 손으로 고친 요청 하나면 PG 식별자가 n8n/MSSQL 검증기로
+    흘러든다. 쿼리파라미터 `source_id`를 무시한다는 설계 노트는 객체 id에는 해당하지 않는다.
+    / the UI hides these entry points for non-MSSQL sources, but the API still takes
+      client-supplied ids — a bookmarked or hand-edited request would hand PostgreSQL
+      identifiers to the n8n/MSSQL validator. Reject them here.
+    """
+    source = db.get(DataSource, source_id)
+    # 소스 행을 못 찾는 경우는 FK상 없다 — 있더라도 기본 소스(사내 MSSQL)로 본다
+    if source is not None and source.engine != "mssql":
+        raise HTTPException(400, {
+            "message": "this feature is available for the in-house MSSQL source only — "
+                       "relation validation and join checks do not run on "
+                       "PostgreSQL/SQLite sources",
+            "context": {**context, "source_id": source_id, "engine": source.engine},
+        })
+
+
+def resolve_column_ref(db: Session, column_id: int) -> tuple[ColumnRef, CatalogColumn]:
+    """컬럼 id → 스냅샷 독립 텍스트 식별자 / snapshot id to textual identity.
+
+    검증·확정·AI 경로가 전부 이 함수를 거친다 — MSSQL 전용 경계를 여기 한 곳에 두면
+    개별 라우트가 빠뜨릴 수 없다.
+    """
+    row = db.execute(
+        select(CatalogColumn, CatalogObject)
+        .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
+        .where(CatalogColumn.id == column_id)
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(404, {"message": "column not found",
+                                  "context": {"column_id": column_id}})
+    col, obj = row
+    ensure_mssql_source(db, resolve_object_source_id(db, obj), {"column_id": column_id})
+    return ColumnRef(obj.schema, obj.name, col.name), col
 
 
 def _pair_filter(src: ColumnRef, tgt: ColumnRef):
