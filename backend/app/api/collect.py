@@ -14,7 +14,7 @@ from app.adapters.collect_runner import CollectRunner
 from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
-from app.models import CollectJob
+from app.models import CollectJob, Snapshot
 
 router = APIRouter(
     prefix="/api/collect", tags=["collect"], dependencies=[Depends(require_sysadmin)]
@@ -72,6 +72,19 @@ def _create_job(db: Session, mode: str, triggered_by: str) -> CollectJob:
     db.add(job)
     db.flush()
     return job
+
+
+def _is_direct_source_job(db: Session, job: CollectJob) -> bool:
+    """이 잡의 스냅샷이 direct 소스에 속하는가 — direct 소스는 뷰 의존 단계가 없어
+    run_catalog가 catalog_done을 거치지 않고 곧장 ready로 끝난다(direct_runner.py)."""
+    if job.snapshot_id is None:
+        return False
+    from app.sources.registry import get_source
+
+    snapshot = db.get(Snapshot, job.snapshot_id)
+    if snapshot is None:
+        return False
+    return get_source(db, snapshot.data_source_id).access_mode == "direct"
 
 
 def _mark_failed(session_factory: sessionmaker, job_id: int, error: str) -> None:
@@ -165,13 +178,20 @@ def trigger_view_deps_step(
     runner: CollectRunner = Depends(get_collect_runner),
     session_factory: sessionmaker = Depends(get_collect_session_factory),
 ) -> dict:
-    """2단계 — 뷰 의존 수집 + lineage·파싱. 1단계 완료(catalog_done)가 선행 조건."""
+    """2단계 — 뷰 의존 수집 + lineage·파싱. 1단계 완료(catalog_done)가 선행 조건.
+
+    direct 소스 잡은 catalog_done을 거치지 않고 run_catalog에서 곧장 ready로 끝난다 —
+    그런 잡에 이 엔드포인트를 불러도 "카탈로그가 안 끝났다"는 거짓 409 대신, 이미 끝난
+    상태를 그대로 돌려주는 멱등한 no-op으로 응답한다. non-direct 소스는 기존 409 그대로.
+    """
     if req.source_id is not None:
         runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = db.get(CollectJob, req.job_id)
     if job is None:
         raise HTTPException(404, {"message": "collect job not found",
                                   "context": {"job_id": req.job_id}})
+    if job.stage == "ready" and _is_direct_source_job(db, job):
+        return _job_payload(job)
     if job.stage != "catalog_done" or job.snapshot_id is None:
         raise HTTPException(409, {
             "message": "catalog step must complete before view-deps",

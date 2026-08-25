@@ -6,7 +6,7 @@ FixtureCollectRunner와 같은 관용을 따른다 — 수집 결과를 ingest�
 
 from sqlalchemy.orm import sessionmaker
 
-from app.models import DataSource, Snapshot
+from app.models import CollectJob, DataSource, Snapshot
 from app.sources.connection import get_sa_engine
 from app.sources.registry import UnsupportedSource
 
@@ -56,11 +56,14 @@ class DirectCollectRunner:
         뷰 의존성 역추적은 T-SQL 파서 기반이라 PG/SQLite DDL에 적용할 수 없다
         (Phase 2는 engine=='mssql'에서만 돈다, app/api/ingest.py 참조). 전체 모드 체인이
         catalog 단계 다음에 이 단계를 호출할 수 있으므로, 이미 끝난 상태를 재확인만 하고
-        실패하지 않는다.
+        실패하지 않는다. 잡이 이미 failed면 손대지 않는다 — 실패를 성공으로 뒤집지 않는다.
         """
         from app.api.ingest import update_collect_job
 
         with self._session_factory() as db:
+            job = db.get(CollectJob, job_id)
+            if job is not None and job.stage == "failed":
+                return
             snapshot = db.get(Snapshot, snapshot_id)
             if snapshot is not None:
                 snapshot.status = "ready"

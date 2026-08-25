@@ -406,3 +406,45 @@ def test_full_trigger_direct_source_does_not_hang_on_view_deps_wait(
     job = cclient.get(f"/api/collect/jobs/{job_id}").json()
     assert job["stage"] == "ready"
     assert _snapshot_status(migrated_engine, job["snapshot_id"]) == "ready"
+
+
+def test_view_deps_trigger_is_a_noop_for_a_finished_direct_source_job(
+    cclient, direct_sqlite_source_id,
+):
+    """direct 소스 잡은 catalog_done을 거치지 않고 곧장 ready로 끝난다 — 그런 잡에 2단계
+    엔드포인트를 다시 불러도 "카탈로그가 안 끝났다"는 거짓 409를 주면 안 된다(멱등 no-op)."""
+    # Arrange: direct 소스로 카탈로그를 완료한 잡(사전조건: 곧장 ready)
+    res = cclient.post("/api/collect/catalog",
+                       json={"triggered_by": "test", "source_id": direct_sqlite_source_id})
+    job_id = res.json()["job_id"]
+    assert cclient.get(f"/api/collect/jobs/{job_id}").json()["stage"] == "ready"
+
+    # Act
+    res = cclient.post("/api/collect/view-deps", json={"job_id": job_id})
+
+    # Assert: 409가 아니라 이미 끝난 상태를 그대로 돌려준다
+    assert res.status_code != 409, res.text
+    assert res.json()["stage"] == "ready"
+
+
+def test_view_deps_trigger_still_409s_for_unfinished_non_direct_job(cclient, migrated_engine):
+    """n8n/픽스처 소스는 기존 동작 그대로 — 진짜로 카탈로그가 안 끝났으면 여전히 409다.
+    direct 소스만을 위한 no-op 분기가 non-direct(사내 MSSQL) 잡까지 새 나가면 안 된다."""
+    # Arrange: 카탈로그 진행 중인 잡 (사내 MSSQL 소스 = non-direct)
+    from datetime import UTC, datetime
+
+    from app.models import CollectJob
+
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        job = CollectJob(mode="step", stage="catalog_running", triggered_by="test",
+                         created_at=now, updated_at=now)
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    # Act
+    res = cclient.post("/api/collect/view-deps", json={"job_id": job_id})
+
+    # Assert
+    assert res.status_code == 409

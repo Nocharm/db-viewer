@@ -134,3 +134,25 @@ def test_view_deps_ingest_skips_phase2_for_non_mssql_source(client, migrated_eng
             select(CatalogObject).where(CatalogObject.snapshot_id == snapshot_id)
         ).scalar_one()
         assert obj.parse_status is None
+
+
+def test_run_view_deps_does_not_revive_a_failed_job(sqlite_source_row):
+    """run_view_deps는 무조건 ready로 덮어쓰지 않는다 — 실패한 잡을 성공으로 뒤집으면
+    안 된다(실패 원인 격리 규칙, rules/common/error-handling.md)."""
+    # Arrange: 실패로 끝난 잡 (run_catalog를 거치지 않아 스냅샷이 없다 — 실패 시 흔한 상태)
+    factory, source_id, job_id = sqlite_source_row
+    with factory() as db:
+        job = db.get(CollectJob, job_id)
+        job.stage = "failed"
+        job.error = "boom"
+        db.commit()
+        runner = DirectCollectRunner(db.get(DataSource, source_id), factory)
+
+    # Act
+    runner.run_view_deps(job_id, snapshot_id=999)
+
+    # Assert: failed·에러 메시지 그대로 — ready로 뒤집히지 않는다
+    with factory() as db:
+        job = db.get(CollectJob, job_id)
+        assert job.stage == "failed"
+        assert job.error == "boom"
