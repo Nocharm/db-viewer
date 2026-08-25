@@ -6,6 +6,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 
 from app.models import Base
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 
 
 def _insert_snapshot_tree(conn) -> tuple[int, int, int]:
@@ -13,7 +14,8 @@ def _insert_snapshot_tree(conn) -> tuple[int, int, int]:
     t = Base.metadata.tables
     snap_id = conn.execute(
         t["snapshots"].insert().values(
-            collected_at=sa.func.now(), source_db="fixture", status="ready"
+            collected_at=sa.func.now(), source_db="fixture", status="ready",
+            data_source_id=MANAGED_MSSQL_SOURCE_ID,
         )
     ).inserted_primary_key[0]
     obj_id = conn.execute(
@@ -65,7 +67,8 @@ def test_status_check_constraint_rejects_unknown(fk_conn):
     with pytest.raises(sa.exc.IntegrityError):
         fk_conn.execute(
             Base.metadata.tables["snapshots"].insert().values(
-                collected_at=sa.func.now(), source_db="fixture", status="bogus"
+                collected_at=sa.func.now(), source_db="fixture", status="bogus",
+                data_source_id=MANAGED_MSSQL_SOURCE_ID,
             )
         )
 

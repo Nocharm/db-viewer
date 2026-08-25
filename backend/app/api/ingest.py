@@ -21,6 +21,7 @@ from app.models import (
     ViewDep,
     ViewLineageFlat,
 )
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
 from app.services.phase2 import run_phase2
 
@@ -85,6 +86,7 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
         snapshot = Snapshot(
             collected_at=payload.collected_at, source_db=payload.source_db,
             status="collecting",
+            data_source_id=payload.data_source_id or MANAGED_MSSQL_SOURCE_ID,
         )
         db.add(snapshot)
         db.flush()

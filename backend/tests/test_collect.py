@@ -175,11 +175,13 @@ def test_n8n_runner_batches_view_deps_by_view_ids(migrated_engine):
     from datetime import UTC, datetime
 
     from app.models import CatalogObject, CollectJob, Snapshot
+    from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 
     factory = sessionmaker(bind=migrated_engine)
     now = datetime.now(UTC)
     with factory() as db:
-        snap = Snapshot(collected_at=now, source_db="T", status="collecting")
+        snap = Snapshot(collected_at=now, source_db="T", status="collecting",
+                        data_source_id=MANAGED_MSSQL_SOURCE_ID)
         db.add(snap)
         db.flush()
         for oid in (21, 22, 23):

@@ -13,6 +13,7 @@ from app.api.ai import get_ai_session_factory, select_ai_candidates
 from app.config import Settings
 from app.domain import scoring
 from app.models import AiEmbedding, AiJob, Base, CatalogColumn, CatalogObject, Relation, Snapshot, ViewLineageFlat
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services import ai_search
 from app.services.ai_chat import CHAT_RELATIONS_LIMIT, CHAT_TOP_K, build_chat_context
 from app.services.ai_search import search_tables_smart
@@ -680,7 +681,8 @@ def test_suggest_result_reports_unjudged_pairs(ai_job_client, migrated_engine, l
 
 
 def _new_snapshot(db) -> Snapshot:
-    snap = Snapshot(collected_at=datetime.now(UTC), source_db="TEST", status="ready")
+    snap = Snapshot(collected_at=datetime.now(UTC), source_db="TEST", status="ready",
+                    data_source_id=MANAGED_MSSQL_SOURCE_ID)
     db.add(snap)
     db.flush()
     return snap

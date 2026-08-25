@@ -33,11 +33,16 @@ class Snapshot(Base):
     source_db: Mapped[str] = mapped_column(String(128))
     # collecting: ingest 진행 중 / ready: 조회 가능 / failed: 수집 실패
     status: Mapped[str] = mapped_column(String(16))
+    # 어느 소스의 스냅샷인가 — 소스별 "최신 ready" 해석의 축
+    data_source_id: Mapped[int] = mapped_column(
+        ForeignKey("data_sources.id", name="fk_snapshots_data_source_id")
+    )
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('collecting', 'ready', 'failed')", name="ck_snapshots_status"
         ),
+        Index("ix_snapshots_source_status", "data_source_id", "status", "id"),
     )
 
 

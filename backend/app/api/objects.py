@@ -24,6 +24,7 @@ from app.models import (
     Snapshot,
     ViewLineageFlat,
 )
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.preview_policy import is_preview_allowed, list_allowed_schemas
 from app.services.schema_visibility import (
     get_hidden_schemas,
@@ -34,19 +35,29 @@ from app.services.schema_visibility import (
 router = APIRouter(prefix="/api/objects", tags=["objects"])
 
 
-def resolve_snapshot(db: Session, snapshot_id: int | None) -> Snapshot:
-    """지정 스냅샷 또는 최신 ready 스냅샷 / requested snapshot or the latest ready one."""
+def resolve_snapshot(
+    db: Session, snapshot_id: int | None = None, source_id: int | None = None
+) -> Snapshot:
+    """지정 스냅샷, 없으면 그 소스의 최신 ready / requested snapshot or the source's latest ready.
+
+    source_id를 생략하면 기본 소스(시드된 사내 MSSQL)로 본다 — 소스 개념이 없던
+    기존 호출자가 그대로 동작해야 한다.
+    """
     if snapshot_id is not None:
         snapshot = db.get(Snapshot, snapshot_id)
         if snapshot is None:
             raise HTTPException(404, {"message": "snapshot not found",
                                       "context": {"snapshot_id": snapshot_id}})
         return snapshot
+    target = source_id if source_id is not None else MANAGED_MSSQL_SOURCE_ID
     snapshot = db.execute(
-        select(Snapshot).where(Snapshot.status == "ready").order_by(Snapshot.id.desc()).limit(1)
+        select(Snapshot)
+        .where(Snapshot.status == "ready", Snapshot.data_source_id == target)
+        .order_by(Snapshot.id.desc()).limit(1)
     ).scalar_one_or_none()
     if snapshot is None:
-        raise HTTPException(404, {"message": "no ready snapshot", "context": {}})
+        raise HTTPException(404, {"message": "no ready snapshot for this source",
+                                  "context": {"source_id": target}})
     return snapshot
 
 

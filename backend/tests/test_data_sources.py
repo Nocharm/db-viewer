@@ -39,3 +39,40 @@ def test_source_name_is_unique(migrated_engine):
                           created_at=now, updated_at=now))
         with pytest.raises(IntegrityError):
             db.commit()
+
+
+def _add_snapshot(db, source_id: int, status: str = "ready"):
+    from datetime import UTC, datetime
+
+    from app.models import Snapshot
+
+    snap = Snapshot(collected_at=datetime.now(UTC), source_db="x",
+                    status=status, data_source_id=source_id)
+    db.add(snap)
+    db.flush()
+    return snap
+
+
+def test_resolve_snapshot_picks_latest_ready_of_that_source(migrated_engine):
+    # Arrange: 두 소스에 각각 ready 스냅샷
+    from datetime import UTC, datetime
+
+    from app.api.objects import resolve_snapshot
+    from app.models import DataSource
+
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        other = DataSource(name="svca", engine="postgres", access_mode="direct",
+                           host="h", port=5432, database="d", username="u",
+                           is_enabled=True, is_managed=False,
+                           created_at=now, updated_at=now)
+        db.add(other)
+        db.flush()
+        mssql_snap = _add_snapshot(db, MANAGED_MSSQL_SOURCE_ID)
+        other_snap = _add_snapshot(db, other.id)
+        db.commit()
+
+        # Act / Assert: 소스를 지정하면 그 소스의 최신 ready
+        assert resolve_snapshot(db, source_id=other.id).id == other_snap.id
+        # 소스를 생략하면 기본 소스(사내 MSSQL) — 기존 호출자가 안 깨진다
+        assert resolve_snapshot(db).id == mssql_snap.id
