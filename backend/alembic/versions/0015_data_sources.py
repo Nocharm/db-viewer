@@ -53,6 +53,14 @@ def upgrade() -> None:
         "is_enabled": True, "is_managed": True,
         "created_at": now, "updated_at": now, "last_ok_at": None, "last_error": None,
     }])
+    # id를 명시한 INSERT는 시퀀스를 전진시키지 않는다 — PostgreSQL에서 SERIAL로 렌더되는
+    # 이 컬럼의 다음 nextval이 여전히 1이라, 관리자가 처음 등록하는 소스가 시드 행과 PK
+    # 충돌한다(운영 첫 동작이 결정론적으로 깨진다). SQLite는 INTEGER PRIMARY KEY가 rowid
+    # 별칭이라 max(rowid)+1을 골라 이 사고를 감춘다 — 그래서 테스트로는 안 잡힌다.
+    # / an explicit-id insert leaves the SERIAL sequence at 1; SQLite's rowid alias hides it
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("SELECT setval('data_sources_id_seq', "
+                   "(SELECT MAX(id) FROM data_sources))")
 
 
 def downgrade() -> None:
