@@ -57,7 +57,8 @@ docker network create --subnet 172.50.<n>.0/24 dbv-<서비스키>
 ```
 
 > `docker network ls`로 기존 이름과 겹치지 않는지, `docker network inspect`로 서브넷이
-> 기존 대역(172.36~172.48)과 겹치지 않는지 확인한다.
+> 기존 서비스 대역(172.36~46)과 db-viewer 자신의 대역(172.48.0.0/16)에 겹치지 않는지
+> 확인한다.
 
 **아직 안 했다면 `SOURCE_SECRET_KEY`도 미리 준비한다** (db-viewer `.env`, 소스 등록 API가
 이 키 없이는 503) — 최초 1회만 생성하고 이후 안 바꾼다(키를 바꾸면 이미 등록된 소스의

@@ -156,8 +156,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 값을 `.env`의 `SOURCE_SECRET_KEY=`에 채운다. **이후 키를 바꾸면 그때까지 등록된 모든
 소스의 비밀번호를 다시 입력해야 한다** (기존 암호문을 새 키로 복호화할 수 없다 —
-`CryptoNotConfigured`가 아니라 복호화 실패로 소스가 통째로 붙지 않게 된다). 키 교체는
-계획하지 말고 최초 1회만 생성해 유지한다.
+복호화 실패는 `CryptoNotConfigured`로 보고되고, 메시지에 "rotated" 안내가 실려
+비밀번호를 다시 넣으라고 알려준다). 키 교체는 계획하지 말고 최초 1회만 생성해 유지한다.
 
 `SOURCE_CONNECT_TIMEOUT`(기본 5초)·`SOURCE_QUERY_TIMEOUT`(기본 15초)은 튜닝값이라
 보통 기본값으로 둔다 — 소스 DB가 유난히 느리면 늘린다.
@@ -247,8 +247,9 @@ docker compose logs backend | grep -i alembic
    값을 반환한다. 등록만으로는 아무것도 안 열린다 — 기본은 전부 차단이다.
 
 **비활성 소스에서 되는 것 / 안 되는 것.** 소스를 끄면(`is_enabled=false`) **연결
-테스트는 계속 되지만 미리보기·수집 트리거는 막힌다**(409, "disabled — enable it
-before connecting"). 의도적 설계다 — 정상 운영 순서는 "자격증명을 고치고 → 테스트로
+테스트는 계속 되지만 미리보기·수집 트리거는 막힌다**(409, "this data source is
+disabled — enable it before connecting"). 의도적 설계다 — 정상 운영 순서는
+"자격증명을 고치고 → 테스트로
 확인하고 → 재활성화"인데, 테스트까지 막으면 확인 없이 먼저 켜야 하는 반대 순서를
 강제하게 된다(근거: `backend/app/sources/registry.py` `get_source`의
 `allow_disabled` 분기, `backend/app/api/sources.py` `/test`).
@@ -265,6 +266,7 @@ before connecting"). 의도적 설계다 — 정상 운영 순서는 "자격증�
 | 대상 서비스 재기동 후 자기들끼리 못 찾음 | compose에 `networks:`를 명시하면서 `default:`를 빠뜨렸다 (3의 함정) |
 | `Pool overlaps with other one on this address space` | 서브넷 `172.50.<n>.0/24`가 이미 쓰이는 중 — 다른 `<n>` 사용 |
 | 연결 테스트가 502 | 소스 DB 자체 접속 실패(호스트·포트·자격증명) — 응답의 `error_type`과 backend 로그(`exc_info=True`로 전문 기록) 확인 |
-| 연결 테스트가 503 | 소스 장애가 아니라 이쪽 설정 문제 — `SOURCE_SECRET_KEY` 미설정/키 불일치, 또는 engine이 postgres/sqlite가 아님 |
+| 연결 테스트가 503 | 소스 장애가 아니라 이쪽 설정 문제 — `SOURCE_SECRET_KEY` 미설정 또는 키 불일치(비밀번호 복호화 실패) |
+| 연결 테스트가 400 | 그 소스가 n8n 경유(access_mode≠direct)이거나, engine이 postgres/sqlite가 아닌 행 — 둘 다 접속을 시도하지도 않고 거부한다(`sources.py` `/test`) |
 | 소스 삭제가 409 | 그 소스에 수집된 스냅샷이 있거나(스냅샷 1건이라도) 미리보기 허용목록·카테고리에 정책 행이 남아 있다 — 비활성화로 대체하거나 그 행들을 먼저 정리 |
 | `alembic upgrade head`가 실패 | 6.3의 롤백 절차(`alembic downgrade 0014`)로 되돌리고 원인 조사 후 재시도. 절대 실패 상태로 backend를 계속 띄워두지 않는다 |

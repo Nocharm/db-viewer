@@ -394,8 +394,8 @@ docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n
 
 | 키 | 분류 | 설명 |
 |---|---|---|
-| `DBV_SECRET_KEY` | Environment | Fernet 키(urlsafe base64 32B). 소스 접속정보 암호화. 미설정이면 소스 등록 503 |
-| `SOURCE_PREVIEW_TIMEOUT` | Tuning | direct 소스 미리보기 문장 타임아웃(초, 기본 15) |
+| `SOURCE_SECRET_KEY` | Environment | Fernet 키(urlsafe base64 32B). 소스 접속정보 암호화. 미설정이면 소스 등록 503 |
+| `SOURCE_QUERY_TIMEOUT` | Tuning | direct 소스 미리보기 문장 타임아웃(초, 기본 15) |
 | `SOURCE_CONNECT_TIMEOUT` | Tuning | direct 소스 연결 타임아웃(초, 기본 5) |
 
 `.env.example` · `docker-compose.yml` 환경변수 목록 · README에 반영한다
