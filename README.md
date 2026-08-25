@@ -119,6 +119,9 @@ curl -s http://182.199.63.71:6678/api/health        # {"status":"ok"} — 인증
 
 **롤백**: `git checkout <이전 커밋> && docker compose up -d --build` — 데이터는 `pgdata` 볼륨에 유지.
 `docker compose down -v`는 볼륨까지 삭제(주의).
+**단, `alembic downgrade`까지 하면 볼륨이 남아도 행이 지워진다** — 멀티 소스 마이그레이션
+(0015~0017)을 내리면 등록한 소스와 **암호화된 접속 비밀번호**(`data_sources`), 사내 MSSQL
+외 소스의 미리보기 허용목록·카테고리가 사라진다. 지점별 손실 목록: `docs/connect-sources.md` §6.3.
 
 ## 디렉터리
 

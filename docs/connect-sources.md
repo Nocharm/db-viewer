@@ -140,6 +140,24 @@ SQLite는 계정 개념이 없다 — db-viewer가 대상 볼륨을 `:ro`로 마
 쓰기를 막는다. 이 경우 1~4의 네트워크 작업 자체가 필요 없다 — 볼륨 이름과 컨테이너
 내부 파일 경로만 알면 된다.
 
+### SQLite 착수 전 필수 확인 — 저널 모드
+
+**읽기 전용 열기가 되는 파일인지 먼저 본다.** SQLite의 **WAL 모드 DB는 읽기 전용으로
+열리지 않을 가능성이 높다** — WAL은 `-shm` 공유 메모리 파일에 쓸 수 있어야 열리는데,
+파일과 디렉터리가 `:ro`면 그 쓰기가 불가능해 `unable to open database file`로 실패한다.
+WAL은 많은 임베디드 SQLite 서비스의 기본값이라 "SQLite니까 그냥 되겠지"로 넘기면 안 된다.
+
+```bash
+# 대상 서비스 컨테이너 안에서 (또는 파일을 읽을 수 있는 아무 곳에서)
+sqlite3 <파일경로> 'PRAGMA journal_mode;'
+```
+
+- ✅ `delete` / `truncate` / `persist` — 그대로 진행한다.
+- ⚠️ `wal` — **읽기 전용 열기가 실패할 가능성이 높다. 등록 전에 해소해야 한다.**
+  해결책을 여기서 단정하지 않는다: 이 저장소에는 실제 WAL 소스가 없어 어떤 우회도
+  실행 검증하지 못했다. go-live 창 **이전에** 소스를 등록하고 [연결 테스트]로 실제
+  결과를 먼저 확인하고, 실패하면 그 서비스는 이번 대상에서 빼고 별도로 검토한다.
+
 ---
 
 ## 6. db-viewer 쪽 배포
@@ -209,6 +227,19 @@ docker compose logs backend | grep -i alembic
 > ```
 > `0014`는 이 브랜치 시작 시점의 head다(`backend/alembic/versions/0014_column_sample_stats.py`).
 > 다운그레이드 후 `docker compose up -d --build backend`로 이전 이미지를 다시 올린다.
+
+**다운그레이드는 되돌릴 수 없는 삭제다 — 무엇이 지워지는지 알고 실행한다.**
+`pgdata` 볼륨은 그대로 남지만 그 안의 행이 사라진다.
+
+| 내리는 지점 | 사라지는 것 |
+|---|---|
+| `downgrade 0016` (0017 취소) | 사내 MSSQL(소스 1) **외 모든 소스의** 미리보기 허용목록·스키마 카테고리 행. 0017의 downgrade는 `WHERE data_source_id = 1`만 남기고 나머지를 버린다 — 소스 2·3의 노출 정책은 복구 불가 |
+| `downgrade 0015` (0016 취소) | `snapshots.data_source_id` 컬럼. 스냅샷 자체는 남지만 어느 소스 것인지가 사라진다 |
+| `downgrade 0014` (0015 취소) | **`data_sources` 테이블 전체** — 등록한 소스 전부와 그 **암호화된 접속 비밀번호**까지. 다시 올려도 시드된 사내 MSSQL 1건만 돌아오고, 나머지는 비밀번호부터 새로 입력해 재등록해야 한다 |
+
+소스를 이미 등록한 뒤라면 다운그레이드 전에 `data_sources` 를 따로 덤프해 둔다
+(`pg_dump -t data_sources`). 비밀번호는 `SOURCE_SECRET_KEY` 로 복호화되므로 그 키도
+같이 보존해야 덤프가 쓸모 있다.
 
 ✅ 통과 기준: `docker compose ps`에서 backend가 `healthy`, 로그에 alembic 오류 없음,
 `curl -s http://<서버>:6678/api/health` → `{"status":"ok"}`.
