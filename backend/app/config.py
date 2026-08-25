@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # 관리자 로그인과 별도로 한 번 더 막는다. 비어 있으면 수정 자체가 불가(503).
     preview_admin_password: str = ""
 
+    # Environment: 소스 접속 비밀번호 암호화 키 (Fernet, urlsafe base64 32B).
+    # 비어 있으면 소스 등록 자체가 503 — 평문 저장으로 흘러가는 경로를 만들지 않는다.
+    source_secret_key: str = ""
+    # Tuning: 직결 소스 연결/문장 타임아웃(초). 한 소스가 멎어도 요청이 붙잡히지 않게 한다.
+    source_connect_timeout: int = 5
+    source_query_timeout: int = 15
+
     # Environment: 컬럼을 감출 스키마 — 쉼표로 구분 (예: "MAP,STG"). 이름은 계속 조회되지만
     # 컬럼·조인 검증·ERD 노드가 전부 빠진다. 매핑 테이블처럼 구조는 알려도 되지만 컬럼 단위로
     # 파고들 필요가 없는 스키마용. 대소문자 무시 — 운영자가 케이스를 틀려도 열리면 안 된다.
