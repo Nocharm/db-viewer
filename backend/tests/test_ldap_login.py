@@ -362,14 +362,25 @@ def test_garbage_token_is_401_not_500(client, ldap_login_on):
     assert res.status_code == 401
 
 
-def test_local_path_is_refused_when_no_signing_key_is_configured(client, monkeypatch):
-    """서명 키가 없는 배포(기본값)에서 우리 iss를 주장하는 토큰은 통과하면 안 된다."""
-    # Arrange: 키는 비어 있고, 공격자는 자기 키로 우리 iss를 주장하는 토큰을 만든다
+def test_local_path_short_circuits_before_decoding_when_no_key_is_configured(
+    client, monkeypatch,
+):
+    """가드가 실제로 동작을 바꾼다는 증명 — 401이라는 결과만으로는 증명되지 않는다.
+
+    가드가 없어도 pyjwt가 빈 키를 거부해(InvalidKeyError) 결국 401이 되므로, 상태 코드만
+    보는 테스트는 라이브러리의 우연 덕에 통과한다. 여기서는 디코드가 아예 시도되지
+    않는다는 것을 직접 단언한다 — 그게 가드가 존재하는 이유다.
+    """
+    # Arrange
     import jwt
 
+    from app import auth as auth_module
+
+    decode_calls: list[str] = []
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("SESSION_SECRET_KEY", "")
     get_settings.cache_clear()
+    monkeypatch.setattr(auth_module, "decode_session_token", decode_calls.append)
     forged = jwt.encode(
         {"iss": "db-viewer", "sub": "attacker",
          "iat": datetime.now(UTC), "exp": datetime.now(UTC) + timedelta(hours=1)},
@@ -379,6 +390,8 @@ def test_local_path_is_refused_when_no_signing_key_is_configured(client, monkeyp
     # Act
     res = client.get("/api/objects", headers={"Authorization": f"Bearer {forged}"})
 
-    # Assert: 신원이 성립하지 않아야 한다 — 403(화이트리스트)이면 이미 통과한 것이다
+    # Assert
     assert res.status_code == 401
+    # 가드를 지우면 여기서 실패한다 — 위의 401 단언만으로는 잡히지 않는다
+    assert decode_calls == []
     get_settings.cache_clear()
