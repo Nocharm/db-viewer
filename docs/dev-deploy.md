@@ -6,6 +6,14 @@ LDAP 로그인 등 새 기능을 운영 데이터에 손대지 않고 시험하�
 (Keycloak 로그인 흐름을 로컬에서 리허설하는 `docker-compose.local.yml`과는 목적이 다르다 —
 그쪽은 운영 스택 위에 얹는 오버레이, `docs/local-test.md` 참고.)
 
+**`--env-file .env.dev`를 빠뜨리면 compose는 조용히 `.env`(운영 값)로 치환한다.** `DEV_APP_PORT`는
+`.env.dev`에만 있는 필수 변수라 이 경우 스택이 뜨지 않고 그 자리에서 막힌다(§8) — 이 가드가 없다면
+운영 `SESSION_SECRET_KEY`로 서명하는 개발 backend가 떠서 개발에서 만든 토큰이 운영에서 통하고,
+`LDAP_BIND_CREDENTIALS`·`AI_API_KEY`·`INGEST_API_KEY`·`SOURCE_SECRET_KEY` 같은 운영 비밀이 개발
+컨테이너로 흘러든다. 단 `DATABASE_URL`의 호스트(`postgres`)와 볼륨명(`pgdata-dev`)은 이 파일
+안에 리터럴로 박혀 있어 이 폴백으로 운영 DB·볼륨 자체에는 닿지 않는다 — 위험은 비밀 유출과 토큰
+위조지, 데이터 접근이 아니다. 그래서 아래 모든 명령에 예외 없이 `--env-file .env.dev`를 붙인다.
+
 ## 1. `.env.dev` 만들기
 
 `.env.dev.example`은 두지 않는다 — `.env.example`과 45개 키 중 40개가 같아 반드시 어긋난다.
@@ -17,7 +25,7 @@ cp .env.example .env.dev
 
 | 키 | 개발값 | 왜 |
 |---|---|---|
-| `DEV_APP_PORT` | 운영과 다른 포트 | dev compose 전용 신규 키 |
+| `DEV_APP_PORT` | **필수 — 값 지정** (예: `6679`, 운영 6678과 겹치지 않게) | 기본값을 두지 않았다 — `.env.example`에는 없는 키라, 이 값이 없으면(즉 `--env-file .env.dev`를 빠뜨리거나 잘못된 파일을 주면) compose가 그 자리에서 실패한다(§8) |
 | `DATABASE_URL` | dev postgres를 가리키게 | 별도 DB (compose가 조립하므로 사실상 참고용 — 아래 §3 참고) |
 | `POSTGRES_PASSWORD` | 다른 값 | |
 | **`SESSION_SECRET_KEY`** | **새로 생성** | **운영과 공유하면 개발에서 발급한 토큰이 운영에서 통한다.** 생성: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
@@ -64,7 +72,7 @@ LDAP 로그인만 시험할 거라면 이 단계는 건너뛰고 `.env.dev`의 `
 Keycloak 버튼 자체를 숨긴다(§1) — `AUTH_ENABLED=true` + `AUTH_LDAP_LOGIN_ENABLED=true`만으로
 로그인 화면에 사번·비밀번호 폼이 뜬다.
 
-Keycloak 로그인도 함께 시험하려면 개발 포트(`DEV_APP_PORT`, 기본 6679)에 대해 Keycloak
+Keycloak 로그인도 함께 시험하려면 `.env.dev`에서 정한 `DEV_APP_PORT`에 대해 Keycloak
 클라이언트(`db-viewer-frontend` 또는 개발 전용 클라이언트) 설정에서:
 
 - **Valid redirect URIs**에 `http://<호스트>:<DEV_APP_PORT>/*` 추가
@@ -78,11 +86,12 @@ Keycloak 로그인도 함께 시험하려면 개발 포트(`DEV_APP_PORT`, 기�
 로그에서 확인:
 
 ```bash
-docker compose -f docker-compose-dev.yml logs backend | grep -i alembic
+docker compose --env-file .env.dev -f docker-compose-dev.yml logs backend | grep -i alembic
 ```
 
-체인이 끝까지 돌고 backend 헬스체크가 healthy로 넘어가는지(`docker compose -f docker-compose-dev.yml ps`)
-확인한다. 중간에 멈추면 대개 이전 실행의 `pgdata-dev` 볼륨이 다른 스키마 버전으로 남아있는 경우다.
+체인이 끝까지 돌고 backend 헬스체크가 healthy로 넘어가는지
+(`docker compose --env-file .env.dev -f docker-compose-dev.yml ps`) 확인한다. 중간에 멈추면
+대개 이전 실행의 `pgdata-dev` 볼륨이 다른 스키마 버전으로 남아있는 경우다.
 
 ## 6. 첫 기동 스모크 체크
 
@@ -102,21 +111,22 @@ docker compose -f docker-compose-dev.yml logs backend | grep -i alembic
 ## 7. 정리
 
 ```bash
-docker compose -f docker-compose-dev.yml down
+docker compose --env-file .env.dev -f docker-compose-dev.yml down
 ```
 
 개발 스택은 독립 프로젝트라 운영에 영향을 주지 않는다. `-v`를 붙이면 `pgdata-dev`까지
 지워진다(개발 데이터 전부 삭제 — 운영 `pgdata`는 이름이 달라 영향 없음):
 
 ```bash
-docker compose -f docker-compose-dev.yml down -v
+docker compose --env-file .env.dev -f docker-compose-dev.yml down -v
 ```
 
 ## 8. 트러블슈팅
 
 | 증상 | 확인 |
 |---|---|
-| 포트 충돌 (`bind: address already in use`) | `DEV_APP_PORT` 기본값(6679)이 다른 프로세스와 겹침 — `.env.dev`에서 `DEV_APP_PORT`를 다른 값으로 |
+| `required variable DEV_APP_PORT is missing a value` | 가드가 정상 작동 중 — `--env-file .env.dev`를 빠뜨렸거나 다른 파일(`.env` 등)을 줬다. 위 모든 명령에 `--env-file .env.dev`를 붙였는지 확인 |
+| 포트 충돌 (`bind: address already in use`) | `.env.dev`의 `DEV_APP_PORT` 값이 다른 프로세스와 겹침 — 다른 값으로 바꾸고 재기동 |
 | 서브넷 충돌 (`Pool overlaps with other one on this address space`) | `172.49.0.0/16`이 이 호스트의 다른 Docker 네트워크와 겹침 — `docker network ls` + `docker network inspect`로 실제 사용 중인 대역 확인 후 `docker-compose-dev.yml`의 subnet을 조정 |
 | `NEXT_PUBLIC_*`를 바꿨는데 화면이 그대로 | `--build` 없이 `up -d`만 실행함 (§3) — 반드시 `--build`로 재기동 |
 | Keycloak 복귀 시 `failed to fetch` / `No matching state found` | 개발 포트에 **Web origins** 미등록 (§4) |
