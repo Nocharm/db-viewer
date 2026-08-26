@@ -1,5 +1,7 @@
 """LDAP 로그인 엔드포인트 — 열거 방지·잠금·게이트. / LDAP login endpoint."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from ldap3.core.exceptions import LDAPSocketOpenError
 
@@ -329,3 +331,54 @@ def test_overlong_login_id_is_422_not_500(ldap_login_on, client):
 
     # Assert
     assert res.status_code == 422
+
+
+def test_whitelist_still_gates_ldap_logins(ldap_login_on, client, monkeypatch):
+    """LDAP으로 들어와도 화이트리스트에 없으면 조회 API는 403이어야 한다.
+
+    403은 두 가지를 동시에 증명한다 — 토큰이 `get_current_user`를 통과했고(401이 아님),
+    하류 게이트가 그대로 적용됐다는 것. `/api/me`로는 이걸 못 본다: 그 경로는
+    `ad_service.sync_one`을 부르는데 함수 안에서 모듈을 import하므로 몽키패치가 닿지 않는다.
+    """
+    # Arrange
+    _patch_ldap(monkeypatch, user=USER, ok=True)
+    token = client.post("/api/auth/ldap-login",
+                        json={"login_id": "hong.gildong", "password": "ok"}
+                        ).json()["access_token"]
+
+    # Act
+    res = client.get("/api/objects", headers={"Authorization": f"Bearer {token}"})
+
+    # Assert
+    assert res.status_code == 403
+    assert "whitelist" in res.json()["error"]["message"]
+
+
+def test_garbage_token_is_401_not_500(client, ldap_login_on):
+    # Act
+    res = client.get("/api/objects", headers={"Authorization": "Bearer not-a-jwt"})
+
+    # Assert
+    assert res.status_code == 401
+
+
+def test_local_path_is_refused_when_no_signing_key_is_configured(client, monkeypatch):
+    """서명 키가 없는 배포(기본값)에서 우리 iss를 주장하는 토큰은 통과하면 안 된다."""
+    # Arrange: 키는 비어 있고, 공격자는 자기 키로 우리 iss를 주장하는 토큰을 만든다
+    import jwt
+
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "")
+    get_settings.cache_clear()
+    forged = jwt.encode(
+        {"iss": "db-viewer", "sub": "attacker",
+         "iat": datetime.now(UTC), "exp": datetime.now(UTC) + timedelta(hours=1)},
+        "attacker-chosen-key", algorithm="HS256",
+    )
+
+    # Act
+    res = client.get("/api/objects", headers={"Authorization": f"Bearer {forged}"})
+
+    # Assert: 신원이 성립하지 않아야 한다 — 403(화이트리스트)이면 이미 통과한 것이다
+    assert res.status_code == 401
+    get_settings.cache_clear()
