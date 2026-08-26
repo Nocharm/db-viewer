@@ -1,0 +1,128 @@
+# 개발 스택 — 운영과 완전히 분리된 별도 프로젝트.
+# 사용법: docker compose --env-file .env.dev -f docker-compose-dev.yml up -d --build
+# 주의: 운영 docker-compose.yml과 함께 -f 로 겹쳐 쓰지 마라. 독립 스택이다.
+name: dbviewer-dev
+
+services:
+  postgres:
+    # 운영과 같은 이미지·헬스체크, 볼륨만 다르다 — 운영 데이터를 절대 공유하지 않는다
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dbviewer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: dbviewer
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbviewer -d dbviewer"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [dbviewer-dev]
+
+  backend:
+    build: ./backend
+    # 기동 시 마이그레이션 후 서빙 / migrate then serve — 개발 DB는 비어 있으므로 전체 체인이 돈다
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # env_file(서비스 레벨)이 아니라 --env-file .env.dev 로 넘긴 값을 아래 ${VAR}로 치환해 명시 나열한다.
+    # env_file만 쓰면 DATABASE_URL처럼 compose가 조립해야 하는 값이 .env.dev의 원문(로컬 실행용
+    # localhost 값)으로 새어 들어간다. 운영 파일이 environment: 를 명시 나열하는 이유와 같다.
+    environment:
+      DATABASE_URL: postgresql+psycopg://dbviewer:${POSTGRES_PASSWORD}@postgres:5432/dbviewer
+      SOURCE_MODE: ${SOURCE_MODE}
+      LINEAGE_DEPTH_LIMIT: ${LINEAGE_DEPTH_LIMIT}
+      FIXTURE_DIR: ${FIXTURE_DIR}
+      SCAN_MAX_CONCURRENT: ${SCAN_MAX_CONCURRENT}
+      COLLECT_CATALOG_CHUNK_SIZE: ${COLLECT_CATALOG_CHUNK_SIZE}
+      COLLECT_DEPS_CHUNK_SIZE: ${COLLECT_DEPS_CHUNK_SIZE}
+      SCAN_FULL_RECHECK_TOP: ${SCAN_FULL_RECHECK_TOP}
+      SCAN_MIN_CONTAINMENT: ${SCAN_MIN_CONTAINMENT}
+      SCAN_NIGHT_START_HOUR: ${SCAN_NIGHT_START_HOUR}
+      SCAN_NIGHT_END_HOUR: ${SCAN_NIGHT_END_HOUR}
+      LOW_CARDINALITY_MIN_DISTINCT: ${LOW_CARDINALITY_MIN_DISTINCT}
+      LOW_CARDINALITY_BLACKLIST: ${LOW_CARDINALITY_BLACKLIST}
+      AUTH_ENABLED: ${AUTH_ENABLED}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
+      DBV_SYSADMINS: ${DBV_SYSADMINS}
+      INGEST_API_KEY: ${INGEST_API_KEY}
+      # 미리보기 허용 목록 수정 비밀번호 — 비우면 목록 수정 자체가 막힌다(503)
+      PREVIEW_ADMIN_PASSWORD: ${PREVIEW_ADMIN_PASSWORD}
+      AUTH_LDAP_LOGIN_ENABLED: ${AUTH_LDAP_LOGIN_ENABLED:-false}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      # 컬럼을 감출 스키마(쉼표 구분) — 이름은 남고 컬럼·조인 검증·ERD 노드가 빠진다
+      HIDDEN_SCHEMAS: ${HIDDEN_SCHEMAS:-}
+      # 수집(W1a/b)·live 질의(W2) 경로 — 개발 스택은 비워 운영 n8n을 두들기지 않는다
+      N8N_WEBHOOK_BASE: ${N8N_WEBHOOK_BASE}
+      N8N_QUERY_TIMEOUT: ${N8N_QUERY_TIMEOUT:-120}
+      AI_BASE_URL: ${AI_BASE_URL}
+      AI_MODEL: ${AI_MODEL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_TIMEOUT: ${AI_TIMEOUT:-60}
+      AI_SUGGEST_MAX_PAIRS: ${AI_SUGGEST_MAX_PAIRS:-40}
+      # 임베딩 서버 — 채팅 LLM과 다른 호스트일 수 있어 별도 (사내 공통 변수명)
+      EMBED_URL: ${EMBED_URL}
+      EMBED_MODEL: ${EMBED_MODEL}
+      EMBED_TIMEOUT_SECONDS: ${EMBED_TIMEOUT_SECONDS:-30}
+      EMBED_BATCH: ${EMBED_BATCH:-32}
+      EMBED_JOB_CAP: ${EMBED_JOB_CAP:-1000}
+      EMBED_SLEEP_MS: ${EMBED_SLEEP_MS:-500}
+      LDAP_URL: ${LDAP_URL}
+      LDAP_BIND_DN: ${LDAP_BIND_DN}
+      LDAP_BIND_CREDENTIALS: ${LDAP_BIND_CREDENTIALS}
+      LDAP_USER_SEARCH_BASE: ${LDAP_USER_SEARCH_BASE}
+      LDAP_START_TLS: ${LDAP_START_TLS}
+      # 사내 CA 번들 — 경로를 쓰려면 그 파일도 컨테이너에 마운트해야 한다
+      LDAP_CA_BUNDLE: ${LDAP_CA_BUNDLE}
+      # 멀티 소스 직결(PostgreSQL/SQLite) — 소스 접속 비밀번호 암호화 키, 비면 소스 등록 503
+      SOURCE_SECRET_KEY: ${SOURCE_SECRET_KEY}
+      SOURCE_CONNECT_TIMEOUT: ${SOURCE_CONNECT_TIMEOUT:-5}
+      SOURCE_QUERY_TIMEOUT: ${SOURCE_QUERY_TIMEOUT:-15}
+      # glibc malloc arena를 2개로 제한 — 멀티스레드 상주 메모리 절감 (frontend/postgres는 musl이라 무의미)
+      MALLOC_ARENA_MAX: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [dbviewer-dev]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_*는 빌드 시 인라인 — .env.dev만 바꿔선 반영되지 않는다. 값을 바꿨으면 --build 필수
+        NEXT_PUBLIC_AUTH_ENABLED: ${AUTH_ENABLED}
+        NEXT_PUBLIC_KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+        # 운영 기본값(false)과 달리 개발 스택은 LDAP 로그인 시험이 목적이라 기본 true
+        NEXT_PUBLIC_LDAP_LOGIN_ENABLED: ${AUTH_LDAP_LOGIN_ENABLED:-true}
+        # standalone rewrites는 빌드 시점에 굳는다 — 런타임 environment로는 무효
+        BACKEND_URL: http://backend:8000
+    environment:
+      # Next.js 컨테이너 메모리 가이드 — V8 old space 상한 512MB
+      NODE_OPTIONS: --max-old-space-size=512
+    ports:
+      # 운영(6678)과 겹치지 않는 별도 포트 — 운영 compose는 하드코딩이라 이 파일만 변수로 뺀다
+      - "${DEV_APP_PORT:-6679}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [dbviewer-dev]
+
+networks:
+  dbviewer-dev:
+    driver: bridge
+    ipam:
+      config:
+        # 운영(172.48.0.0/16)과 소스 네트워크(172.50.x/24) 사이의 빈 자리
+        - subnet: 172.49.0.0/16
+          gateway: 172.49.0.1
+
+volumes:
+  pgdata-dev:
