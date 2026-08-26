@@ -253,3 +253,79 @@ def test_missing_signing_key_is_503(ldap_login_missing_key, client):
 
     # Assert
     assert res.status_code == 503
+
+
+def test_lockout_not_bypassed_by_changing_case(ldap_login_on, client, monkeypatch):
+    """AD sAMAccountName은 대소문자를 구분하지 않는다 — 케이스만 바꿔 잠금을 우회하면 안 된다."""
+    # Arrange
+    _patch_ldap(monkeypatch, user=USER, ok=False)
+
+    # Act: 소문자로 5회 실패 후, 대문자로 한 번 더
+    for _ in range(5):
+        assert client.post("/api/auth/ldap-login",
+                           json={"login_id": "hong.gildong", "password": "x"}
+                           ).status_code == 401
+    res = client.post("/api/auth/ldap-login",
+                      json={"login_id": "HONG.GILDONG", "password": "x"})
+
+    # Assert
+    assert res.status_code == 429
+
+
+def test_success_clears_the_failure_counter_across_casing(ldap_login_on, client, monkeypatch):
+    """대소문자가 달라도 같은 카운터를 공유해야, 그중 하나로 성공했을 때 카운터가 비워진다.
+
+    소문자로 4회(임계치 미만 — 성공 시도 자체가 잠기지 않도록) 실패시킨 뒤 대문자로 성공시킨다.
+    카운터가 진짜 공유되지 않으면(=버그) 소문자 카운터 4회가 그대로 남아 있어, 뒤이은 4회의
+    새 소문자 실패가 누적 8회가 되어 다섯 번째(전체 통산) 시도에서 이미 잠긴다.
+    """
+    # Arrange: 소문자로 4회 실패(임계치 미만) 후 대문자로 성공
+    _patch_ldap(monkeypatch, user=USER, ok=False)
+    for _ in range(4):
+        client.post("/api/auth/ldap-login",
+                    json={"login_id": "hong.gildong", "password": "x"})
+    _patch_ldap(monkeypatch, user=USER, ok=True)
+    success = client.post("/api/auth/ldap-login",
+                          json={"login_id": "HONG.GILDONG", "password": "ok"})
+    assert success.status_code == 200  # 성공 시도 자체가 잠금에 막히지 않았는지 먼저 확인
+
+    # Act: 소문자로 4번 더 실패해도(카운터가 비워졌다면 매번 임계치 미만) 잠기면 안 된다
+    _patch_ldap(monkeypatch, user=USER, ok=False)
+    statuses = [
+        client.post("/api/auth/ldap-login",
+                    json={"login_id": "hong.gildong", "password": "x"}).status_code
+        for _ in range(4)
+    ]
+
+    # Assert
+    assert statuses == [401, 401, 401, 401]
+
+
+def test_failures_dict_stays_bounded(ldap_login_on, client, monkeypatch):
+    """공격자가 서로 다른 무작위 id로 실패를 채워도 `_failures`가 무한정 자라면 안 된다."""
+    # Arrange: 10,000건을 실제로 보내지 않도록 상수를 낮춘다
+    from app.api import auth_login
+    monkeypatch.setattr(auth_login, "_SWEEP_THRESHOLD", 10)
+    monkeypatch.setattr(auth_login, "_MAX_TRACKED_IDS", 20)
+    _patch_ldap(monkeypatch, user=USER, ok=False)
+
+    # Act: 서로 다른 id 40개로 상한(20)의 두 배를 채운 뒤, 이미 있는 키로 한 번 더 요청해
+    # (새 키를 추가하지 않으면서) 마지막 스윕이 한 번 더 돌 기회를 준다
+    for i in range(40):
+        client.post("/api/auth/ldap-login",
+                    json={"login_id": f"attacker{i}", "password": "x"})
+    client.post("/api/auth/ldap-login",
+                json={"login_id": "attacker39", "password": "x"})
+
+    # Assert
+    assert len(auth_login._failures) <= auth_login._MAX_TRACKED_IDS
+
+
+def test_overlong_login_id_is_422_not_500(ldap_login_on, client):
+    """감사 컬럼(String(64))보다 긴 id가 그대로 들어가면 db.commit()에서 DataError → 500이 될 수 있다."""
+    # Act: 100자 id — 변경 전 Field 상한이었던 길이, 감사 컬럼 한도 64자를 넘는다
+    res = client.post("/api/auth/ldap-login",
+                      json={"login_id": "a" * 100, "password": "x"})
+
+    # Assert
+    assert res.status_code == 422
