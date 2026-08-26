@@ -8,6 +8,7 @@ import { useAuth } from "react-oidc-context";
 
 import { LogoMark } from "@/components/icons";
 import { loginWithLdap, setAuthToken } from "@/lib/api";
+import { AUTH_ENABLED, KEYCLOAK_ENABLED, LDAP_ENABLED } from "@/lib/auth-flags";
 import {
   clearAutoLoginTried,
   consumeReturnTo,
@@ -16,10 +17,6 @@ import {
 } from "@/lib/auth-return";
 import { signinRedirectFromLogin } from "@/lib/keycloak-login";
 import { storeSession } from "@/lib/session-token";
-
-const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
-const LDAP_ENABLED = process.env.NEXT_PUBLIC_LDAP_LOGIN_ENABLED === "true";
-const KEYCLOAK_ENABLED = (process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "") !== "";
 
 export default function LoginPage() {
   // auth OFF면 즉시 홈으로 — KeycloakSection은 AuthProvider 아래에서만 렌더된다

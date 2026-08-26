@@ -8,10 +8,11 @@
 import logging
 import time
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from ldap3.core.exceptions import LDAPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.orm import Session
 
 from app.ad import client as ad_client
@@ -40,7 +41,11 @@ _LOGIN_FAILED = {"message": "login failed — check your ID and password", "cont
 
 
 class LdapLoginRequest(BaseModel):
-    login_id: str = Field(min_length=1, max_length=64)  # 감사 컬럼(String(64))에 맞춘다
+    # 공백 제거를 길이 검사보다 먼저 — 안 그러면 "   "가 통과해 감사 행에 빈 requested_by가 남는다.
+    # 상한 64는 감사 컬럼(String(64))에 맞춘다. 비밀번호는 공백도 유효 문자라 건드리지 않는다.
+    login_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+    ]
     password: str = Field(max_length=200)
 
 
@@ -102,8 +107,9 @@ def login_with_ldap(req: LdapLoginRequest, db: Session = Depends(get_db)) -> dic
             "context": {},
         })
 
-    # login_id 원문은 LDAP 검색·감사 로그에 그대로 쓴다 — 잠금 카운터만 대소문자를 접어서 판단
-    login_id = req.login_id.strip()
+    # login_id 원문(검증 단계에서 공백만 정리됨)은 LDAP 검색·감사 로그에 그대로 쓴다 —
+    # 잠금 카운터만 대소문자를 접어서 판단
+    login_id = req.login_id
     lockout_key = _lockout_key(login_id)
     if len(_recent_failures(lockout_key)) >= _MAX_FAILURES:
         raise HTTPException(

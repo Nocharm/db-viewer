@@ -112,7 +112,7 @@ services:
       # 기본값(:-)을 두지 않는다: DEV_APP_PORT는 .env.dev에만 있는 키라, --env-file .env.dev를
       # 빠뜨리고 up/config를 돌리면(.env로 폴백) 이 필수 변수 가드가 곧바로 실패해 막아준다 —
       # 그 폴백이 조용히 성공하면 운영 SESSION_SECRET_KEY 등으로 개발 backend가 뜬다(§ 상단 경고).
-      - "${DEV_APP_PORT:?set DEV_APP_PORT in .env.dev and pass --env-file .env.dev — without it compose falls back to .env (production values)}:3000"
+      - "${DEV_APP_PORT:?set DEV_APP_PORT in .env.dev — never in .env, that silently disarms this guard — and pass --env-file .env.dev; without the flag compose falls back to .env (production values)}:3000"
     depends_on:
       backend:
         condition: service_healthy

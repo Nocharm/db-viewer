@@ -1,4 +1,4 @@
-/** LDAP 로그인 세션의 브라우저 저장 — 순수 로직. / browser-side storage for the LDAP session.
+/** LDAP 로그인 세션의 브라우저 저장 + 인증 판정 — 순수 로직. / LDAP session storage and auth decisions.
  *  갱신 토큰이 없으므로 만료된 값은 읽는 즉시 버린다. */
 
 const KEY = "dbv.session";
@@ -58,6 +58,22 @@ export function clearStoredSession(): void {
   } catch {
     // 위와 같은 이유
   }
+}
+
+/** API에 실을 토큰을 고른다 / which token the API client should carry.
+ *  Keycloak 토큰이 있으면 그것이 이긴다. 없을 때 로컬(LDAP) 토큰으로 떨어지는 이 폴백이
+ *  빠지면, Keycloak이 설정된 배포에서 LDAP으로 로그인한 사용자의 토큰이 렌더마다 지워진다 —
+ *  바로 Keycloak 장애용 폴백이 필요한 그 상황에서만 기능이 죽는다. */
+export function resolveActiveToken(
+  keycloakToken: string | null, localToken: string | null,
+): string | null {
+  return keycloakToken ?? localToken;
+}
+
+/** 어느 경로로든 인증된 상태인가 / whether either auth path has a live session.
+ *  게이트는 이 값으로 판단해야 한다 — Keycloak 여부만 보면 LDAP 사용자가 /login으로 되튄다. */
+export function isSessionActive(keycloakAuthed: boolean, hasLocalSession: boolean): boolean {
+  return keycloakAuthed || hasLocalSession;
 }
 
 export function hasStoredSession(): boolean {
