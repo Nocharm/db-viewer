@@ -10,13 +10,18 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AuthProvider, useAuth } from "react-oidc-context";
+import { AuthContext, AuthProvider, useAuth } from "react-oidc-context";
 
 import { LangProvider } from "@/components/i18n";
 import { fetchMe, setAuthToken, type Me } from "@/lib/api";
 import { markAutoLoginTried, saveReturnTo } from "@/lib/auth-return";
+import { clearStoredSession, readStoredSession } from "@/lib/session-token";
 
 const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
+// 개발 스택은 이 값을 비운다 — Keycloak 없이 LDAP 폼만 켤 수 있다
+const KEYCLOAK_ENABLED = (process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? "") !== "";
+// AuthProvider(및 그 아래 useAuth() 호출부)는 이 조건에서만 마운트된다
+const USE_KEYCLOAK = AUTH_ENABLED && KEYCLOAK_ENABLED;
 
 const MeContext = createContext<Me | null>(null);
 export function useMe(): Me | null {
@@ -135,8 +140,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const mounted = useMounted();
+  useEffect(() => {
+    // 부팅 시 저장된 LDAP 세션을 복원 — Keycloak 사용 여부와 무관하게 항상 시도한다
+    const session = readStoredSession();
+    if (session) setAuthToken(session.token);
+  }, []);
   if (!mounted) return null;
-  if (!AUTH_ENABLED) return <LangProvider><MeGate>{children}</MeGate></LangProvider>;
+  if (!USE_KEYCLOAK) return <LangProvider><MeGate>{children}</MeGate></LangProvider>;
   return (
     <LangProvider>
       <AuthProvider {...buildOidcConfig()}>
@@ -148,10 +158,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 /** 로컬 로그아웃 — Keycloak SSO 세션은 유지 (bpm 패턴) / local logout, SSO stays. */
 export function useLogout(): () => void {
-  const auth = useAuth();
+  // Keycloak이 꺼진 배포에서는 AuthProvider가 없다 — useAuth()는 그 밖에서 던지므로
+  // 컨텍스트를 직접 읽어 null을 허용한다 (훅 규칙상 조건부 호출은 불가).
+  const auth = useContext(AuthContext);
   const router = useRouter();
   return () => {
     markAutoLoginTried(); // /login 재진입 시 자동 로그인 루프 방지
-    void auth.removeUser().then(() => router.replace("/login"));
+    clearStoredSession(); // LDAP 세션도 함께 끊는다 — 안 지우면 부팅 시 되살아난다
+    setAuthToken(null);
+    void Promise.resolve(auth?.removeUser()).then(() => router.replace("/login"));
   };
 }

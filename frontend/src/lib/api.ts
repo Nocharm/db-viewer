@@ -30,6 +30,17 @@ function authHeaders(): Record<string, string> {
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    // 로컬 세션 토큰은 갱신이 없다 — 만료되면 401이 오고, 여기가 유일한 응답 깔때기다.
+    // 로그인 화면 자신에서는 리다이렉트하지 않는다(무한 루프 방지).
+    if (res.status === 401 && typeof window !== "undefined"
+        && window.location.pathname !== "/login") {
+      const { clearStoredSession, readStoredSession } = await import("./session-token");
+      if (readStoredSession() !== null) {
+        clearStoredSession();
+        setAuthToken(null);
+        window.location.href = "/login";
+      }
+    }
     // 백엔드 에러 규약: {"error": {code, message, context}}
     const body = await res.json().catch(() => null);
     const message = body?.error?.message ?? `request failed (${res.status})`;
@@ -79,6 +90,20 @@ async function patchJson<T>(
     headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
     body: JSON.stringify(body),
   }));
+}
+
+export interface LdapLoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  login_id: string;
+  name: string | null;
+}
+
+export function loginWithLdap(
+  loginId: string, password: string,
+): Promise<LdapLoginResponse> {
+  return postJson("/api/auth/ldap-login", { login_id: loginId, password });
 }
 
 export interface Me {

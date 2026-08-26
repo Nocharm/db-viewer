@@ -93,6 +93,7 @@ services:
         NEXT_PUBLIC_AUTH_ENABLED: ${AUTH_ENABLED}
         NEXT_PUBLIC_KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+        NEXT_PUBLIC_LDAP_LOGIN_ENABLED: ${AUTH_LDAP_LOGIN_ENABLED:-false}
         # standalone rewrites는 빌드 시점에 굳는다 — 런타임 environment로는 무효
         BACKEND_URL: http://backend:8000
     environment:
