@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDeleteBlockedMessage } from "./api";
+import { formatDeleteBlockedMessage, shouldRedirectToLogin } from "./api";
 
 describe("formatDeleteBlockedMessage", () => {
   it("falls back when there is no context at all", () => {
@@ -40,5 +40,23 @@ describe("formatDeleteBlockedMessage", () => {
       "허용 목록 2건이 이 소스를 참조하고 있어 삭제할 수 없습니다 — "
       + "비활성화하거나 먼저 정리하세요.",
     );
+  });
+});
+
+describe("shouldRedirectToLogin", () => {
+  it("redirects on a 401 while a session is stored and off the login page", () => {
+    expect(shouldRedirectToLogin(401, "/objects", true)).toBe(true);
+  });
+
+  it("never redirects from the login page itself — avoids the retry loop", () => {
+    expect(shouldRedirectToLogin(401, "/login", true)).toBe(false);
+  });
+
+  it("does not redirect when no session was ever stored (dev-mode X-Dev-User calls)", () => {
+    expect(shouldRedirectToLogin(401, "/objects", false)).toBe(false);
+  });
+
+  it("does not redirect on a non-401 status", () => {
+    expect(shouldRedirectToLogin(200, "/objects", true)).toBe(false);
   });
 });

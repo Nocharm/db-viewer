@@ -28,14 +28,22 @@ function authHeaders(): Record<string, string> {
   return {};
 }
 
+/** 401을 받았을 때 로그인 화면으로 보낼지 판단 / whether a 401 should bounce to /login.
+ *  hasSession은 만료 여부와 무관하게 "저장분이 있었는가"여야 한다 — readStoredSession()의
+ *  null(만료 포함)을 그대로 넘기면 정작 만료 상황에서 리다이렉트가 조용히 스킵된다. */
+export function shouldRedirectToLogin(
+  status: number, pathname: string, hasSession: boolean,
+): boolean {
+  // 로그인 화면 자신에서는 보내지 않는다 — 그 화면의 401은 자격증명 오류라 무한 루프가 된다
+  return status === 401 && hasSession && pathname !== "/login";
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // 로컬 세션 토큰은 갱신이 없다 — 만료되면 401이 오고, 여기가 유일한 응답 깔때기다.
-    // 로그인 화면 자신에서는 리다이렉트하지 않는다(무한 루프 방지).
-    if (res.status === 401 && typeof window !== "undefined"
-        && window.location.pathname !== "/login") {
-      const { clearStoredSession, readStoredSession } = await import("./session-token");
-      if (readStoredSession() !== null) {
+    if (typeof window !== "undefined") {
+      const { clearStoredSession, hasStoredSession } = await import("./session-token");
+      if (shouldRedirectToLogin(res.status, window.location.pathname, hasStoredSession())) {
         clearStoredSession();
         setAuthToken(null);
         window.location.href = "/login";

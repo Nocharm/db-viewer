@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { clearStoredSession, readStoredSession, storeSession } from "./session-token";
+import { clearStoredSession, hasStoredSession, readStoredSession, storeSession } from "./session-token";
 
 // vitest 환경이 "node"라 localStorage가 없다 — 이 모듈이 쓰는 3개 메서드만 흉내낸다
 function installStorageStub(): void {
@@ -56,5 +56,23 @@ describe("session-token", () => {
     storeSession(VALID);
     clearStoredSession();
     expect(localStorage.getItem("dbv.session")).toBeNull();
+  });
+
+  it("hasStoredSession returns false when nothing is stored", () => {
+    expect(hasStoredSession()).toBe(false);
+  });
+
+  it("hasStoredSession returns true for a valid stored session", () => {
+    storeSession(VALID);
+    expect(hasStoredSession()).toBe(true);
+  });
+
+  // 리다이렉트 가드가 이 값에 의존하다 버그가 났다: readStoredSession()은 만료된 값을
+  // 스스로 지우고 null을 주므로, 그것으로 "세션이 있었는가"를 물으면 만료 시 항상 false다.
+  it("returns true for an expired session — the exact case readStoredSession() nulls out", () => {
+    const expired = { ...VALID, expiresAt: "2000-01-01T00:00:00.000Z" };
+    storeSession(expired);
+    expect(hasStoredSession()).toBe(true);
+    expect(readStoredSession(new Date("2026-08-26T12:00:00Z"))).toBeNull();
   });
 });

@@ -59,3 +59,13 @@ export function clearStoredSession(): void {
     // 위와 같은 이유
   }
 }
+
+export function hasStoredSession(): boolean {
+  // 만료 여부와 무관하게 "저장분이 있었는가"만 본다 — readStoredSession()은 만료를 만나면
+  // 스스로 지우고 null을 주므로, 그것으로 판단하면 정작 만료 상황에서 false가 된다.
+  try {
+    return localStorage.getItem(KEY) !== null;
+  } catch {
+    return false;
+  }
+}
