@@ -124,3 +124,25 @@ def test_refuses_to_issue_without_a_key(monkeypatch):
     with pytest.raises(RuntimeError):
         issue_session_token("hong.gildong", None)
     get_settings.cache_clear()
+
+
+def test_empty_signing_key_cannot_verify_a_token(monkeypatch):
+    """빈 키로는 검증이 성립하지 않아야 한다 — 이 fail-closed는 PyJWT가 제공하는 성질이라
+    버전을 올릴 때 조용히 사라질 수 있다. 그 순간을 이 테스트가 잡는다.
+
+    SESSION_SECRET_KEY의 기본값이 빈 문자열이므로, 이 성질이 깨지면 `iss: "db-viewer"`를
+    주장하는 토큰이 기본 배포에서 아무 사용자나 사칭하게 된다.
+    """
+    # Arrange: 공격자가 고른 키로 서명한, 우리 iss를 주장하는 토큰
+    forged = jwt.encode(
+        {"iss": LOCAL_ISSUER, "sub": "attacker",
+         "iat": datetime.now(UTC), "exp": datetime.now(UTC) + timedelta(hours=1)},
+        "attacker-chosen-key", algorithm="HS256",
+    )
+    monkeypatch.setenv("SESSION_SECRET_KEY", "")
+    get_settings.cache_clear()
+
+    # Act / Assert
+    with pytest.raises(jwt.PyJWTError):
+        decode_session_token(forged)
+    get_settings.cache_clear()

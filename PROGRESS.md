@@ -13,6 +13,7 @@
 
 - **구현 계획 작성**(`docs/superpowers/plans/2026-08-26-ldap-login-dev-deploy.md`, 5태스크). 스펙 대조 자기검토에서 스펙 내부 모순 1건(테스트 전략표가 §A.4가 배제한 IP축 검증을 요구)과 계획 누락 4건(RS256 혼동 테스트·기능 플래그 404·비밀번호 미노출 전 경로·로그아웃)을 정정. 코드를 읽다 **두 개의 실제 결함**을 미리 잡아 계획에 방어를 넣었다: (1) RFC 4513 unauthenticated bind — DN에 빈 비밀번호로 바인드하면 다수 서버가 익명 바인드로 성공시켜, `conn.bind()`를 그대로 믿으면 비밀번호를 비우는 것만으로 아무 계정이나 로그인된다. (2) `useLogout()`이 `useAuth()`를 호출하는데 `AppHeader`가 로그아웃 버튼을 무조건 렌더 — `AuthProvider`를 조건부로 만드는 순간 LDAP 전용 배포의 모든 화면이 크래시한다.
 - **Task 1: 세션 토큰 유틸 + 설정 3종** (`backend/app/session_token.py`, `backend/app/config.py`, `.env.example`, `docker-compose.yml`). `issue_session_token`/`decode_session_token`이 알고리즘을 `["HS256"]`으로 고정 — 이 리스트가 없으면 `iss`만 맞춘 RS256 토큰이 검증을 통과한다(고전적 알고리즘 혼동 공격). `session_secret_key`가 비어 있으면 발급이 조용히 약한 기본키로 넘어가지 않고 `RuntimeError`로 거부. TDD: RS256 혼동·다른 HMAC 알고리즘·만료·다른 키·잘못된 issuer 5종 거부 테스트 + 정상 왕복 + 키 미설정 거부, 총 7개 — `ModuleNotFoundError` RED 확인 → 구현 → GREEN. 테스트 426→433 passed, ruff 클린.
+- **Task 1 리뷰 반영: 빈 서명키 fail-closed 회귀 가드** (`backend/tests/test_session_token.py`). 리뷰가 지적한 시나리오(빈 `SESSION_SECRET_KEY`로 서명한 위조 토큰이 통과) 자체는 현재 pyjwt 2.13.0에서 `HMACAlgorithm.prepare_key`가 빈 키를 거부해 재현되지 않았지만, 그 거부는 우리 코드가 아니라 라이브러리의 성질이라 — `SESSION_SECRET_KEY=""`가 기본값인 모든 배포가 향후 pyjwt 업그레이드에 조용히 노출될 수 있다. 프로덕션 코드는 바꾸지 않고 그 성질만 테스트로 고정. 테스트 433→434 passed, ruff 클린.
 
 ## 2026-08-25
 
