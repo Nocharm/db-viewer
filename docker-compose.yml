@@ -41,6 +41,9 @@ services:
       INGEST_API_KEY: ${INGEST_API_KEY}
       # 미리보기 허용 목록 수정 비밀번호 — 비우면 목록 수정 자체가 막힌다(503)
       PREVIEW_ADMIN_PASSWORD: ${PREVIEW_ADMIN_PASSWORD}
+      AUTH_LDAP_LOGIN_ENABLED: ${AUTH_LDAP_LOGIN_ENABLED:-false}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
       # 컬럼을 감출 스키마(쉼표 구분) — 이름은 남고 컬럼·조인 검증·ERD 노드가 빠진다
       HIDDEN_SCHEMAS: ${HIDDEN_SCHEMAS:-}
       # 수집(W1a/b)·live 질의(W2) 경로 — 없으면 수집이 픽스처 리플레이로 falls back

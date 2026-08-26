@@ -12,6 +12,7 @@
 - **설계 자체 검토에서 결함 2건 정정** — (1) IP축 잠금을 뺐다: 백엔드가 프론트 프록시 뒤라 peer 주소가 항상 프록시 컨테이너다. 두면 한 명의 오타가 전원을 잠그거나 `X-Forwarded-For` 위조로 우회된다. 축은 `login_id` 하나. (2) 개발 스택에서 `NEXT_PUBLIC_KEYCLOAK_*`를 비우는 안이 `makeManager()`의 issuer 존재 가정과 충돌 — 조건부 마운트 확인을 구현 단계 요구사항으로 명시. 그리고 `.env.dev`는 커밋하지 않는다(gitignore만) — 예시 파일은 만들지 않기로 했다: `.env.example`과 45키 중 40키가 같아 반드시 어긋난다. 대신 런북에 델타 표만 둔다.
 
 - **구현 계획 작성**(`docs/superpowers/plans/2026-08-26-ldap-login-dev-deploy.md`, 5태스크). 스펙 대조 자기검토에서 스펙 내부 모순 1건(테스트 전략표가 §A.4가 배제한 IP축 검증을 요구)과 계획 누락 4건(RS256 혼동 테스트·기능 플래그 404·비밀번호 미노출 전 경로·로그아웃)을 정정. 코드를 읽다 **두 개의 실제 결함**을 미리 잡아 계획에 방어를 넣었다: (1) RFC 4513 unauthenticated bind — DN에 빈 비밀번호로 바인드하면 다수 서버가 익명 바인드로 성공시켜, `conn.bind()`를 그대로 믿으면 비밀번호를 비우는 것만으로 아무 계정이나 로그인된다. (2) `useLogout()`이 `useAuth()`를 호출하는데 `AppHeader`가 로그아웃 버튼을 무조건 렌더 — `AuthProvider`를 조건부로 만드는 순간 LDAP 전용 배포의 모든 화면이 크래시한다.
+- **Task 1: 세션 토큰 유틸 + 설정 3종** (`backend/app/session_token.py`, `backend/app/config.py`, `.env.example`, `docker-compose.yml`). `issue_session_token`/`decode_session_token`이 알고리즘을 `["HS256"]`으로 고정 — 이 리스트가 없으면 `iss`만 맞춘 RS256 토큰이 검증을 통과한다(고전적 알고리즘 혼동 공격). `session_secret_key`가 비어 있으면 발급이 조용히 약한 기본키로 넘어가지 않고 `RuntimeError`로 거부. TDD: RS256 혼동·다른 HMAC 알고리즘·만료·다른 키·잘못된 issuer 5종 거부 테스트 + 정상 왕복 + 키 미설정 거부, 총 7개 — `ModuleNotFoundError` RED 확인 → 구현 → GREEN. 테스트 426→433 passed, ruff 클린.
 
 ## 2026-08-25
 
