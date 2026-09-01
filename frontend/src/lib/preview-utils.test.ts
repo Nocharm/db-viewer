@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendFilterCond,
   applyColumnOrder,
   buildCsv,
   buildPreviewSql,
   moveColumn,
+  condKey,
   countUniqueValues,
   sortRows,
   tokenizeSql,
+  type PreviewFilterCond,
 } from "./preview-utils";
 
 const ROWS = [
@@ -147,5 +150,41 @@ describe("moveColumn", () => {
   it("keeps the list for self-drops or unknown targets", () => {
     expect(moveColumn(columns, "b", "b", false)).toEqual(columns);
     expect(moveColumn(columns, "b", "zzz", false)).toEqual(columns);
+  });
+});
+
+describe("condKey", () => {
+  it("distinguishes column, op and value, and folds null value to empty", () => {
+    expect(condKey({ column: "NM", op: "eq", value: "a" }))
+      .not.toBe(condKey({ column: "NM", op: "neq", value: "a" }));
+    expect(condKey({ column: "NM", op: "is_null", value: null }))
+      .toBe(condKey({ column: "NM", op: "is_null", value: "" }));
+  });
+});
+
+describe("appendFilterCond", () => {
+  const NOT_NULL: PreviewFilterCond = { column: "NM", op: "not_null", value: null };
+  const EQ_A: PreviewFilterCond = { column: "NM", op: "eq", value: "a" };
+
+  it("appends a new condition without mutating the original", () => {
+    const staged = [EQ_A];
+    const next = appendFilterCond(staged, NOT_NULL, 5);
+    expect(next).toEqual([EQ_A, NOT_NULL]);
+    expect(staged).toEqual([EQ_A]); // 원본 불변
+  });
+
+  it("returns the same reference for a duplicate — caller detects no-op by identity", () => {
+    const staged = [NOT_NULL];
+    expect(appendFilterCond(staged, { ...NOT_NULL }, 5)).toBe(staged);
+  });
+
+  it("returns the same reference when the cap is reached", () => {
+    const staged = [EQ_A];
+    expect(appendFilterCond(staged, NOT_NULL, 1)).toBe(staged);
+  });
+
+  it("treats a duplicate at the cap as duplicate, not as cap overflow", () => {
+    const staged = [NOT_NULL];
+    expect(appendFilterCond(staged, { ...NOT_NULL }, 1)).toBe(staged);
   });
 });

@@ -17,6 +17,7 @@ import { CloseIcon, ResetIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { fetchErdGraph } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
@@ -61,26 +62,6 @@ interface NodeMenuState {
   x: number;
   y: number;
   copied: boolean;
-}
-
-/** 클립보드 복사 — 사내 배포는 http(비보안 컨텍스트)라 clipboard API가 없을 수 있어
- * execCommand 폴백을 유지한다 / clipboard write with a non-secure-context fallback. */
-function copyText(text: string): void {
-  const fallback = () => {
-    const area = document.createElement("textarea");
-    area.value = text;
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(fallback);
-  } else {
-    fallback();
-  }
 }
 
 /** 엣지 등급 → 범례와 같은 문구 / edge grade to the same wording the legend uses */
