@@ -9,11 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
-import {
-  PreviewSection,
-  type PreviewTabState,
-  type RefetchOptions,
-} from "@/components/browser/PreviewSection";
+import { PreviewSection } from "@/components/browser/PreviewSection";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import { SourceSelector } from "@/components/SourceSelector";
@@ -23,7 +19,6 @@ import {
   fetchColumnsIndex,
   fetchJoinKeys,
   fetchObjectDetail,
-  fetchObjectPreview,
   fetchSchemaCategories,
   type JoinKeyItem,
   type ObjectDetail,
@@ -37,6 +32,7 @@ import type { ObjectSummary } from "@/lib/types";
 import { useDataSources } from "@/lib/use-data-sources";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
+import { usePreviewTabs } from "@/lib/use-preview-tabs";
 
 export default function Home() {
   return (
@@ -78,14 +74,14 @@ function HomeInner() {
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  // 미리보기 다중 탭 — 같은 테이블은 탭 활성화로만 (중복 열기 차단)
-  const [previewTabs, setPreviewTabs] = useState<PreviewTabState[]>([]);
-  const [activePreviewId, setActivePreviewId] = useState<number | null>(null);
-  const [splitPreviewId, setSplitPreviewId] = useState<number | null>(null);
+  // 미리보기 다중 탭 — 상태 기계는 ERD 서랍과 공유한다(use-preview-tabs)
+  const preview = usePreviewTabs();
   const [error, setError] = useState<string | null>(null);
   // 미리보기가 열려 있는 테이블 — 관리 콘솔의 허용 목록 (실제 차단은 서버가 한다)
   const previewAllowed = usePreviewAllowlist(sourceId);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  // 상세 ↔ 미리보기 왕복 버튼이 움직이는 스크롤 컨테이너 / the scroller both jump buttons drive
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 카탈로그 조회 — 소스가 바뀔 때마다 다시 조회한다 / re-fetched whenever the source changes
   useEffect(() => {
@@ -119,9 +115,8 @@ function HomeInner() {
     setSourceId(nextSourceId);
     setSelected(null);
     setDetail(null);
-    setPreviewTabs([]);
-    setActivePreviewId(null);
-    setSplitPreviewId(null);
+    // 미리보기 탭은 공용 훅(usePreviewTabs) 소유 — 이전 소스의 테이블을 가리키므로 전부 닫는다
+    for (const tab of preview.tabs) preview.close(tab.id);
     setSelectedKey(null);
     setCategory(null);
     setDbFilter([]);
@@ -132,7 +127,7 @@ function HomeInner() {
     else url.searchParams.set("source", String(nextSourceId));
     url.searchParams.delete("table"); // 방금 지운 선택과 URL을 맞춘다
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-  }, []);
+  }, [preview]);
 
   const changeDbFilter = useCallback((next: string[]) => {
     setDbFilter(next);
@@ -253,36 +248,13 @@ function HomeInner() {
     return items;
   }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
-  // 재검색 = 원본 소스에 새 질의 (fixture는 합성으로 대응) / refetch re-queries the source
-  const refetchPreview = useCallback((id: number, opts: RefetchOptions) => {
-    setPreviewTabs((cur) => cur.map((tab) =>
-      tab.id === id ? { ...tab, loading: true } : tab));
-    fetchObjectPreview(id, opts.filters, opts.limit)
-      .then((res) => setPreviewTabs((cur) => cur.map((tab) =>
-        tab.id === id ? { ...tab, data: res, loading: false } : tab)))
-      .catch((e) => {
-        setError(e.message);
-        setPreviewTabs((cur) => cur.map((tab) =>
-          tab.id === id ? { ...tab, loading: false } : tab));
-      });
-  }, []);
-
-  // 미리보기 열기 — 이미 열려 있으면 탭 활성화만 (중복 열기 차단)
+  // 미리보기 열기 — 탭 생성·중복 차단은 훅이 맡고, 화면은 스크롤만 담당한다
   const openPreview = useCallback(() => {
     if (!selected) return;
-    const id = selected.id;
-    const exists = previewTabs.some((tab) => tab.id === id);
-    if (!exists) {
-      setPreviewTabs((cur) => [...cur, {
-        id, qname: `${selected.schema}.${selected.name}`,
-        data: null, loading: true, hidden: [], sort: null, order: [],
-      }]);
-      refetchPreview(id, {});
-    }
-    setActivePreviewId(id);
+    preview.open(selected.id, `${selected.schema}.${selected.name}`);
     setTimeout(() => previewRef.current?.scrollIntoView(
       { behavior: "smooth", block: "start" }), 60);
-  }, [selected, previewTabs, refetchPreview]);
+  }, [selected, preview]);
 
   // ERD 우클릭 메뉴의 「미리보기」 딥링크(?table=&preview=1) — 선택이 잡히면 한 번 열고
   // 파라미터를 소진한다(남기면 새로고침·뒤로가기마다 재발동). 미허용 스키마면 열지 않고
@@ -295,21 +267,6 @@ function HomeInner() {
     if (previewAllowed.has(selected.schema)) openPreview();
     router.replace(withSourceQuery(`/?table=${selected.id}`, sourceId), { scroll: false });
   }, [previewParam, selected, previewAllowed, openPreview, router, sourceId]);
-
-  const closePreview = useCallback((id: number) => {
-    setPreviewTabs((cur) => {
-      const next = cur.filter((tab) => tab.id !== id);
-      setActivePreviewId((act) => (act === id ? next[next.length - 1]?.id ?? null : act));
-      setSplitPreviewId((split) => (split === id ? null : split));
-      return next;
-    });
-  }, []);
-
-  const patchPreview = useCallback(
-    (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort" | "order">>) => {
-      setPreviewTabs((cur) => cur.map((tab) =>
-        tab.id === id ? { ...tab, ...patch } : tab));
-    }, []);
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
@@ -338,6 +295,14 @@ function HomeInner() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
+
+  const jumpToPreview = useCallback(() => {
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const jumpToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   // 컬럼 클릭 → 조인 검증 페이지로 직행 — 소스 테이블·컬럼 프리필, target이 실려 오면
   // (조인 체크 결과의 「검증에 추가」) 타깃까지 채워 게이트부터 시작한다.
@@ -372,67 +337,76 @@ function HomeInner() {
           </span>
         )}
       </AppHeader>
-      <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
       {/* 카드 레이아웃 — 선 대신 바탕 톤·여백으로 구분 / cards on a muted surface */}
-      <div className="scroll-area surface-muted min-h-0 flex-1">
-        {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
-        <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:h-full lg:flex-nowrap">
-          <CategoryList
-            categories={categories}
-            selected={category}
-            totalCount={typedObjects.length}
-            onSelect={changeCategory}
-            schemas={visibleSchemas}
-            dbFilter={dbFilter}
-            onDbFilter={changeDbFilter}
-            onAssignCategory={assignCategory}
-            previewAllowed={previewAllowed}
-            width={paneWidths.rail}
-          />
-          {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
-          <div className="pane-resize hidden lg:block"
-               onPointerDown={startPaneResize("rail")}
-               data-testid="Home-railResizeHandle" />
-          <TableList
-            items={listItems}
-            selectedId={selected?.id ?? null}
-            query={query}
-            typeFilter={typeFilter}
-            onQuery={setQuery}
-            onTypeFilter={setTypeFilter}
-            onSelect={selectTable}
-            width={paneWidths.list}
-          />
-          <div className="pane-resize hidden lg:block"
-               onPointerDown={startPaneResize("list")}
-               data-testid="Home-listResizeHandle" />
-          <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
-            <TableDetail
-              detail={detail}
-              loading={detailLoading}
-              previewLoading={previewTabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
-              previewAllowed={
-                selected !== null && previewAllowed.has(selected.schema)
-              }
-              isMssqlSource={isMssqlSource}
-              onPreview={openPreview}
-              onOpenErd={handleOpenErd}
-              onSelectTable={selectByQname}
-              onOpenColumn={handleOpenColumn}
+      <div ref={scrollRef} className="scroll-area surface-muted min-h-0 flex-1">
+        {/* 조인키 바는 스크롤 컨테이너 안 — 미리보기로 내려가면 같이 밀려 올라간다.
+            래퍼는 스크롤 높이에 딱 맞춰(h-full) 미리보기가 없을 땐 스크롤이 생기지 않고,
+            상세 패널도 예전처럼 자기 안에서 스크롤된다
+            / the join-key bar scrolls away with the content instead of holding the top */}
+        <div className="flex h-full flex-col">
+          <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
+          {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
+          <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:min-h-0 lg:flex-1 lg:flex-nowrap">
+            <CategoryList
+              categories={categories}
+              selected={category}
+              totalCount={typedObjects.length}
+              onSelect={changeCategory}
+              schemas={visibleSchemas}
+              dbFilter={dbFilter}
+              onDbFilter={changeDbFilter}
+              onAssignCategory={assignCategory}
+              previewAllowed={previewAllowed}
+              width={paneWidths.rail}
             />
-          </section>
-        </main>
-        {previewTabs.length > 0 && (
+            {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
+            <div className="pane-resize hidden lg:block"
+                 onPointerDown={startPaneResize("rail")}
+                 data-testid="Home-railResizeHandle" />
+            <TableList
+              items={listItems}
+              selectedId={selected?.id ?? null}
+              query={query}
+              typeFilter={typeFilter}
+              onQuery={setQuery}
+              onTypeFilter={setTypeFilter}
+              onSelect={selectTable}
+              width={paneWidths.list}
+            />
+            <div className="pane-resize hidden lg:block"
+                 onPointerDown={startPaneResize("list")}
+                 data-testid="Home-listResizeHandle" />
+            <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
+              <TableDetail
+                detail={detail}
+                loading={detailLoading}
+                previewLoading={preview.tabs.find((tab) => tab.id === selected?.id)?.loading ?? false}
+                previewAllowed={
+                  selected !== null && previewAllowed.has(selected.schema)
+                }
+                isMssqlSource={isMssqlSource}
+                onPreview={openPreview}
+                onOpenErd={handleOpenErd}
+                canJumpToPreview={preview.tabs.length > 0}
+                onJumpToPreview={jumpToPreview}
+                onSelectTable={selectByQname}
+                onOpenColumn={handleOpenColumn}
+              />
+            </section>
+          </main>
+        </div>
+        {preview.tabs.length > 0 && (
           <div ref={previewRef} className="px-4 pb-4">
             <PreviewSection
-              tabs={previewTabs}
-              activeId={activePreviewId}
-              splitId={splitPreviewId}
-              onActivate={setActivePreviewId}
-              onClose={closePreview}
-              onSplitPick={setSplitPreviewId}
-              onRefetch={refetchPreview}
-              onPatch={patchPreview}
+              tabs={preview.tabs}
+              activeId={preview.activeId}
+              splitId={preview.splitId}
+              onActivate={preview.setActiveId}
+              onClose={preview.close}
+              onSplitPick={preview.setSplitId}
+              onRefetch={preview.refetch}
+              onPatch={preview.patch}
+              onJumpToTop={jumpToTop}
             />
           </div>
         )}

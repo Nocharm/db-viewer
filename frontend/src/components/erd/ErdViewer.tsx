@@ -148,6 +148,9 @@ interface Props {
    * /verify는 항상 기본(MSSQL) 소스만 보므로, 다른 소스를 보는 중엔 이 화면의 검증
    * 딥링크(노드 메뉴·배너·빈 상태)로 이어지지 않게 한다. */
   sourceEngine: string | null;
+  /** 우클릭 「여기서 미리보기」 — 페이지가 아래 섹션을 열고 그리로 스크롤한다
+   * / the page owns the preview section below the canvas and scrolls to it */
+  onPreview: (objectId: number, qname: string) => void;
 }
 
 export function ErdViewer(props: Props) {
@@ -158,7 +161,7 @@ export function ErdViewer(props: Props) {
   );
 }
 
-function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine }: Props) {
+function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview }: Props) {
   const { t } = useI18n();
   const router = useRouter();
   const previewAllowed = usePreviewAllowlist(sourceId);
@@ -169,6 +172,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine }: Props) 
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
   // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+
   const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
@@ -218,14 +222,18 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine }: Props) 
     });
   }, []);
 
-  // 바깥 클릭으로 메뉴 닫기 — mousedown 기준 (PreviewTable 헤더 메뉴와 동일)
+  // 메뉴 바깥 클릭이면 닫는다 — **캡처 단계**로 듣는다. React Flow의 노드 드래그(d3-drag)가
+  // 노드 위 mousedown에서 stopPropagation을 해버려 버블 단계 리스너까지 오지 않는다:
+  // 그래서 다른 노드를 눌러도 메뉴가 안 닫히고 빈 캔버스를 눌러야만 닫혔다(사용자 리포트).
+  // / capture phase: React Flow's node drag stops mousedown propagation, so a bubble-phase
+  //   listener never fired when clicking another node — only the empty pane closed the menu
   useEffect(() => {
     if (!nodeMenu) return;
     const handleClick = (e: MouseEvent) => {
       if (!nodeMenuRef.current?.contains(e.target as Node)) setNodeMenu(null);
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClick, true);
+    return () => document.removeEventListener("mousedown", handleClick, true);
   }, [nodeMenu]);
 
   const handleNodeContextMenu = useCallback(
@@ -600,14 +608,18 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine }: Props) 
              style={{ left: nodeMenu.x, top: nodeMenu.y }}
              data-testid="ErdViewer-nodeMenu">
           <div className="erd-menu__label truncate font-mono">{nodeMenu.qname}</div>
+          {/* 기본은 캔버스 안 서랍 — 그래프 위치·확대를 잃지 않는다. 필터·CSV·SQL이
+              필요하면 서랍 헤더의 「테이블 화면에서 열기」로 건너간다 */}
           <button className="pressable erd-menu__item"
                   disabled={!previewAllowed.has(nodeMenu.schema)}
                   title={previewAllowed.has(nodeMenu.schema)
                     ? undefined : t("preview.notAllowedHint")}
-                  onClick={() => menuNavigate(
-                    withSourceQuery(`/?table=${nodeMenu.nodeId}&preview=1`, sourceId))}
+                  onClick={() => {
+                    onPreview(nodeMenu.nodeId, nodeMenu.qname);
+                    setNodeMenu(null);
+                  }}
                   data-testid="ErdViewer-nodeMenuPreview">
-            {t("erd.menuPreview")}
+            {t("erd.menuPreviewHere")}
           </button>
           <button className="pressable erd-menu__item"
                   onClick={() => menuNavigate(

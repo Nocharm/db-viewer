@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { ArrowDownIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
 import {
@@ -31,6 +32,10 @@ interface Props {
   isMssqlSource: boolean;
   onPreview: () => void;
   onOpenErd: () => void;
+  /** 아래 미리보기 영역이 열려 있는지 — 없으면 이동 버튼을 숨긴다 / preview area is open */
+  canJumpToPreview: boolean;
+  /** 헤더의 ↓ 버튼 — 긴 관계 목록을 지나 미리보기로 바로 내려간다 / jump down to preview */
+  onJumpToPreview: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
   onSelectTable: (qname: string) => void;
   /** 컬럼 칩 클릭 → 검증 페이지로 이동. target이 있으면(조인 검증 결과 행) 타깃까지 프리필한다
@@ -121,7 +126,7 @@ function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
 
 export function TableDetail({
   detail, loading, previewLoading, previewAllowed, isMssqlSource, onPreview, onOpenErd,
-  onSelectTable, onOpenColumn,
+  canJumpToPreview, onJumpToPreview, onSelectTable, onOpenColumn,
 }: Props) {
   const { t } = useI18n();
   const [checkResults, setCheckResults] = useState<JoinCheckItem[] | null>(null);
@@ -218,28 +223,45 @@ export function TableDetail({
   }
 
   return (
-    <div className="scroll-area h-full min-h-0 p-7" data-testid="TableDetail-root">
-      {/* 헤더 — 시선 앵커: title-lg 24px/700 / eye anchor per ClickHouse title-lg */}
-      <div className="mb-2 flex flex-wrap items-baseline gap-3">
-        <h2 className="font-mono text-2xl font-bold tracking-tight"
-            style={{ color: "var(--ink)" }}>
-          {detail.name}
-        </h2>
-        <span className="badge badge--muted"
-              style={detail.type === "view" ? { color: "var(--obj-view)" } : undefined}>
-          {detail.type === "view" ? "VIEW" : "TABLE"}
-        </span>
-        {(aiSummary ?? detail.ai_summary) && <span className="badge badge--ai">AI</span>}
-        {aiMock && (
-          <span className="badge badge--muted" data-testid="TableDetail-aiMockBadge">
-            {t("ai.mockBadge")}
+    <div className="scroll-area h-full min-h-0 px-7 pb-7" data-testid="TableDetail-root">
+      {/* 헤더 — 시선 앵커: title-lg 24px/700 / eye anchor per ClickHouse title-lg.
+          이름·행수 줄까지는 스크롤해도 붙어 있어야 아래 목록을 훑는 동안 어느 테이블을
+          보고 있는지 놓치지 않는다 / name and row/column line stay pinned while scrolling */}
+      <div className="sticky top-0 z-20 -mx-7 mb-2 border-b px-7 pb-2 pt-7"
+           style={{ background: "var(--surface-card)", borderColor: "var(--hairline)" }}
+           data-testid="TableDetail-stickyHeader">
+        <div className="mb-2 flex flex-wrap items-baseline gap-3">
+          <h2 className="font-mono text-2xl font-bold tracking-tight"
+              style={{ color: "var(--ink)" }}>
+            {detail.name}
+          </h2>
+          <span className="badge badge--muted"
+                style={detail.type === "view" ? { color: "var(--obj-view)" } : undefined}>
+            {detail.type === "view" ? "VIEW" : "TABLE"}
           </span>
-        )}
+          {(aiSummary ?? detail.ai_summary) && <span className="badge badge--ai">AI</span>}
+          {aiMock && (
+            <span className="badge badge--muted" data-testid="TableDetail-aiMockBadge">
+              {t("ai.mockBadge")}
+            </span>
+          )}
+          {canJumpToPreview && (
+            <button
+              className="icon-button ml-auto self-center"
+              onClick={onJumpToPreview}
+              title={t("detail.jumpToPreviewTitle")}
+              data-testid="TableDetail-jumpToPreviewButton"
+            >
+              {t("detail.jumpToPreview")}{" "}
+              <ArrowDownIcon size={11} className="inline-block align-middle" />
+            </button>
+          )}
+        </div>
+        <p className="text-sm" style={{ color: "var(--slate)" }}>
+          {detail.row_count !== null && `${detail.row_count.toLocaleString()} rows · `}
+          {detail.column_count} columns
+        </p>
       </div>
-      <p className="mb-2 text-sm" style={{ color: "var(--slate)" }}>
-        {detail.row_count !== null && `${detail.row_count.toLocaleString()} rows · `}
-        {detail.column_count} columns
-      </p>
       {(aiSummary ?? detail.ai_summary) && (
         <p className="mb-2 max-w-2xl text-sm leading-relaxed"
            style={{ color: "var(--slate)" }}>
@@ -423,7 +445,8 @@ export function TableDetail({
               {detail.base_tables.length === 0 && (
                 <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.none")}</p>
               )}
-              <ul className="space-y-1.5">
+              <ul className="scroll-area detail-list space-y-1.5"
+                  data-testid="TableDetail-baseTablesList">
                 {detail.base_tables.map((base) => (
                   <li key={base.id} className="flex items-center gap-2 text-sm">
                     <span className="truncate text-xs">
@@ -444,7 +467,8 @@ export function TableDetail({
             {detail.using_views.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.none")}</p>
             )}
-            <ul className="space-y-1.5">
+            <ul className="scroll-area detail-list space-y-1.5"
+                data-testid="TableDetail-usingViewsList">
               {detail.using_views.map((view) => (
                 <li key={view.id} className="flex items-center gap-2 text-sm">
                   <span className="truncate text-xs">
@@ -467,7 +491,8 @@ export function TableDetail({
                 {t("detail.noSimilar")}
               </p>
             )}
-            <ul className="space-y-2.5">
+            <ul className="scroll-area detail-list space-y-2.5"
+                data-testid="TableDetail-similarTablesList">
               {detail.similar_tables.map((similar) => (
                 <li key={similar.id} className="flex items-center gap-3 text-sm">
                   <span className="w-44 truncate text-xs">
@@ -507,7 +532,8 @@ export function TableDetail({
             {detail.fk_out.length + detail.fk_in.length === 0 && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>{t("detail.noFk")}</p>
             )}
-            <ul className="space-y-1 text-xs">
+            <ul className="scroll-area detail-list space-y-1 text-xs"
+                data-testid="TableDetail-fkList">
               {detail.fk_out.map((name) => (
                 <li key={`out-${name}`} className="font-mono">
                   → <TableRef name={name} onSelect={onSelectTable} />
@@ -532,7 +558,8 @@ export function TableDetail({
                 {t("detail.noRelations")}
               </p>
             )}
-            <ul className="space-y-1.5 text-xs">
+            <ul className="scroll-area detail-list space-y-1.5 text-xs"
+                data-testid="TableDetail-relationsList">
               {detail.relations.map((relation, index) => (
                 <li key={index} className="flex items-center gap-2">
                   <span className={`badge ${relation.status === "confirmed" ? "badge--confirmed" : "badge--muted"}`}>

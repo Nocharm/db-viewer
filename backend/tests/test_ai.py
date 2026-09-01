@@ -279,7 +279,7 @@ def test_search_tables_smart_falls_back_when_index_empty(migrated_engine, monkey
 
     settings = _embed_settings()
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     with sessionmaker(bind=migrated_engine)() as db:
         mode, hits = search_tables_smart(db, "ZZQX_NOPE", tables, ai, settings)
     assert mode == "keyword"
@@ -298,7 +298,7 @@ def test_search_tables_smart_falls_back_when_embed_texts_unavailable(
 
     settings = _embed_settings()
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     with sessionmaker(bind=migrated_engine)() as db:
         db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="[1.0]",
                            source_hash="h", updated_at=datetime.now(UTC)))
@@ -328,7 +328,7 @@ def test_search_tables_smart_uses_embedding_path_and_ranks_by_cosine(
         TableMeta("dbo.T_FAR", [ColumnMeta("B", "int")]),
     ]
     settings = _embed_settings()
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     now = datetime.now(UTC)
     with sessionmaker(bind=migrated_engine)() as db:
         db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
@@ -358,7 +358,7 @@ def test_search_tables_smart_propagates_rerank_failure_without_fallback(
 
     tables = [TableMeta("dbo.T_CLOSE", [ColumnMeta("A", "int")])]
     settings = _embed_settings()
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     now = datetime.now(UTC)
     with sessionmaker(bind=migrated_engine)() as db:
         db.add(AiEmbedding(object_qname="dbo.T_CLOSE", model="e",
@@ -381,7 +381,7 @@ def test_search_tables_smart_skips_corrupt_vector_rows(migrated_engine, monkeypa
 
     tables = [TableMeta("dbo.T_OK", [ColumnMeta("A", "int")])]
     settings = _embed_settings()
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     now = datetime.now(UTC)
     with sessionmaker(bind=migrated_engine)() as db:
         db.add(AiEmbedding(object_qname="dbo.T_OK", model="e",
@@ -403,7 +403,7 @@ def test_search_tables_smart_falls_back_when_all_vectors_corrupt(migrated_engine
 
     tables = [TableMeta("dbo.T_ORD", [ColumnMeta("ORD_NO", "int")])]
     settings = _embed_settings()
-    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30)
+    ai = LlmAiClient(base_url="http://llm:11434/v1", model="m", api_key="", timeout=30, max_tokens=8000)
     with sessionmaker(bind=migrated_engine)() as db:
         db.add(AiEmbedding(object_qname="dbo.T_ORD", model="e", vector="not-json",
                            source_hash="h", updated_at=datetime.now(UTC)))

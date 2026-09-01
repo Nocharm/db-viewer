@@ -6,15 +6,21 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
+import { SampleIcon } from "@/components/icons";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { fetchObjectPreview, runValidatePreview } from "@/lib/api";
 
 interface JoinPreviewCardProps {
+  /** 좌측 진행 순서에서 이동해 오는 앵커 / anchor for the step navigator */
+  id: string;
   srcColumnId: number;
   tgtColumnId: number;
   /** 양쪽 스키마가 모두 미리보기 허용 목록에 있는가 — 서버도 403으로 다시 막는다 */
   allowed: boolean;
   srcObjectId: number;
   tgtObjectId: number;
+  /** 샘플을 한 번이라도 본 시점 — 흐름 다이어그램의 3단계 완료 표시용 */
+  onViewed?: () => void;
 }
 
 interface SampleView {
@@ -43,7 +49,7 @@ function buildColumns(rows: Record<string, unknown>[]): string[] {
 const SAMPLE_LIMIT = 200;
 
 export function JoinPreviewCard({
-  srcColumnId, tgtColumnId, allowed, srcObjectId, tgtObjectId,
+  id, srcColumnId, tgtColumnId, allowed, srcObjectId, tgtObjectId, onViewed,
 }: JoinPreviewCardProps) {
   const { t } = useI18n();
   const [view, setView] = useState<SampleView | null>(null);
@@ -71,6 +77,7 @@ export function JoinPreviewCard({
       .then((next) => {
         if (requestId !== requestIdRef.current) return;
         setView(next);
+        onViewed?.();
       })
       .catch((e: Error) => {
         if (requestId !== requestIdRef.current) return;
@@ -101,13 +108,16 @@ export function JoinPreviewCard({
   );
 
   return (
-    <section className="card p-4" data-testid="JoinPreviewCard-root">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-widest"
-              style={{ color: "var(--muted)" }}>
-          {t("verify.preview.title")}
-        </span>
-        {/* 버튼 군은 라벨 옆 — ml-auto 우측 밀착은 라벨과의 거리만 벌린다 (GateCard와 동일) */}
+    <section id={id} className="card p-4" data-testid="JoinPreviewCard-root">
+      {/* 버튼 군은 제목 옆 — ml-auto 우측 밀착은 제목과의 거리만 벌린다 (GateCard와 동일) */}
+      <StepCardHeader
+        no={3}
+        icon={<SampleIcon size={15} />}
+        title={t("verify.preview.title")}
+        desc={t("verify.step3.desc")}
+        lockNote={allowed ? null : t("verify.preview.notAllowed")}
+        done={view !== null}
+      >
         <button className="btn-secondary !py-1 text-xs"
                 disabled={!allowed || busy} onClick={handleJoin}
                 data-testid="JoinPreviewCard-joinButton">
@@ -123,14 +133,7 @@ export function JoinPreviewCard({
                 data-testid="JoinPreviewCard-tgtSampleButton">
           {t("verify.tgtTitle")} {t("verify.preview.sample")}
         </button>
-      </div>
-
-      {!allowed && (
-        <p className="text-sm" style={{ color: "var(--slate)" }}
-           data-testid="JoinPreviewCard-notAllowed">
-          {t("verify.preview.notAllowed")}
-        </p>
-      )}
+      </StepCardHeader>
 
       {allowed && busy && (
         <p className="text-sm" style={{ color: "var(--muted)" }}

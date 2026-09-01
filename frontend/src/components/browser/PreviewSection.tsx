@@ -5,7 +5,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { CaretDownIcon, CloseIcon, SearchIcon } from "@/components/icons";
+import {
+  ArrowUpIcon, CaretDownIcon, CloseIcon, ColumnsIcon, DownloadIcon, EllipsisTextIcon,
+  FilterIcon, SearchIcon, SplitIcon, WrapTextIcon,
+} from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
 import { PreviewTable } from "@/components/PreviewTable";
@@ -47,6 +50,8 @@ export interface PreviewTabState {
   sort: SortSpec | null;
   /** 헤더 드래그로 정한 컬럼 순서 — 빈 배열이면 원본 순서 / drag-defined column order */
   order: string[];
+  /** 계속 강조할 컬럼 — 조인 검증에서 "지금 검증 중인 컬럼" 표시용 (없으면 null) */
+  highlight?: string | null;
 }
 
 export interface RefetchOptions {
@@ -64,10 +69,14 @@ interface Props {
   onSplitPick: (id: number | null) => void;
   onRefetch: (id: number, opts: RefetchOptions) => void;
   onPatch: (id: number, patch: Partial<Pick<PreviewTabState, "hidden" | "sort" | "order">>) => void;
+  /** 우상단 ↑ 버튼 — 표를 휠로 거슬러 올라가지 않고 테이블 상세로 돌아간다 / jump back up */
+  onJumpToTop: () => void;
 }
 
-function PreviewPane({ tab, onRefetch, onPatch }: {
+function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
   tab: PreviewTabState;
+  /** 긴 값 표시 모드 — 탭바 토글이 두 페인에 함께 적용된다 / shared by both panes */
+  wrapCells: boolean;
   onRefetch: Props["onRefetch"];
   onPatch: Props["onPatch"];
 }) {
@@ -226,6 +235,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
           onClick={addDraftFilter}
           data-testid="PreviewSection-addFilterButton"
         >
+          <FilterIcon size={11} className="mr-1 inline-block align-middle" />
           {t("preview.addFilter")}
         </button>
 
@@ -246,6 +256,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         <div ref={columnsRef} className="relative">
           <button className="icon-button h-10" onClick={() => setColumnsOpen((cur) => !cur)}
                   data-testid="PreviewSection-columnsButton">
+            <ColumnsIcon size={11} className="mr-1 inline-block align-middle" />
             {t("preview.columnsMenu")}{tab.hidden.length > 0 ? ` (-${tab.hidden.length})` : ""}{" "}
             <CaretDownIcon size={11} className="inline-block align-middle" />
           </button>
@@ -298,6 +309,7 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
         )}
         <button className="icon-button h-10" disabled={!data} onClick={downloadCsv}
                 data-testid="PreviewSection-csvButton">
+          <DownloadIcon size={11} className="mr-1 inline-block align-middle" />
           {t("preview.csv")}
         </button>
       </div>
@@ -369,6 +381,8 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
           <PreviewTable
             data={data}
             hidden={tab.hidden}
+            wrapCells={wrapCells}
+            highlightColumn={tab.highlight ?? null}
             sort={tab.sort}
             order={tab.order}
             onToggleHidden={(column) => onPatch(tab.id, {
@@ -378,11 +392,11 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
             })}
             onSort={(sort) => onPatch(tab.id, { sort })}
             onReorder={(order) => onPatch(tab.id, { order })}
-            // 셀 더블클릭 = 그 값으로 eq 조건 (null 셀은 IS NULL) / cell quick-filter
-            onQuickFilter={(column, value) => appendFilter(
+            // 셀 더블클릭·고유값 메뉴 → 조건 스테이징 (조회는 [조회] 버튼이 낸다)
+            onQuickFilter={(column, value, op = "eq") => appendFilter(
               value === null || value === undefined
-                ? { column, op: "is_null", value: null }
-                : { column, op: "eq", value: String(value) },
+                ? { column, op: op === "neq" ? "not_null" : "is_null", value: null }
+                : { column, op, value: String(value) },
             )}
             onExcludeNulls={excludeNulls}
             onPickFilterColumn={pickFilterColumn}
@@ -398,9 +412,13 @@ function PreviewPane({ tab, onRefetch, onPatch }: {
 }
 
 export function PreviewSection({
-  tabs, activeId, splitId, onActivate, onClose, onSplitPick, onRefetch, onPatch,
+  tabs, activeId, splitId, onActivate, onClose, onSplitPick, onRefetch, onPatch, onJumpToTop,
 }: Props) {
   const { t } = useI18n();
+  // 긴 값 표시 모드 — 기본은 말줄임(첫 화면 가독성), 전체를 봐야 할 때만 줄바꿈.
+  // 페인이 아니라 섹션이 들고 있어 분할 시 두 페인이 같은 모드로 움직인다
+  // / long values ellipsize by default; the section owns the mode so split panes agree
+  const [wrapCells, setWrapCells] = useState(false);
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0] ?? null;
   const split = splitId !== null ? tabs.find((tab) => tab.id === splitId) ?? null : null;
 
@@ -431,28 +449,57 @@ export function PreviewSection({
             </button>
           </span>
         ))}
-        {tabs.length >= 2 && (
+        <div className="ml-auto flex items-center gap-1.5">
+          {tabs.length >= 2 && (
+            <button
+              className="icon-button"
+              onClick={() => {
+                if (splitId !== null) {
+                  onSplitPick(null);
+                } else {
+                  const other = tabs.find((tab) => tab.id !== active?.id);
+                  if (other) onSplitPick(other.id);
+                }
+              }}
+              data-testid="PreviewSection-splitButton"
+            >
+              <SplitIcon size={11} className="mr-1 inline-block align-middle" />
+              {splitId !== null ? t("preview.single") : t("preview.split")}
+            </button>
+          )}
+          {/* 긴 값: 말줄임 ↔ 자동 줄바꿈 / long-value display mode */}
           <button
-            className="icon-button ml-auto"
-            onClick={() => {
-              if (splitId !== null) {
-                onSplitPick(null);
-              } else {
-                const other = tabs.find((tab) => tab.id !== active?.id);
-                if (other) onSplitPick(other.id);
-              }
-            }}
-            data-testid="PreviewSection-splitButton"
+            className="icon-button"
+            title={t("preview.cellModeTitle")}
+            aria-pressed={wrapCells}
+            onClick={() => setWrapCells((cur) => !cur)}
+            data-testid="PreviewSection-cellModeButton"
           >
-            {splitId !== null ? t("preview.single") : t("preview.split")}
+            {wrapCells
+              ? <EllipsisTextIcon size={11} className="mr-1 inline-block align-middle" />
+              : <WrapTextIcon size={11} className="mr-1 inline-block align-middle" />}
+            {wrapCells ? t("preview.ellipsisCells") : t("preview.wrapCells")}
           </button>
-        )}
+          <button
+            className="icon-button"
+            title={t("preview.backToTopTitle")}
+            onClick={onJumpToTop}
+            data-testid="PreviewSection-backToTopButton"
+          >
+            <ArrowUpIcon size={11} className="mr-1 inline-block align-middle" />
+            {t("preview.backToTop")}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-5">
-        {active && <PreviewPane tab={active} onRefetch={onRefetch} onPatch={onPatch} />}
+        {active && (
+          <PreviewPane tab={active} wrapCells={wrapCells}
+                       onRefetch={onRefetch} onPatch={onPatch} />
+        )}
         {split && split.id !== active?.id && (
-          <PreviewPane tab={split} onRefetch={onRefetch} onPatch={onPatch} />
+          <PreviewPane tab={split} wrapCells={wrapCells}
+                       onRefetch={onRefetch} onPatch={onPatch} />
         )}
       </div>
     </section>

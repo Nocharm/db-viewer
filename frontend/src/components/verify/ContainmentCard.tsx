@@ -4,10 +4,14 @@
  * Containment result rendered as a symptom and a remedy, not raw numbers. */
 
 import { useI18n } from "@/components/i18n";
+import { ContainmentIcon } from "@/components/icons";
+import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import { getJoinVerdict, type VerdictLevel } from "@/lib/join-verdict";
 import type { ContainmentResponse } from "@/lib/types";
 
 interface ContainmentCardProps {
+  /** 좌측 진행 순서에서 이동해 오는 앵커 / anchor for the step navigator */
+  id: string;
   result: ContainmentResponse | null;
   busy: boolean;
   /** 게이트를 통과해야 켜진다 — verify-flow.canRunContainment */
@@ -23,19 +27,22 @@ const LEVEL_COLOR: Record<VerdictLevel, string> = {
   unknown: "var(--muted)",
 };
 
-export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCardProps) {
+export function ContainmentCard({ id, result, busy, enabled, onRun }: ContainmentCardProps) {
   const { t } = useI18n();
   const verdict = result ? getJoinVerdict(result, null) : null;
   const color = LEVEL_COLOR[verdict?.level ?? "unknown"];
 
   return (
-    <section className="card p-4" data-testid="ContainmentCard-root">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-widest"
-              style={{ color: "var(--muted)" }}>
-          {t("verify.containment.title")}
-        </span>
-        {/* 버튼은 라벨 옆 — GateCard와 같은 이유 / same near-label placement as GateCard */}
+    <section id={id} className="card p-4" data-testid="ContainmentCard-root">
+      {/* 버튼은 제목 옆 — GateCard와 같은 이유 / same near-title placement as GateCard */}
+      <StepCardHeader
+        no={2}
+        icon={<ContainmentIcon size={15} />}
+        title={t("verify.containment.title")}
+        desc={t("verify.step2.desc")}
+        lockNote={enabled ? null : t("verify.lock.needGate")}
+        done={result !== null}
+      >
         <button
           className="btn-secondary !py-1 text-xs"
           disabled={busy || !enabled}
@@ -44,7 +51,7 @@ export function ContainmentCard({ result, busy, enabled, onRun }: ContainmentCar
         >
           {busy ? t("common.loading") : t("verify.containment.run")}
         </button>
-      </div>
+      </StepCardHeader>
 
       {result && verdict && (
         <>

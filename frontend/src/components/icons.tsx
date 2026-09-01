@@ -8,15 +8,17 @@ interface IconProps {
   /** 렌더 크기(px) — 기본 14는 icon-button 안에서 텍스트와 같은 광학 크기 */
   size?: number;
   className?: string;
+  /** 색 지정용 — currentColor를 토큰으로 덮어쓸 때 / to override the stroke color */
+  style?: React.CSSProperties;
 }
 
-function Svg({ size = 14, className, children }: IconProps & { children: React.ReactNode }) {
+function Svg({ size = 14, className, style, children }: IconProps & { children: React.ReactNode }) {
   return (
     <svg
       width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="2.4"
       strokeLinecap="round" strokeLinejoin="round"
-      className={className} aria-hidden
+      className={className} style={style} aria-hidden
     >
       {children}
     </svg>
@@ -110,13 +112,140 @@ export function ArrowDownIcon(props: IconProps) {
   );
 }
 
-/** 파일 내려받기 — 아래 화살표 + 트레이 바닥선 / download to disk. */
+export function FilterIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 깔때기 — 조건으로 좁힌다는 은유 */}
+      <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+    </Svg>
+  );
+}
+
+export function ColumnsIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16M15 4v16" />
+    </Svg>
+  );
+}
+
+export function CodeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8.5 7.5 3 12l5.5 4.5" />
+      <path d="M15.5 7.5 21 12l-5.5 4.5" />
+    </Svg>
+  );
+}
+
 export function DownloadIcon(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M12 4v10" />
-      <path d="M7 10l5 5 5-5" />
-      <path d="M5 19h14" />
+      <path d="M12 3v12" />
+      <path d="M7 11l5 5 5-5" />
+      <path d="M4 20h16" />
+    </Svg>
+  );
+}
+
+export function SplitIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M12 4v16" />
+    </Svg>
+  );
+}
+
+/** 자동 줄바꿈 — 두 줄과 되돌아가는 화살표 / wrap: text lines with a return arrow */
+export function WrapTextIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h12a3 3 0 0 1 0 6h-3" />
+      <path d="M16 15l-3 3 3 3" />
+      <path d="M4 18h4" />
+    </Svg>
+  );
+}
+
+/** 말줄임 — 잘린 한 줄과 … / ellipsis: one clipped line ending in dots */
+export function EllipsisTextIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h9" />
+      <path d="M16.5 12h.01M19.5 12h.01" />
+      <path d="M4 18h16" />
+    </Svg>
+  );
+}
+
+/** 사전 게이트 — 통과/차단을 가르는 방패 / the pre-gate shield */
+export function GateIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+      <path d="M9 12l2 2 4-4" />
+    </Svg>
+  );
+}
+
+/** 포함률 — src ⊆ tgt 를 겹친 원으로 / containment as overlapping sets */
+export function ContainmentIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9" cy="12" r="6" />
+      <circle cx="15" cy="12" r="6" />
+    </Svg>
+  );
+}
+
+/** 샘플 확인 — 실제 행을 눈으로 / rows to eyeball */
+export function SampleIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 10v10" />
+    </Svg>
+  );
+}
+
+/** 확정 — 원 안의 체크 / confirmed */
+export function CheckCircleIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12.5l2.5 2.5L16 9.5" />
+    </Svg>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 13l4 4L19 7" />
+    </Svg>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12h14" />
+      <path d="M13 6l6 6-6 6" />
+    </Svg>
+  );
+}
+
+/** 스키마(DB) — 실린더 / a schema, drawn as a DB cylinder */
+export function DatabaseIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+      <path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
     </Svg>
   );
 }

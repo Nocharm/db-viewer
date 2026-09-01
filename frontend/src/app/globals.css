@@ -516,6 +516,16 @@ mark.hl {
   color: var(--ink);
 }
 
+/* ── 상세 관계 목록 — 항목이 수십 개여도 아래 미리보기까지의 스크롤이 길어지지 않게
+   10줄 남짓에서 목록 자체가 스크롤된다 / relation lists cap at ~10 rows and scroll
+   internally, so a long list never pushes the preview area off-screen ── */
+.detail-list {
+  max-height: 17rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px; /* 스크롤바가 항목 위에 겹치지 않게 */
+}
+
 /* ── 아코디언 — max-height 전환. 높이는 실측값을 인라인 스타일로 넣는다 ── */
 .collapsible {
   overflow: hidden;
@@ -531,6 +541,25 @@ mark.hl {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 주의 환기 깜빡임 — 좌측 진행 순서에서 이동했을 때 도착 지점을 밝힌다.
+   링은 **안쪽**(inset)이다: 바깥 링은 좌우가 스크롤 컨테이너 경계에 잘려 위아래만
+   보였다. 색은 옐로(--primary)가 아니라 테마별 행동색 — 옐로는 라이트에서 묻힌다.
+   전역 prefers-reduced-motion 가드가 이 애니메이션도 함께 끈다
+   / an inset ring: an outer one gets clipped left and right by the scroll container ── */
+.flash-attention {
+  animation: flash-attention 1.1s ease-in-out 2;
+}
+@keyframes flash-attention {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+    border-color: var(--hairline);
+  }
+  35% {
+    box-shadow: inset 0 0 0 2px var(--action-blue);
+    border-color: var(--action-blue);
   }
 }
 
@@ -556,6 +585,16 @@ mark.hl {
 }
 .preview-table tbody tr:hover .preview-col-hl {
   background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+/* ── 고정 컬럼 강조 — 조인 검증이 "지금 검증 중인 컬럼"을 표시한다. 호버 십자
+   (.preview-col-hl)와 겹칠 수 있어 색을 다르게 쓴다 / pinned column highlight ── */
+.preview-table .preview-col-pin {
+  background: color-mix(in srgb, var(--action-blue) 12%, transparent);
+}
+.preview-table thead .preview-col-pin {
+  background: color-mix(in srgb, var(--action-blue) 20%, transparent);
+  color: var(--ink);
 }
 
 /* ── 컬럼 리사이즈 핸들 — 헤더 우측 세로선 / column resize handle on header edges ── */
@@ -723,8 +762,15 @@ input::placeholder {
    실측 식별 불가였다. 컬럼 행 호버(.erd-node__row)와 같은 계열
    / grab affordance; ink-based mix so the tint survives the dark theme */
 .react-flow .erd-node__header {
-  cursor: grab;
+  /* 호버는 pointer — 이 헤더는 끌 수도 있지만 더블클릭·우클릭 액션이 먼저다.
+     grab 커서를 항상 띄우면 "끄는 것 말고는 할 게 없다"로 읽힌다
+     / pointer on hover: the header is clickable first, draggable second */
+  cursor: pointer;
   transition: background-color 0.15s ease-in-out;
+}
+/* 누르고 있는 동안에만 잡는 손 / the grabbing hand only while the button is down */
+.react-flow .erd-node__header:active {
+  cursor: grabbing;
 }
 .react-flow .erd-node__header:hover {
   background-color: color-mix(in srgb, var(--ink) 6%, transparent);
