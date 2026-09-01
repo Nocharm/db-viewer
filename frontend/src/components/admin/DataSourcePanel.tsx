@@ -18,6 +18,7 @@ import {
   type DataSourceInput,
   type DataSourceItem,
 } from "@/lib/api";
+import { DownloadIcon } from "@/components/icons";
 
 export interface SourceFormState {
   name: string;
@@ -200,6 +201,20 @@ export function DataSourcePanel() {
       <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
         조회·수집·미리보기가 모두 여기 등록된 소스를 기준으로 동작합니다. 관리형(사내 MSSQL)
         소스는 배포 설정(.env / n8n)이 원본이라 이 화면에서 수정·삭제할 수 없습니다.
+      </p>
+
+      {/* 새 서비스 DB를 붙일 때 담당자에게 전달할 ELI5 안내서 — public 정적 파일을 내려받는다 */}
+      <a
+        className="btn-secondary mb-3 inline-flex items-center gap-1.5 text-sm"
+        href="/handoff/integration-guide.html"
+        download="db-viewer-연동안내서.html"
+        data-testid="DataSourcePanel-guideDownload"
+      >
+        <DownloadIcon size={14} className="inline-block align-middle" />
+        연동 안내서 내려받기
+      </a>
+      <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
+        새 서비스 DB를 연결하려면 이 안내서(담당자용 연동 요청서)를 서비스 담당자에게 전달하세요.
       </p>
 
       {!keyConfigured && (
