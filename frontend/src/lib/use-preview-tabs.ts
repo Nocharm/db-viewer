@@ -9,7 +9,7 @@
  * PreviewSection with all of its tools.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { PreviewTabState, RefetchOptions } from "@/components/browser/PreviewSection";
 import { fetchObjectPreview } from "@/lib/api";
@@ -54,7 +54,15 @@ export function usePreviewTabs(): PreviewTabsController {
   }, []);
 
   const setHighlight = useCallback((id: number, column: string | null) => {
-    setTabs((cur) => cur.map((tab) => (tab.id === id ? { ...tab, highlight: column } : tab)));
+    // 같은 값이면 배열 정체성을 보존한다 — open()이 이미 열린 탭에 매번 새 배열을 만들면
+    // (탭 배열 → 컨트롤러 → openPreview → 딥링크 effect) 순으로 다시 발동해 무한
+    // 리렌더가 된다(?preview=1에서 실측). / no-op guard: keep identity when unchanged,
+    // or the deep-link effect chain re-fires itself into "Maximum update depth exceeded".
+    setTabs((cur) => (
+      cur.some((tab) => tab.id === id && (tab.highlight ?? null) !== column)
+        ? cur.map((tab) => (tab.id === id ? { ...tab, highlight: column } : tab))
+        : cur
+    ));
   }, []);
 
   const open = useCallback((
@@ -90,9 +98,14 @@ export function usePreviewTabs(): PreviewTabsController {
     setTabs((cur) => cur.map((tab) => (tab.id === id ? { ...tab, ...next } : tab)));
   }, []);
 
-  return {
+  // 컨트롤러 객체를 메모이즈 — 매 렌더 새 객체면 이걸 deps로 둔 effect가 렌더마다
+  // 재발동한다. 실제로 ?preview=1 딥링크 effect가 router.replace와 맞물려 무한
+  // 리렌더("Maximum update depth exceeded")를 일으켰다(머지 브라우저 검증에서 발견).
+  // / memoize the controller: a fresh object every render re-fires any effect that
+  //   lists it (or a callback built on it) in deps — the deep-link effect looped.
+  return useMemo(() => ({
     tabs, activeId, splitId,
     setActiveId: setActiveIdState, setSplitId,
     open, close, refetch, patch, setHighlight, error,
-  };
+  }), [tabs, activeId, splitId, setSplitId, open, close, refetch, patch, setHighlight, error]);
 }

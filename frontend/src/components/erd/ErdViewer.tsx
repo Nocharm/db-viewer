@@ -17,6 +17,7 @@ import { CloseIcon, ResetIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { fetchErdGraph } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
@@ -28,6 +29,7 @@ import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { ErdSchemaFilter } from "./ErdSchemaFilter";
 import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
+import { withSourceQuery } from "@/lib/source-param";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
 import { ErdSearch } from "./ErdSearch";
 import { Legend } from "./Legend";
@@ -60,26 +62,6 @@ interface NodeMenuState {
   x: number;
   y: number;
   copied: boolean;
-}
-
-/** 클립보드 복사 — 사내 배포는 http(비보안 컨텍스트)라 clipboard API가 없을 수 있어
- * execCommand 폴백을 유지한다 / clipboard write with a non-secure-context fallback. */
-function copyText(text: string): void {
-  const fallback = () => {
-    const area = document.createElement("textarea");
-    area.value = text;
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(fallback);
-  } else {
-    fallback();
-  }
 }
 
 /** 엣지 등급 → 범례와 같은 문구 / edge grade to the same wording the legend uses */
@@ -160,6 +142,12 @@ interface Props {
   /** ?focus= 로 들어온 대상 — 그래프에 있으면 센터링, 없으면 배너 */
   focusId: number | null;
   focusLabel: string | null;
+  /** 선택된 소스 — null이면 기본 소스 / null means the default source. */
+  sourceId: number | null;
+  /** 선택된 소스 엔진 — "mssql"이 아니면(또는 null=기본 소스) 검증 진입점을 숨긴다.
+   * /verify는 항상 기본(MSSQL) 소스만 보므로, 다른 소스를 보는 중엔 이 화면의 검증
+   * 딥링크(노드 메뉴·배너·빈 상태)로 이어지지 않게 한다. */
+  sourceEngine: string | null;
   /** 우클릭 「여기서 미리보기」 — 페이지가 아래 섹션을 열고 그리로 스크롤한다
    * / the page owns the preview section below the canvas and scrolls to it */
   onPreview: (objectId: number, qname: string) => void;
@@ -173,10 +161,12 @@ export function ErdViewer(props: Props) {
   );
 }
 
-function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
+function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview }: Props) {
   const { t } = useI18n();
   const router = useRouter();
-  const previewAllowed = usePreviewAllowlist();
+  const previewAllowed = usePreviewAllowlist(sourceId);
+  // 기본 소스(null)·"mssql"만 검증 진입점을 보인다 — page.tsx/AppHeader와 동일 규칙
+  const isMssqlSource = sourceEngine === null || sourceEngine === "mssql";
   const [graph, setGraph] = useState<ErdResponse | null>(null);
   // 좌측 스키마 필터 — null이면 전체. 필터된 그래프가 레이아웃·검색의 입력이 된다
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
@@ -218,10 +208,10 @@ function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
   const pendingCenterIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    fetchErdGraph()
+    fetchErdGraph(sourceId)
       .then(setGraph)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [sourceId]);
 
   const toggleNode = useCallback((id: number) => {
     setExpandedNodes((current) => {
@@ -632,16 +622,20 @@ function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
             {t("erd.menuPreviewHere")}
           </button>
           <button className="pressable erd-menu__item"
-                  onClick={() => menuNavigate(`/?table=${nodeMenu.nodeId}`)}
+                  onClick={() => menuNavigate(
+                    withSourceQuery(`/?table=${nodeMenu.nodeId}`, sourceId))}
                   data-testid="ErdViewer-nodeMenuDetail">
             {t("erd.menuDetail")}
           </button>
-          <button className="pressable erd-menu__item"
-                  onClick={() => menuNavigate(
-                    `/verify?src=${nodeMenu.nodeId}&srcLabel=${encodeURIComponent(nodeMenu.qname)}`)}
-                  data-testid="ErdViewer-nodeMenuVerify">
-            {t("erd.menuVerify")}
-          </button>
+          {/* /verify는 항상 기본(MSSQL) 소스만 본다 — 다른 소스에서는 숨긴다 */}
+          {isMssqlSource && (
+            <button className="pressable erd-menu__item"
+                    onClick={() => menuNavigate(
+                      `/verify?src=${nodeMenu.nodeId}&srcLabel=${encodeURIComponent(nodeMenu.qname)}`)}
+                    data-testid="ErdViewer-nodeMenuVerify">
+              {t("erd.menuVerify")}
+            </button>
+          )}
           <button className="pressable erd-menu__item"
                   onClick={() => {
                     toggleNode(nodeMenu.nodeId);
@@ -723,13 +717,16 @@ function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
           <span>
             {t("erd.focusMissing").replace("{label}", focusLabel ?? String(focusId))}
           </span>
-          <Link
-            className="btn-secondary !py-0.5 text-xs"
-            href={`/verify?src=${focusId}&srcLabel=${encodeURIComponent(focusLabel ?? "")}`}
-            data-testid="ErdViewer-focusMissingLink"
-          >
-            {t("erd.goVerify")}
-          </Link>
+          {/* /verify는 항상 기본(MSSQL) 소스만 본다 — 다른 소스에서는 숨긴다 */}
+          {isMssqlSource && (
+            <Link
+              className="btn-secondary !py-0.5 text-xs"
+              href={`/verify?src=${focusId}&srcLabel=${encodeURIComponent(focusLabel ?? "")}`}
+              data-testid="ErdViewer-focusMissingLink"
+            >
+              {t("erd.goVerify")}
+            </Link>
+          )}
         </div>
       )}
 
@@ -742,9 +739,12 @@ function ErdViewerInner({ focusId, focusLabel, onPreview }: Props) {
             <p className="mb-4 text-sm" style={{ color: "var(--slate)" }}>
               {t("erd.emptyReadOnly")}
             </p>
-            <Link className="btn-primary" href="/verify" data-testid="ErdViewer-emptyVerifyLink">
-              {t("erd.goVerify")}
-            </Link>
+            {/* /verify는 항상 기본(MSSQL) 소스만 본다 — 다른 소스에서는 숨긴다 */}
+            {isMssqlSource && (
+              <Link className="btn-primary" href="/verify" data-testid="ErdViewer-emptyVerifyLink">
+                {t("erd.goVerify")}
+              </Link>
+            )}
           </div>
         </div>
       )}

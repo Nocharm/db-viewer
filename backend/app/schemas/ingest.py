@@ -55,6 +55,8 @@ class CatalogPayload(BaseModel):
     """POST /api/ingest/catalog body — n8n W1 raw dump. / n8n W1이 보내는 원본 덤프."""
 
     source_db: str
+    # 어느 소스의 수집인가 — n8n(구 계약)은 안 보내므로 None이면 기본 소스
+    data_source_id: int | None = None
     collected_at: datetime
     objects: list[RawObject]
     columns: list[RawColumn]

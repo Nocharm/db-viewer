@@ -79,6 +79,22 @@ export function isNullOp(op: PreviewFilterOp): boolean {
   return op === "is_null" || op === "not_null";
 }
 
+/** 조건 동일성 키 — 칩 중복 판정과 적용 여부 대조에 함께 쓴다 / identity key for dedupe. */
+export function condKey(cond: PreviewFilterCond): string {
+  return `${cond.column} ${cond.op} ${cond.value ?? ""}`;
+}
+
+/** 조건을 중복 없이 스테이징 — 중복이거나 상한이면 **원본 참조 그대로** 돌려줘서
+ * 호출부가 동일성 비교로 무변경을 감지한다 / append unless duplicate or over cap;
+ * the unchanged reference signals a no-op to the caller. */
+export function appendFilterCond(
+  staged: PreviewFilterCond[], cond: PreviewFilterCond, max: number,
+): PreviewFilterCond[] {
+  if (staged.some((c) => condKey(c) === condKey(cond))) return staged;
+  if (staged.length >= max) return staged;
+  return [...staged, cond];
+}
+
 export interface PreviewQueryState {
   object: string; // schema.name
   limit: number;

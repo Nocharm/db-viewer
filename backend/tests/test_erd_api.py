@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from app.adapters.fake_validator import FakeJoinValidator
 from app.api.validate import get_join_validator
 from app.models import Base
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 
 
 @pytest.fixture()
@@ -85,4 +86,5 @@ def test_erd_excludes_hidden_schemas(vclient, load_fixture, monkeypatch):
 
 def test_erd_empty_catalog_is_empty_graph(client):
     body = client.get("/api/erd").json()
-    assert body == {"snapshot_id": None, "nodes": [], "edges": []}
+    assert body == {"snapshot_id": None, "source_id": MANAGED_MSSQL_SOURCE_ID,
+                     "nodes": [], "edges": []}

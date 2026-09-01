@@ -16,11 +16,13 @@ from app.models import (
     CatalogConstraint,
     CatalogObject,
     CollectJob,
+    DataSource,
     FkColumn,
     Snapshot,
     ViewDep,
     ViewLineageFlat,
 )
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.schemas.ingest import CatalogPayload, ViewDepsPayload
 from app.services.phase2 import run_phase2
 
@@ -85,6 +87,7 @@ def ingest_catalog(payload: CatalogPayload, db: Session = Depends(get_db)) -> di
         snapshot = Snapshot(
             collected_at=payload.collected_at, source_db=payload.source_db,
             status="collecting",
+            data_source_id=payload.data_source_id or MANAGED_MSSQL_SOURCE_ID,
         )
         db.add(snapshot)
         db.flush()
@@ -296,8 +299,13 @@ def ingest_view_deps(payload: ViewDepsPayload, db: Session = Depends(get_db)) ->
             [{**r, "snapshot_id": snapshot.id} for r in lineage_rows],
         )
 
-    # Phase 2 — 뷰 DDL 파싱·컬럼 정밀 lineage·JOIN 추출 / parse DDL, augment lineage
-    phase2_counts = run_phase2(db, snapshot.id)
+    # Phase 2는 T-SQL 파서(sqlglot dialect=tsql) 기반이라 PG/SQLite DDL을 먹이면
+    # 무의미한 실패만 쌓인다 — mssql 소스에서만 돈다. 나머지는 parse_status를 NULL로 남긴다.
+    # Phase 2 parses T-SQL only; non-mssql sources skip it and keep parse_status NULL.
+    source = db.get(DataSource, snapshot.data_source_id)
+    phase2_counts: dict = {}
+    if source is not None and source.engine == "mssql":
+        phase2_counts = run_phase2(db, snapshot.id)
 
     snapshot.status = "ready"
     unresolved_total = db.execute(

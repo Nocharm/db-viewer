@@ -61,7 +61,7 @@ def test_search_pages_through_every_object_with_offset(client, load_fixture):
 def test_search_without_ready_snapshot_is_404(client):
     res = client.get("/api/objects", params={"q": "x"})
     assert res.status_code == 404
-    assert res.json()["error"]["message"] == "no ready snapshot"
+    assert res.json()["error"]["message"] == "no ready snapshot for this source"
 
 
 def test_view_lineage_endpoint_cycle_and_chain(client, load_fixture):

@@ -27,10 +27,23 @@ from app.api import (
     relations,
     scan,
     snapshots,
+    sources,
     validate,
     views,
 )
 from app.auth import require_ingest_access, require_whitelisted
+from app.config import get_settings
+
+# 422 상세에 원문 그대로 실리면 안 되는 요청 필드 — pydantic 검증 오류는 거부된 값
+# (exc.errors()[i]["input"])을 그대로 담아서, 소스 생성/수정처럼 비밀번호를 받는
+# 엔드포인트에서 타입 오류(문자열 대신 숫자·리스트)만 나도 비밀번호가 새 나간다
+SECRET_FIELDS = {"password"}
+
+
+def _redact_validation_error(err: dict) -> dict:
+    """비밀 필드의 거부값만 지운다 — port·engine 같은 다른 필드의 진단값은 남긴다."""
+    loc = {str(part) for part in err.get("loc", ())}
+    return {**err, "input": "***"} if SECRET_FIELDS & loc else err
 
 
 def create_app() -> FastAPI:
@@ -57,11 +70,22 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, dependencies=user_gate)
     app.include_router(keys.router, dependencies=user_gate)
     app.include_router(categories.router, dependencies=user_gate)
+    # 소스 선택기가 읽는 최소 목록 — 조회 API와 같은 게이트. 관리용 전체 목록(sources.router,
+    # sysadmin)과 경로 접두사를 공유하지만 겹치는 라우트가 없다
+    app.include_router(sources.browse_router, dependencies=user_gate)
+    # 로그인 자체는 어떤 사용자 게이트도 뒤에 둘 수 없다 — 아직 신원이 없기 때문이다.
+    # 화이트리스트는 발급된 토큰으로 다른 API를 부를 때 판정된다.
+    if get_settings().auth_ldap_login_enabled:
+        from app.api import auth_login
+
+        app.include_router(auth_login.router)
     # me는 토큰만, admin은 자체 sysadmin 게이트 / me needs only a token
     app.include_router(me.router)
     app.include_router(admin.router)
     # 수집 트리거는 관리 작업 — 라우터 자체가 sysadmin 게이트를 갖는다
     app.include_router(collect.router)
+    # 소스 등록도 관리 작업 — collect와 같은 관용(자체 sysadmin 게이트)
+    app.include_router(sources.router)
 
     # 승인된 에러 규약: {"error": {code, message, context}} / approved error envelope
     @app.exception_handler(StarletteHTTPException)
@@ -70,6 +94,8 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": exc.status_code, **detail}},
+            # exc.headers를 안 실으면 Retry-After 같은 헤더가 조용히 사라진다 (LDAP 429가 처음 씀)
+            headers=exc.headers,
         )
 
     # AI 프로바이더 장애는 게이트웨이 오류로 — 조용한 폴백 없음 (스펙 §에러 처리)
@@ -92,11 +118,12 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = [_redact_validation_error(e) for e in exc.errors()[:5]]
         return JSONResponse(
             status_code=422,
             content={"error": {
                 "code": 422, "message": "request validation failed",
-                "context": jsonable_encoder(exc.errors()[:5]),
+                "context": jsonable_encoder(errors),
             }},
         )
 

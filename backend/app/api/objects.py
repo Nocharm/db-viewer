@@ -1,12 +1,15 @@
 """Object search, detail, and preview. / 객체 검색 + 상세 + 미리보기."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError, DisconnectionError
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import Session, aliased
 
 from app.adapters import SyntheticDataRefused, create_table_preview
@@ -19,34 +22,49 @@ from app.models import (
     CatalogColumn,
     CatalogConstraint,
     CatalogObject,
+    DataSource,
     FkColumn,
     Relation,
     Snapshot,
     ViewLineageFlat,
 )
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.preview_policy import is_preview_allowed, list_allowed_schemas
 from app.services.schema_visibility import (
     get_hidden_schemas,
     is_schema_hidden,
     should_render_hidden_schemas,
 )
+from app.sources.crypto import CryptoNotConfigured
+from app.sources.registry import UnsupportedSource, get_source
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
+logger = logging.getLogger(__name__)
 
 
-def resolve_snapshot(db: Session, snapshot_id: int | None) -> Snapshot:
-    """지정 스냅샷 또는 최신 ready 스냅샷 / requested snapshot or the latest ready one."""
+def resolve_snapshot(
+    db: Session, snapshot_id: int | None = None, source_id: int | None = None
+) -> Snapshot:
+    """지정 스냅샷, 없으면 그 소스의 최신 ready / requested snapshot or the source's latest ready.
+
+    source_id를 생략하면 기본 소스(시드된 사내 MSSQL)로 본다 — 소스 개념이 없던
+    기존 호출자가 그대로 동작해야 한다.
+    """
     if snapshot_id is not None:
         snapshot = db.get(Snapshot, snapshot_id)
         if snapshot is None:
             raise HTTPException(404, {"message": "snapshot not found",
                                       "context": {"snapshot_id": snapshot_id}})
         return snapshot
+    target = source_id if source_id is not None else MANAGED_MSSQL_SOURCE_ID
     snapshot = db.execute(
-        select(Snapshot).where(Snapshot.status == "ready").order_by(Snapshot.id.desc()).limit(1)
+        select(Snapshot)
+        .where(Snapshot.status == "ready", Snapshot.data_source_id == target)
+        .order_by(Snapshot.id.desc()).limit(1)
     ).scalar_one_or_none()
     if snapshot is None:
-        raise HTTPException(404, {"message": "no ready snapshot", "context": {}})
+        raise HTTPException(404, {"message": "no ready snapshot for this source",
+                                  "context": {"source_id": target}})
     return snapshot
 
 
@@ -55,6 +73,7 @@ def search_objects(
     q: str = "",
     type_filter: Literal["table", "view"] | None = Query(None, alias="type"),
     snapshot_id: int | None = None,
+    source_id: int | None = None,
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -64,7 +83,7 @@ def search_objects(
     total 없이 잘린 목록만 주면 화면이 "이게 전부"라고 거짓말한다 (실규모 3,224 객체 >
     페이지 상한 1,000). 클라이언트는 total까지 offset으로 페이징해 전량을 모은다.
     """
-    snapshot = resolve_snapshot(db, snapshot_id)
+    snapshot = resolve_snapshot(db, snapshot_id, source_id)
     column_count = (
         select(func.count())
         .where(CatalogColumn.object_id == CatalogObject.id)
@@ -96,7 +115,10 @@ def search_objects(
         }
         for obj, col_count in db.execute(stmt)
     ]
-    return {"snapshot_id": snapshot.id, "total": total, "items": items}
+    return {
+        "snapshot_id": snapshot.id, "source_id": snapshot.data_source_id,
+        "total": total, "items": items,
+    }
 
 
 @router.get("/{object_id}/detail")
@@ -106,6 +128,20 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
     if obj is None:
         raise HTTPException(404, {"message": "object not found", "context": {"object_id": object_id}})
     qname = f"{obj.schema}.{obj.name}"
+
+    # relations·ai_summaries는 qname만으로 조회한다 — 그 표들에는 소스 축이 없다. 소스가
+    # 여럿이면 'public.users'처럼 schema.name이 겹치는 다른 소스 객체가 사내 MSSQL의 확정
+    # 관계·AI 요약을 자기 것처럼 달고 나온다. 둘 다 MSSQL 전용 개념이므로(스펙 비목표)
+    # 비-MSSQL 소스에서는 조회 자체를 건너뛴다. 표에 소스 컬럼을 추가하는 것은 마이그레이션과
+    # 백필이 따로 필요한 별건이라 후속 과제.
+    # / both tables are keyed by bare qname and carry no source axis, so a colliding
+    #   schema.name in another source would inherit the MSSQL object's relations/summary.
+    #   Relations and AI summaries are MSSQL-only concepts — skip them elsewhere.
+    snapshot = db.get(Snapshot, obj.snapshot_id)
+    source = db.get(DataSource, snapshot.data_source_id) if snapshot is not None else None
+    # 소스 행을 못 찾는 경우는 FK상 없다 — 있더라도 기본 소스(사내 MSSQL)로 본다
+    # (같은 파일의 미리보기 경로가 쓰는 폴백과 같은 규약)
+    is_mssql_source = source is None or source.engine == "mssql"
 
     columns = db.execute(
         select(CatalogColumn).where(CatalogColumn.object_id == obj.id)
@@ -176,24 +212,26 @@ def get_object_detail(object_id: int, db: Session = Depends(get_db)) -> dict:
     ]
 
     # 추론·확정 관계 (텍스트 식별자 매칭) / inferred and confirmed relations
-    relations = [
-        {
-            "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
-            "src_column": rel.src_column, "tgt_column": rel.tgt_column,
-            "status": rel.status, "confidence": rel.confidence,
-            "cardinality": rel.cardinality, "reason": rel.reason,
-        }
-        for rel in db.execute(
-            select(Relation).where(
-                Relation.status.in_(["validated", "confirmed"]),
-                (Relation.src_object == qname) | (Relation.tgt_object == qname),
-            )
-        ).scalars()
-    ]
-
-    summary = db.execute(
-        select(AiSummary.summary).where(AiSummary.object_qname == qname)
-    ).scalar_one_or_none()
+    relations: list[dict] = []
+    summary: str | None = None
+    if is_mssql_source:
+        relations = [
+            {
+                "other": rel.tgt_object if rel.src_object == qname else rel.src_object,
+                "src_column": rel.src_column, "tgt_column": rel.tgt_column,
+                "status": rel.status, "confidence": rel.confidence,
+                "cardinality": rel.cardinality, "reason": rel.reason,
+            }
+            for rel in db.execute(
+                select(Relation).where(
+                    Relation.status.in_(["validated", "confirmed"]),
+                    (Relation.src_object == qname) | (Relation.tgt_object == qname),
+                )
+            ).scalars()
+        ]
+        summary = db.execute(
+            select(AiSummary.summary).where(AiSummary.object_qname == qname)
+        ).scalar_one_or_none()
 
     fk_column_ids = {
         cid for (cid,) in db.execute(
@@ -310,13 +348,16 @@ def format_filter_note(conds: list[PreviewFilterCond]) -> str:
 
 
 @router.get("/preview-allowlist")
-def get_preview_allowlist(db: Session = Depends(get_db)) -> dict:
+def get_preview_allowlist(
+    source_id: int | None = None, db: Session = Depends(get_db)
+) -> dict:
     """미리보기가 허용된 스키마 목록 — 화면이 버튼 활성 여부를 정하는 근거.
 
     목록 자체는 카탈로그 메타(이미 노출되는 이름)라 일반 사용자도 읽을 수 있다.
-    수정은 관리 API(비밀번호 게이트)에서만 한다.
+    수정은 관리 API(비밀번호 게이트)에서만 한다. 허용은 소스별이라 소스를 생략하면
+    기본 소스의 목록을 준다 — 소스 개념이 없던 화면이 그대로 동작해야 한다.
     """
-    return {"items": list_allowed_schemas(db)}
+    return {"items": list_allowed_schemas(db, source_id or MANAGED_MSSQL_SOURCE_ID)}
 
 
 @router.get("/hidden-schemas")
@@ -358,8 +399,11 @@ def get_object_preview(
                        "(HIDDEN_SCHEMAS)",
             "context": {"object": qname, "schema": obj.schema},
         })
-    # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다
-    if not is_preview_allowed(db, obj.schema):
+    # 값 데이터를 내보내는 유일한 경로 — 스키마가 허용 목록에 없으면 소스에 질의하지 않는다.
+    # 허용은 소스별이라 이 객체가 속한 소스로 판정한다 — 같은 스키마명이라도 다른 소스면 다른 정책
+    snapshot = db.get(Snapshot, obj.snapshot_id)
+    source = get_source(db, snapshot.data_source_id if snapshot else None)
+    if not is_preview_allowed(db, source.id, obj.schema):
         raise HTTPException(403, {
             "message": "preview is not allowed for this schema — an admin must add it "
                        "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
@@ -373,16 +417,44 @@ def get_object_preview(
     conds = parse_preview_filters(filters, {c.name for c in columns})
     column_specs = [{"name": c.name, "data_type": c.data_type} for c in columns]
 
-    # live는 n8n W2 실행기, 그 외는 픽스처 합성 — 팩토리가 게이트 (docs/connect.md)
+    # live는 n8n W2 실행기, direct 소스는 그 소스에 직결, 그 외는 픽스처 합성 — 팩토리가
+    # 게이트 (docs/connect.md). 소스 준비(엔진 URL 조립·복호화)와 실행을 한 가드 안에 둬서
+    # 어느 단계에서 터지든 500으로 새지 않게 한다.
     try:
-        preview = create_table_preview(settings)
+        preview = create_table_preview(settings, source)
+        rows = preview.rows(
+            qname, column_specs, limit,
+            filters=[c.model_dump() for c in conds],
+        )
     except SyntheticDataRefused as e:
         raise HTTPException(503, {"message": str(e),
                                   "context": {"source_mode": settings.source_mode}}) from e
-    rows = preview.rows(
-        qname, column_specs, limit,
-        filters=[c.model_dump() for c in conds],
-    )
+    except (CryptoNotConfigured, UnsupportedSource) as e:
+        # 소스 장애(502)가 아니라 이쪽 설정 문제 — 키 교체·SOURCE_SECRET_KEY 미설정·direct로
+        # 못 붙는 엔진 조합. 두 예외 다 메시지가 고정 문구뿐이라 str(e)를 그대로 노출해도
+        # 자격증명이 섞이지 않는다(CryptoNotConfigured.decrypt_secret 참조).
+        logger.warning("source preview misconfigured",
+                       extra={"source_id": source.id, "object": qname,
+                              "error_type": type(e).__name__})
+        raise HTTPException(503, {
+            "message": str(e),
+            "context": {"source": source.name, "object": qname},
+        }) from e
+    except (DBAPIError, SATimeoutError, DisconnectionError) as e:
+        # 드라이버 원문(예: 인증 실패 메시지에 담긴 접속 계정명)은 절대 클라이언트로 안 보낸다
+        # — 종류(error_type)까지만. SQLAlchemyError 전체가 아니라 이 세 타입으로 좁힌 이유:
+        # CompileError·ArgumentError 같은 조립 버그는 소스 장애로 위장하지 않고 500으로 드러나야
+        # 한다. TimeoutError(sqlalchemy.exc — 빌트인과 이름이 겹쳐 별칭)·DisconnectionError는
+        # DBAPIError의 하위가 아니지만 "소스가 힘들어한다"는 같은 신호다 — postgres 커넥션 풀을
+        # 작게 잡아 둔 설계(connection.py) 탓에 동시 요청이 몰리면 풀 체크아웃이 TimeoutError로
+        # 떨어질 수 있다.
+        logger.warning("source preview failed",
+                       extra={"source_id": source.id, "object": qname}, exc_info=True)
+        raise HTTPException(502, {
+            "message": "the data source could not be queried",
+            "context": {"source": source.name, "object": qname,
+                        "error_type": type(e).__name__},
+        }) from e
 
     masked = [c.name for c in columns if c.masking_policy]
     if masked:
@@ -401,8 +473,12 @@ def get_object_preview(
         "columns": [c.name for c in columns],
         "rows": rows,
         "masked_columns": masked,
-        # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값
-        "source": "live" if settings.source_mode == "live" else "fixture",
+        # 0행이 나왔을 때 "원본이 비었다"와 "실행기가 안 붙었다"를 화면에서 가르는 값.
+        # direct 소스는 SOURCE_MODE와 무관하게 항상 실데이터다.
+        "source": ("live" if source.access_mode == "direct"
+                   or settings.source_mode == "live" else "fixture"),
+        "source_id": source.id,
+        "source_name": source.name,
         "limit": limit,
         # 화면 칩·SQL 보기가 그대로 쓰는 서버 echo / server-echoed conditions
         "filters": [c.model_dump() for c in conds],
@@ -412,10 +488,11 @@ def get_object_preview(
 
 @router.get("/columns-index")
 def get_columns_index(
-    snapshot_id: int | None = None, db: Session = Depends(get_db)
+    snapshot_id: int | None = None, source_id: int | None = None,
+    db: Session = Depends(get_db),
 ) -> dict:
     """테이블별 컬럼명 인덱스 — 브라우저 컬럼 검색용 / column-name index for client search."""
-    snapshot = resolve_snapshot(db, snapshot_id)
+    snapshot = resolve_snapshot(db, snapshot_id, source_id)
     hidden = get_hidden_schemas()
     index: dict[int, list[str]] = {}
     for object_id, schema, name in db.execute(
@@ -429,7 +506,7 @@ def get_columns_index(
             continue
         index.setdefault(object_id, []).append(name)
     return {
-        "snapshot_id": snapshot.id,
+        "snapshot_id": snapshot.id, "source_id": snapshot.data_source_id,
         "items": [{"object_id": oid, "columns": cols} for oid, cols in index.items()],
     }
 

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_db
 from app.models import LoginWhitelist
+from app.session_token import LOCAL_ISSUER, decode_session_token, is_session_secret_configured
 
 
 @lru_cache(maxsize=1)
@@ -21,6 +22,27 @@ def _jwk_client() -> jwt.PyJWKClient:
     return jwt.PyJWKClient(
         f"{get_settings().keycloak_issuer}/protocol/openid-connect/certs"
     )
+
+
+def _decode_local_session(token: str) -> dict | None:
+    """우리가 발급한 토큰이면 완전 검증해 클레임을, 아니면 None을 돌려준다.
+
+    `iss`를 읽으려고 서명 검증 없이 한 번 디코드하는데, 그 결과는 **경로 선택에만** 쓴다.
+    신원·권한은 아래 `decode_session_token`이 서명·만료·발급자·알고리즘을 전부 검증한 뒤
+    나온 클레임에서만 온다.
+    """
+    # 서명 키가 없으면 로컬 경로 자체가 존재하지 않는다 — fail-closed를 라이브러리 동작에
+    # 맡기지 않고 여기서 명시한다. (SESSION_SECRET_KEY의 기본값이 빈 문자열이라 이 상태가
+    # 기본 배포다.)
+    if not is_session_secret_configured():
+        return None
+    try:
+        unverified = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return None  # 파싱조차 안 되면 Keycloak 경로가 기존과 같은 401을 낸다
+    if unverified.get("iss") != LOCAL_ISSUER:
+        return None
+    return decode_session_token(token)
 
 
 def get_current_user(
@@ -34,6 +56,18 @@ def get_current_user(
     if authorization is None or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={"message": "missing bearer token"})
     token = authorization.removeprefix("Bearer ")
+    try:
+        local_claims = _decode_local_session(token)
+    except jwt.PyJWTError as exc:
+        raise HTTPException(
+            status_code=401, detail={"message": f"invalid token: {exc}"}
+        ) from exc
+    if local_claims is not None:
+        username = local_claims.get("sub")
+        if not username:
+            raise HTTPException(status_code=401,
+                                detail={"message": "token has no subject"})
+        return username
     try:
         signing_key = _jwk_client().get_signing_key_from_jwt(token)
         claims = jwt.decode(

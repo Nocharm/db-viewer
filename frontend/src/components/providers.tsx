@@ -10,13 +10,18 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AuthProvider, useAuth } from "react-oidc-context";
+import { AuthContext, AuthProvider, useAuth } from "react-oidc-context";
 
 import { LangProvider } from "@/components/i18n";
 import { fetchMe, setAuthToken, type Me } from "@/lib/api";
+import { AUTH_ENABLED, KEYCLOAK_ENABLED } from "@/lib/auth-flags";
 import { markAutoLoginTried, saveReturnTo } from "@/lib/auth-return";
-
-const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
+import {
+  clearStoredSession,
+  isSessionActive,
+  readStoredSession,
+  resolveActiveToken,
+} from "@/lib/session-token";
 
 const MeContext = createContext<Me | null>(null);
 export function useMe(): Me | null {
@@ -119,24 +124,58 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // 렌더 단계 동기 반영 — 자식 fetch가 effect보다 먼저 나가는 401 레이스 방지 (bpm)
-  setAuthToken(auth.user?.access_token ?? null);
+  const localSession = readStoredSession();
+  // Keycloak 토큰이 있으면 그것을, 없고 LDAP 세션이 살아 있으면 그것을 쓴다.
+  // 무조건 auth.user 기준으로 덮으면 Keycloak 미인증 상태에서 방금 발급된 LDAP 토큰이 지워진다.
+  setAuthToken(resolveActiveToken(auth.user?.access_token ?? null, localSession?.token ?? null));
+  const authed = isSessionActive(auth.isAuthenticated, localSession !== null);
 
   useEffect(() => {
-    if (!auth.isLoading && !auth.isAuthenticated && pathname !== "/login") {
+    if (!auth.isLoading && !authed && pathname !== "/login") {
       saveReturnTo(pathname);
       router.replace("/login");
     }
-  }, [auth.isLoading, auth.isAuthenticated, pathname, router]);
+  }, [auth.isLoading, authed, pathname, router]);
 
   if (pathname === "/login") return children;
-  if (auth.isLoading || !auth.isAuthenticated) return null;
+  if (auth.isLoading || !authed) return null;
+  return <MeGate>{children}</MeGate>;
+}
+
+/** Keycloak을 끈 배포(LDAP 전용)의 게이트 — AuthGate와 같은 모양이되 저장된 세션이 기준.
+ *  AUTH_ENABLED=false(X-Dev-User 개발 모드)에는 절대 쓰지 않는다: 그 배포의 /login은
+ *  DevRedirect라 "/"로 되돌려보내고, 여기가 다시 /login으로 보내 무한 루프가 된다. */
+function LocalSessionGate({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // AuthGate와 같은 이유로 렌더 단계에서 주입한다 — effect는 자식 fetch와 레이스
+  const localSession = readStoredSession();
+  setAuthToken(localSession?.token ?? null);
+  const authed = localSession !== null;
+
+  useEffect(() => {
+    if (!authed && pathname !== "/login") {
+      saveReturnTo(pathname);
+      router.replace("/login");
+    }
+  }, [authed, pathname, router]);
+
+  if (pathname === "/login") return children;
+  if (!authed) return null;
   return <MeGate>{children}</MeGate>;
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const mounted = useMounted();
   if (!mounted) return null;
+  // auth OFF 개발 모드 — 로그인 화면이 아예 없다(/login은 "/"로 되돌린다). 세션으로 게이트하면
+  // 로그인할 방법 없이 두 화면이 서로를 되받는다.
   if (!AUTH_ENABLED) return <LangProvider><MeGate>{children}</MeGate></LangProvider>;
+  // Keycloak만 끈 배포 — 리다이렉트 로직이 AuthGate에만 있으면 미인증 사용자가 401 에러 카드를 본다
+  if (!KEYCLOAK_ENABLED) {
+    return <LangProvider><LocalSessionGate>{children}</LocalSessionGate></LangProvider>;
+  }
   return (
     <LangProvider>
       <AuthProvider {...buildOidcConfig()}>
@@ -148,10 +187,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 /** 로컬 로그아웃 — Keycloak SSO 세션은 유지 (bpm 패턴) / local logout, SSO stays. */
 export function useLogout(): () => void {
-  const auth = useAuth();
+  // Keycloak이 꺼진 배포에서는 AuthProvider가 없다 — useAuth()는 그 밖에서 던지므로
+  // 컨텍스트를 직접 읽어 null을 허용한다 (훅 규칙상 조건부 호출은 불가).
+  const auth = useContext(AuthContext);
   const router = useRouter();
   return () => {
     markAutoLoginTried(); // /login 재진입 시 자동 로그인 루프 방지
-    void auth.removeUser().then(() => router.replace("/login"));
+    clearStoredSession(); // LDAP 세션도 함께 끊는다 — 안 지우면 부팅 시 되살아난다
+    setAuthToken(null);
+    void Promise.resolve(auth?.removeUser()).then(() => router.replace("/login"));
   };
 }

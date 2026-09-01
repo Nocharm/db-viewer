@@ -16,6 +16,7 @@ from app.models.categories import SchemaCategory
 from app.models.jobs import AiJob, CollectJob, ScanJob, ScanResult
 from app.models.preview_policy import PreviewAllowlist
 from app.models.relations import AiEmbedding, AiSummary, AuditLog, JoinValidationHistory, Relation
+from app.models.sources import DataSource
 from app.models.users import AppUser, LoginWhitelist
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "FLAG_RENDER_HIDDEN_SCHEMAS",
     "LoginWhitelist",
     "CollectJob",
+    "DataSource",
     "ScanJob",
     "ScanResult",
     "Base",

@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>db-viewer 연동 가이드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #f6f9f7;          /* 초록 편향 근백색 */
+    --surface: #ffffff;
+    --surface-dim: #eef4f1;
+    --ink: #1d2b26;
+    --muted: #5c6d67;
+    --accent: #0e7a5f;      /* 딥틸 — 읽기 전용·안전 */
+    --accent-ink: #ffffff;
+    --hairline: #d9e3de;
+    --warn-bg: #fdf3e4;
+    --warn-border: #e8bb7d;
+    --warn-ink: #8a5010;
+    --code-bg: #f0f5f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101c17;
+      --surface: #16241e;
+      --surface-dim: #1c2d26;
+      --ink: #e3ece7;
+      --muted: #96a8a1;
+      --accent: #3ecfa4;
+      --accent-ink: #08211a;
+      --hairline: #273a33;
+      --warn-bg: #2b2113;
+      --warn-border: #7a5a24;
+      --warn-ink: #eec482;
+      --code-bg: #142019;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101c17;
+    --surface: #16241e;
+    --surface-dim: #1c2d26;
+    --ink: #e3ece7;
+    --muted: #96a8a1;
+    --accent: #3ecfa4;
+    --accent-ink: #08211a;
+    --hairline: #273a33;
+    --warn-bg: #2b2113;
+    --warn-border: #7a5a24;
+    --warn-ink: #eec482;
+    --code-bg: #142019;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.75;
+    font-size: 16px;
+    padding: 0 20px 80px;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  .hero { max-width: 720px; margin: 0 auto; padding: 64px 0 8px; }
+  .eyebrow {
+    font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 38px); font-weight: 700; line-height: 1.25;
+    text-wrap: balance; margin: 10px 0 14px;
+  }
+  .lede { font-size: 18px; color: var(--muted); max-width: 34em; }
+  h2 {
+    font-size: 21px; font-weight: 700; margin: 56px 0 16px;
+    padding-top: 24px; border-top: 1px solid var(--hairline);
+    text-wrap: balance;
+  }
+  h3 { font-size: 16.5px; font-weight: 600; margin: 24px 0 8px; }
+  p { margin: 0 0 14px; max-width: 42em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; }
+  .chip {
+    font-size: 13.5px; font-weight: 600; color: var(--accent);
+    border: 1.5px solid var(--accent); border-radius: 999px; padding: 3px 13px;
+  }
+  .eli5 {
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-left: 4px solid var(--accent); border-radius: 6px;
+    padding: 20px 24px; margin: 16px 0;
+  }
+  .eli5 p:last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 15px; }
+  .table-wrap { overflow-x: auto; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  th { font-size: 13px; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  td:first-child { color: var(--muted); white-space: nowrap; }
+  td strong { color: var(--accent); }
+  ol.steps { list-style: none; padding: 0; margin: 24px 0 0; counter-reset: step; }
+  ol.steps > li {
+    counter-increment: step; position: relative;
+    padding: 0 0 32px 56px;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: -2px;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-ink);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  ol.steps > li:not(:last-child)::after {
+    content: ""; position: absolute; left: 17.5px; top: 40px; bottom: 6px;
+    width: 1px; background: var(--hairline);
+  }
+  .warn {
+    background: var(--warn-bg); border: 1px solid var(--warn-border);
+    color: var(--warn-ink); border-radius: 6px; padding: 14px 18px;
+    margin: 12px 0; font-size: 15px;
+  }
+  .warn strong { font-weight: 700; }
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .88em; background: var(--code-bg);
+    border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 6px;
+  }
+  .codeblock {
+    position: relative; margin: 14px 0;
+  }
+  .codeblock pre {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13.5px; line-height: 1.65;
+    background: var(--code-bg); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 18px 20px;
+    overflow-x: auto; white-space: pre; margin: 0;
+  }
+  .copy-btn {
+    position: absolute; top: 10px; right: 10px;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--accent-ink); background: var(--accent);
+    border: none; border-radius: 6px; padding: 7px 16px; cursor: pointer;
+  }
+  .copy-btn:hover { filter: brightness(1.08); }
+  .copy-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .copy-btn.done { background: var(--surface-dim); color: var(--ink); }
+  .scroll-tall pre { max-height: 480px; overflow-y: auto; }
+  details {
+    border: 1px solid var(--hairline); border-radius: 8px;
+    background: var(--surface); margin: 16px 0; padding: 0 20px;
+  }
+  details summary {
+    cursor: pointer; font-weight: 600; padding: 14px 0;
+    color: var(--accent); list-style-position: inside;
+  }
+  details[open] summary { border-bottom: 1px solid var(--hairline); margin-bottom: 14px; }
+  details .codeblock { margin-bottom: 20px; }
+  footer {
+    max-width: 720px; margin: 72px auto 0; padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+    font-size: 13.5px; color: var(--muted);
+  }
+  footer code { font-size: .95em; }
+  @media (prefers-reduced-motion: no-preference) {
+    .copy-btn { transition: filter .15s ease, background .2s ease; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="eyebrow">db-viewer × 여러분의 서비스</div>
+  <h1>여러분 서비스의 DB에<br>'읽기 전용 유리창'을 하나 달아 주세요</h1>
+  <p class="lede">사내 db-viewer가 여러분 서비스의 DB를 한 화면에서 구경할 수 있게,
+  딱 두 가지만 부탁드립니다. 서비스 코드는 한 줄도 바뀌지 않습니다.</p>
+  <div class="chips">
+    <span class="chip">SELECT만 실행</span>
+    <span class="chip">코드 무수정</span>
+    <span class="chip">데이터 무접촉</span>
+    <span class="chip">중단 수 초</span>
+  </div>
+</header>
+
+<main>
+
+<h2>아주 쉽게 설명하면</h2>
+<div class="eli5">
+  <p><strong>db-viewer는 회사 데이터의 '전시장'</strong>입니다. 지금은 사내 MSSQL 하나만
+  전시하고 있는데, 같은 서버(71번)에 도커로 떠 있는 여러분 서비스의 DB도 한자리에서
+  보려고 합니다.</p>
+  <p>부탁드리는 건 두 가지입니다. 여러분 DB가 있는 방에 <strong>유리창을 하나</strong>
+  내 주시고(= 읽기 전용 계정), 전시장과 그 방 사이에 <strong>전용 복도를 하나</strong>
+  놓아 주세요(= 전용 도커 네트워크). 문은 계속 잠겨 있습니다 — 누구도 방에 들어가
+  물건을 만질 수 없고, 유리창 너머로 <em>보기만</em> 합니다.</p>
+  <p>복도는 서비스마다 따로 만들어서, 그 복도에는 <strong>db-viewer와 여러분 DB 둘만</strong>
+  들어갑니다. 다른 서비스가 그 복도로 여러분 DB를 볼 수 없습니다.</p>
+</div>
+
+<h2>걱정되실 것들 — 미리 답해 두면</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>걱정</th><th>사실</th></tr></thead>
+  <tbody>
+    <tr><td>기존 네트워크(172.36~46)가 바뀌나?</td>
+        <td><strong>안 바뀝니다.</strong> 기존 <code>default</code> 네트워크 정의는 한 줄도 손대지 않습니다. 새 네트워크를 <em>추가로</em> 붙일 뿐입니다.</td></tr>
+    <tr><td>데이터가 날아가나?</td>
+        <td>데이터는 볼륨에 있고 건드리지 않습니다. 단, 컨테이너를 1회 재생성하므로 <strong>아래 2단계 볼륨 확인을 반드시</strong> 거칩니다.</td></tr>
+    <tr><td>서비스가 오래 멈추나?</td>
+        <td><code>docker compose up -d</code>로 해당 컨테이너만 재생성 — <strong>수 초</strong>입니다.</td></tr>
+    <tr><td>DB에 쓰기가 일어나나?</td>
+        <td>db-viewer는 <code>SELECT</code>만 실행합니다. 읽기 전용 계정으로 <strong>이중으로</strong> 막습니다.</td></tr>
+    <tr><td>다른 서비스 DB와 서로 보이게 되나?</td>
+        <td><strong>아니요.</strong> 네트워크는 서비스마다 따로 만들고, 각 네트워크에는 db-viewer와 그 서비스 DB 둘만 들어갑니다.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>해야 할 일 — 다섯 단계</h2>
+<ol class="steps">
+  <li>
+    <h3>운영자가 채워 준 값 확인</h3>
+    <p>db-viewer 운영자가 서비스 키, 네트워크 이름(<code>dbv-&lt;서비스키&gt;</code>),
+    별칭(<code>&lt;서비스키&gt;-db</code>) 등을 표로 채워서 함께 보냈을 겁니다.
+    없다면 먼저 요청하세요 — 값 없이 진행하면 이름이 어긋납니다.</p>
+  </li>
+  <li>
+    <h3>볼륨 확인 <span style="color:var(--warn-ink)">(건너뛰면 안 됩니다)</span></h3>
+    <p>작업 중 DB 컨테이너를 한 번 재생성합니다. 데이터가 볼륨에 있으면 무손실이지만,
+    볼륨 없이 쓰고 있었다면 그 순간 사라집니다.</p>
+    <div class="codeblock"><pre>docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -&gt; {{.Destination}}{{"\n"}}{{end}}' &lt;DB컨테이너명&gt;</pre></div>
+    <div class="warn"><strong>출력이 비어 있으면 여기서 중단</strong>하고 db-viewer 운영자에게
+    알려 주세요. 그 상태는 지금 재기동만 해도 데이터가 사라지므로, 연결보다 볼륨을 붙이는 게
+    먼저입니다.</div>
+  </li>
+  <li>
+    <h3>Claude Code에 프롬프트 붙여넣기</h3>
+    <p>자기 서비스 저장소 루트에서 <code>claude</code>를 실행하고, 아래
+    <a href="#prompt">프롬프트</a>를 <strong>통째로</strong> 붙여넣으세요.
+    <code>&lt;...&gt;</code> 자리는 1단계 값으로 미리 바꿔서 붙여넣습니다.
+    Claude가 diff를 먼저 보여주고, 승인하면 적용합니다.</p>
+  </li>
+  <li>
+    <h3>읽기 전용 계정 만들기</h3>
+    <p><strong>PostgreSQL</strong>이면 <code>dbviewer_ro</code> 계정을 만들고
+    <code>SELECT</code> 권한만 줍니다(정확한 SQL은 아래 전체 요청서 ④). 만들고 나서
+    <code>SELECT</code>는 되고 <code>CREATE</code>는 실패하는지 꼭 확인하세요.</p>
+    <p><strong>SQLite</strong>면 계정 개념이 없으니, DB 파일이 든 볼륨 이름과 파일 경로만
+    알려 주면 됩니다. 이 경우 3단계 네트워크 작업도 필요 없습니다.</p>
+  </li>
+  <li>
+    <h3>완료 보고</h3>
+    <p>전체 요청서 ⑤의 양식대로 db-viewer 운영자에게 회신해 주세요.
+    <strong>비밀번호는 문서가 아니라 별도 보안 채널로</strong> 전달합니다.</p>
+  </li>
+</ol>
+
+<h2 id="prompt">Claude Code 프롬프트</h2>
+<p>3단계에서 붙여넣을 블록입니다. <code>&lt;...&gt;</code>를 1단계 값으로 치환한 뒤 사용하세요.</p>
+<div class="codeblock scroll-tall">
+  <button class="copy-btn" data-target="prompt-text">프롬프트 복사</button>
+  <pre id="prompt-text">우리 서비스의 docker-compose.yml을 수정해서, DB 컨테이너를 외부에서 이미 만들어 둔
+전용 브리지 네트워크에 &quot;추가로&quot; 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
+우리 DB를 읽기 전용으로 조회할 예정이야.
+
+## 값
+- 합류시킬 네트워크 이름: dbv-&lt;서비스키&gt;   (이미 `docker network create`로 만들어져 있음)
+- DB 컨테이너의 compose 서비스명: &lt;compose서비스명&gt;
+- 그 네트워크에서 쓸 별칭: &lt;서비스키&gt;-db
+
+## 반드시 지킬 것
+1. 기존 `networks:` 블록의 `default` 정의(driver, ipam, subnet, gateway)를 절대 수정하지 마.
+   subnet을 바꾸면 다른 서비스와 충돌한다. 새 네트워크를 항목으로 &quot;추가&quot;만 해.
+2. DB 컨테이너 외의 다른 서비스는 이 네트워크에 넣지 마. db-viewer와 DB 둘만 있어야 한다.
+3. `docker compose down`은 절대 실행하지 마. 네트워크까지 삭제되어 같은 compose의 다른
+   서비스에 영향이 간다. 반영은 `docker compose up -d &lt;compose서비스명&gt;` 으로만 해.
+4. 애플리케이션 코드, Dockerfile, 의존성은 건드리지 마. 변경은 docker-compose.yml 하나뿐이어야 한다.
+5. 포트를 호스트로 새로 노출(`ports:`)하지 마. 같은 네트워크에 있으면 필요 없다.
+
+## 작업 순서
+1. docker-compose.yml을 읽고, DB 컨테이너가 현재 어떤 네트워크에 붙어 있는지 보고해.
+   compose 파일이 여러 개면(override 포함) 전부 확인해.
+2. 아래 형태로 수정안을 만들어서 diff를 먼저 보여줘. 내가 승인하면 적용해.
+
+   services:
+     &lt;compose서비스명&gt;:
+       networks:
+         default:                  # 기존 그대로 (원래 networks 키가 없었다면 default를 명시적으로 추가)
+         dbv-&lt;서비스키&gt;:
+           aliases: [&lt;서비스키&gt;-db]
+   networks:
+     default:
+       ...기존 정의 그대로, 절대 수정 금지...
+     dbv-&lt;서비스키&gt;:
+       external: true
+
+   주의: 원래 서비스에 `networks:` 키가 없었다면 compose는 default에 자동 연결한다.
+   네트워크를 하나라도 명시하는 순간 자동 연결이 사라지므로 `default:`를 반드시 함께 적어야 한다.
+   이걸 빠뜨리면 서비스가 서로 못 찾아서 장애가 난다.
+
+3. 적용 후 `docker compose up -d &lt;compose서비스명&gt;` 으로 해당 컨테이너만 재생성해.
+4. 검증하고 결과를 보고해:
+   - `docker inspect -f &#x27;{{json .NetworkSettings.Networks}}&#x27; &lt;DB컨테이너명&gt;` — 기존 네트워크와
+     dbv-&lt;서비스키&gt; 둘 다 있는지, 별칭이 붙었는지
+   - 우리 서비스가 정상인지 (헬스체크 또는 앱 로그)
+   - 기존 default 네트워크의 subnet이 그대로인지: `docker network inspect &lt;프로젝트&gt;_default`
+
+작업 중 위 &quot;반드시 지킬 것&quot;과 충돌하는 상황이 나오면 진행하지 말고 나에게 물어봐.</pre>
+</div>
+
+<h2>전체 요청서 (Claude Code용 원본 문서)</h2>
+<p>위 내용의 원본 마크다운 전문입니다. 값 표 · 읽기 전용 계정 SQL · 완료 보고 양식 ·
+트러블슈팅까지 모두 들어 있습니다. 통째로 복사해 두거나 Claude Code에 참고 문서로 건네세요.</p>
+<details>
+  <summary>service-owner-prompt.md 펼쳐 보기</summary>
+  <div class="codeblock scroll-tall">
+    <button class="copy-btn" data-target="full-md">전문 복사</button>
+    <pre id="full-md"># 서비스 담당자 전달용 — db-viewer 조회 연결 요청
+
+각 서비스 담당자에게 보내는 작업 요청서. **db-viewer 운영자가 아래 ① 표를 채운 뒤**
+문서 전체를 담당자에게 전달한다. 담당자는 ②를 눈으로 확인하고, ③을 자기 저장소에서
+Claude Code에 그대로 붙여넣으면 된다.
+
+관련 문서: 설계 `docs/superpowers/specs/2026-08-25-multi-source-db-design.md` /
+배포 절차 `docs/connect-sources.md`
+
+---
+
+## 무엇을, 왜
+
+사내 db-viewer(스키마 탐색·ERD·행 미리보기 도구)에서 여러분 서비스의 DB를 **읽기 전용으로**
+조회하려 합니다. 지금은 사내 MSSQL만 보고 있는데, 같은 71번 서버에 도커로 떠 있는 다른
+서비스 DB도 한자리에서 보려는 것입니다.
+
+담당자에게 필요한 작업은 두 가지입니다.
+
+1. DB 컨테이너를 **전용 브리지 네트워크 하나에 추가로 합류**시킨다
+2. **읽기전용 DB 계정**을 하나 만들어 전달한다
+
+**서비스 코드는 건드리지 않습니다.** 애플리케이션 수정, 라이브러리 추가, API 노출 전부
+없습니다. 바뀌는 것은 `docker-compose.yml`의 네트워크 항목 몇 줄뿐입니다.
+
+### 안 바뀌는 것 (자주 나오는 걱정)
+
+| 걱정 | 사실 |
+|---|---|
+| 기존 subnet(172.36~46)이 바뀌나 | **안 바뀝니다.** 기존 `default` 네트워크 정의는 한 줄도 손대지 않습니다. 새 네트워크를 *추가로* 붙일 뿐입니다 |
+| 데이터가 날아가나 | 데이터는 볼륨에 있고 건드리지 않습니다. 단 컨테이너를 1회 재생성하므로 **②에서 볼륨 여부를 반드시 확인**합니다 |
+| 서비스가 오래 멈추나 | `docker compose up -d`로 in-place 재생성 — 해당 컨테이너만 수 초 |
+| DB에 쓰기가 일어나나 | db-viewer는 `SELECT`만 실행합니다. 읽기전용 계정으로 이중으로 막습니다 |
+| 다른 서비스 DB와 서로 보이게 되나 | **아니요.** 네트워크는 서비스마다 따로 만들고, 각 네트워크에는 db-viewer와 그 서비스 DB **둘만** 들어갑니다 |
+
+---
+
+## ① 채워서 전달할 값 (db-viewer 운영자가 작성)
+
+&gt; 아래 `&lt;...&gt;`를 실제 값으로 바꾼 뒤 담당자에게 보낼 것. 채우지 않은 채로 보내면
+&gt; 담당자가 임의로 정하게 되어 이름이 어긋난다.
+
+| 항목 | 값 | 설명 |
+|---|---|---|
+| 서비스 키 | `&lt;서비스키&gt;` | 소문자·영숫자. 예: `svca` |
+| 네트워크 이름 | `dbv-&lt;서비스키&gt;` | db-viewer 운영자가 **미리 만들어 둔다** |
+| 네트워크 서브넷 | `172.50.&lt;n&gt;.0/24` | 서비스마다 다른 `&lt;n&gt;` (0, 1, 2, …) |
+| DB 컨테이너의 compose 서비스명 | `&lt;compose서비스명&gt;` | 예: `postgres`, `db` |
+| 네트워크 별칭 | `&lt;서비스키&gt;-db` | db-viewer가 이 이름으로 접속한다 |
+| DB 엔진 | PostgreSQL / SQLite | |
+| 읽기전용 계정명 | `dbviewer_ro` | |
+
+**db-viewer 운영자가 먼저 할 일** (담당자에게 보내기 전):
+
+```bash
+docker network create --subnet 172.50.&lt;n&gt;.0/24 dbv-&lt;서비스키&gt;
+```
+
+&gt; `docker network ls`로 기존 이름과 겹치지 않는지, `docker network inspect`로 서브넷이
+&gt; 기존 서비스 대역(172.36~46)과 db-viewer 자신의 대역(172.48.0.0/16)에 겹치지 않는지
+&gt; 확인한다.
+
+**아직 안 했다면 `SOURCE_SECRET_KEY`도 미리 준비한다** (db-viewer `.env`, 소스 등록 API가
+이 키 없이는 503) — 최초 1회만 생성하고 이후 안 바꾼다(키를 바꾸면 이미 등록된 소스의
+비밀번호를 전부 다시 넣어야 한다):
+
+```bash
+python -c &quot;from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())&quot;
+```
+
+값을 db-viewer `.env`의 `SOURCE_SECRET_KEY=`에 채우고 backend를 재기동한다. 담당자
+작업과는 무관하지만, ⑥에서 회신받은 정보를 등록하려면 이 키가 먼저 있어야 한다.
+
+---
+
+## ② 담당자 사전 확인 (필수 — 건너뛰지 말 것)
+
+작업은 **DB 컨테이너를 1회 재생성**한다. 데이터가 named volume에 있으면 무손실이지만,
+볼륨 없이 컨테이너 레이어에 쓰고 있으면 그 순간 사라진다.
+
+```bash
+docker inspect -f &#x27;{{range .Mounts}}{{.Type}} {{.Name}} -&gt; {{.Destination}}{{&quot;\n&quot;}}{{end}}&#x27; &lt;DB컨테이너명&gt;
+```
+
+- **출력에 DB 데이터 경로가 보이면** (예: `volume pgdata -&gt; /var/lib/postgresql/data`) → ③으로 진행
+- **출력이 비어 있으면** → **작업을 중단하고 db-viewer 운영자에게 알린다.** 그 서비스는
+  지금 재기동만 해도 데이터가 사라지는 상태이므로, 연결보다 볼륨을 붙이는 게 먼저다
+
+---
+
+## ③ Claude Code에 붙여넣을 프롬프트
+
+&gt; 자기 서비스 저장소 루트에서 `claude`를 실행하고 아래 블록을 **통째로** 붙여넣는다.
+&gt; `&lt;...&gt;` 자리는 ①의 값으로 미리 치환해서 붙여넣을 것.
+
+```text
+우리 서비스의 docker-compose.yml을 수정해서, DB 컨테이너를 외부에서 이미 만들어 둔
+전용 브리지 네트워크에 &quot;추가로&quot; 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
+우리 DB를 읽기 전용으로 조회할 예정이야.
+
+## 값
+- 합류시킬 네트워크 이름: dbv-&lt;서비스키&gt;   (이미 `docker network create`로 만들어져 있음)
+- DB 컨테이너의 compose 서비스명: &lt;compose서비스명&gt;
+- 그 네트워크에서 쓸 별칭: &lt;서비스키&gt;-db
+
+## 반드시 지킬 것
+1. 기존 `networks:` 블록의 `default` 정의(driver, ipam, subnet, gateway)를 절대 수정하지 마.
+   subnet을 바꾸면 다른 서비스와 충돌한다. 새 네트워크를 항목으로 &quot;추가&quot;만 해.
+2. DB 컨테이너 외의 다른 서비스는 이 네트워크에 넣지 마. db-viewer와 DB 둘만 있어야 한다.
+3. `docker compose down`은 절대 실행하지 마. 네트워크까지 삭제되어 같은 compose의 다른
+   서비스에 영향이 간다. 반영은 `docker compose up -d &lt;compose서비스명&gt;` 으로만 해.
+4. 애플리케이션 코드, Dockerfile, 의존성은 건드리지 마. 변경은 docker-compose.yml 하나뿐이어야 한다.
+5. 포트를 호스트로 새로 노출(`ports:`)하지 마. 같은 네트워크에 있으면 필요 없다.
+
+## 작업 순서
+1. docker-compose.yml을 읽고, DB 컨테이너가 현재 어떤 네트워크에 붙어 있는지 보고해.
+   compose 파일이 여러 개면(override 포함) 전부 확인해.
+2. 아래 형태로 수정안을 만들어서 diff를 먼저 보여줘. 내가 승인하면 적용해.
+
+   services:
+     &lt;compose서비스명&gt;:
+       networks:
+         default:                  # 기존 그대로 (원래 networks 키가 없었다면 default를 명시적으로 추가)
+         dbv-&lt;서비스키&gt;:
+           aliases: [&lt;서비스키&gt;-db]
+   networks:
+     default:
+       ...기존 정의 그대로, 절대 수정 금지...
+     dbv-&lt;서비스키&gt;:
+       external: true
+
+   주의: 원래 서비스에 `networks:` 키가 없었다면 compose는 default에 자동 연결한다.
+   네트워크를 하나라도 명시하는 순간 자동 연결이 사라지므로 `default:`를 반드시 함께 적어야 한다.
+   이걸 빠뜨리면 서비스가 서로 못 찾아서 장애가 난다.
+
+3. 적용 후 `docker compose up -d &lt;compose서비스명&gt;` 으로 해당 컨테이너만 재생성해.
+4. 검증하고 결과를 보고해:
+   - `docker inspect -f &#x27;{{json .NetworkSettings.Networks}}&#x27; &lt;DB컨테이너명&gt;` — 기존 네트워크와
+     dbv-&lt;서비스키&gt; 둘 다 있는지, 별칭이 붙었는지
+   - 우리 서비스가 정상인지 (헬스체크 또는 앱 로그)
+   - 기존 default 네트워크의 subnet이 그대로인지: `docker network inspect &lt;프로젝트&gt;_default`
+
+작업 중 위 &quot;반드시 지킬 것&quot;과 충돌하는 상황이 나오면 진행하지 말고 나에게 물어봐.
+```
+
+---
+
+## ④ 읽기전용 계정 만들기
+
+### PostgreSQL
+
+```sql
+-- &lt;강력한 비밀번호&gt;는 직접 생성한다 (예: openssl rand -base64 24)
+CREATE ROLE dbviewer_ro LOGIN PASSWORD &#x27;&lt;강력한 비밀번호&gt;&#x27;;
+
+GRANT CONNECT ON DATABASE &lt;DB명&gt; TO dbviewer_ro;
+GRANT USAGE ON SCHEMA public TO dbviewer_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbviewer_ro;
+
+-- 앞으로 만들어질 테이블에도 자동 적용 — 이게 없으면 마이그레이션 때마다 안 보인다
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dbviewer_ro;
+```
+
+`public` 외의 스키마도 조회 대상이면 해당 스키마마다 `GRANT USAGE` / `GRANT SELECT` /
+`ALTER DEFAULT PRIVILEGES`를 반복한다.
+
+민감 테이블을 빼고 싶으면 `GRANT SELECT ON ALL TABLES` 대신 테이블을 열거해도 된다.
+db-viewer 쪽에도 스키마 단위 허용 목록이 따로 있어 이중으로 통제된다.
+
+**확인:**
+```sql
+-- 다른 세션에서 dbviewer_ro로 접속한 뒤
+SELECT count(*) FROM &lt;아무 테이블&gt;;          -- 성공해야 한다
+CREATE TABLE zzz_probe (id int);            -- 반드시 권한 오류가 나야 한다
+```
+
+### SQLite
+
+계정 개념이 없다. 대신 **DB 파일이 든 볼륨 이름**을 알려주면 된다.
+
+```bash
+docker inspect -f &#x27;{{range .Mounts}}{{.Name}} -&gt; {{.Destination}}{{&quot;\n&quot;}}{{end}}&#x27; &lt;DB컨테이너명&gt;
+```
+
+db-viewer가 그 볼륨을 `:ro`(읽기 전용)로 마운트하고, 파일도 `mode=ro`로 연다.
+이 경우 ③의 네트워크 작업은 필요 없다 — 볼륨 이름과 컨테이너 내부 파일 경로만 회신하면 된다.
+
+---
+
+## ⑤ 완료 보고 양식
+
+작업이 끝나면 아래를 채워 db-viewer 운영자에게 회신한다.
+**비밀번호는 이 문서가 아니라 별도 보안 채널로 전달한다.**
+
+```
+서비스 키:            &lt;서비스키&gt;
+엔진:                 PostgreSQL / SQLite
+
+[PostgreSQL인 경우]
+네트워크 별칭(host):  &lt;서비스키&gt;-db
+포트:                 5432
+DB명:                 &lt;DB명&gt;
+계정:                 dbviewer_ro
+비밀번호:             (별도 채널로 전달)
+조회 대상 스키마:      public, ...
+
+[SQLite인 경우]
+볼륨 이름:            &lt;볼륨명&gt;
+컨테이너 내부 파일 경로: /.../app.db
+
+검증 결과:
+- docker inspect 네트워크: 기존 + dbv-&lt;서비스키&gt; 확인  [ ]
+- 기존 default subnet 무변경 확인                    [ ]
+- 서비스 정상 동작 확인                              [ ]
+- dbviewer_ro로 SELECT 성공 / CREATE 실패 확인       [ ]
+```
+
+---
+
+## ⑥ (db-viewer 운영자) 회신받은 정보 등록하기
+
+담당자의 ⑤ 회신을 받으면 `/admin` → 소스 패널에서 등록한다. 절차와 상세 트러블슈팅은
+`docs/connect-sources.md` §7 — 여기서는 요점만.
+
+1. **등록** — 이름·엔진(PostgreSQL/SQLite)·host(네트워크 별칭, 예: `svca-db`)·port·
+   database·username·password(PostgreSQL) 또는 file_path(SQLite)를 입력해 저장.
+2. **[연결 테스트]** — 저장 직후 반드시 누른다. **네트워크가 붙고 계정이 살아 있어도
+   연결 자체는 항상 성공할 수 있다는 게 함정이다** — 여러 서비스가 `postgres`/`db` 같은
+   흔한 컨테이너명을 쓰기 때문에, host를 잘못 넣어도(다른 서비스의 별칭이거나 오타여도)
+   &quot;어떤&quot; postgres에는 붙어 연결 테스트가 초록으로 뜰 수 있다. 그래서 응답에 실린
+   `database`(현재 붙은 DB명)와 `version`이 **회신받은 값과 정확히 일치하는지 눈으로
+   대조**해야 한다 — 일치하지 않으면 host를 별칭으로 바로잡고 다시 테스트.
+3. **[카탈로그 수집]** → **미리보기 허용 스키마 등록**까지 순서대로 진행 — 등록만으로는
+   화면에 아무것도 안 열린다(기본 전부 차단).
+
+---
+
+## ⑦ 문제가 생기면
+
+| 증상 | 원인·조치 |
+|---|---|
+| `network dbv-&lt;서비스키&gt; not found` | db-viewer 운영자가 아직 네트워크를 안 만들었다. ①의 `docker network create`부터 |
+| 재기동 후 서비스가 서로 못 찾음 | `networks:`를 명시하면서 `default:`를 빠뜨렸다. ③의 2번 주의사항 참조 |
+| `Pool overlaps with other one on this address space` | 서브넷 `172.50.&lt;n&gt;.0/24`가 이미 쓰이고 있다. db-viewer 운영자에게 다른 `&lt;n&gt;`을 요청 |
+| db-viewer 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 `postgres` 같은 흔한 컨테이너명을 쓴다. 별칭(`&lt;서비스키&gt;-db`)이 제대로 붙었는지 확인 |
+| DB 컨테이너에 볼륨이 없다 | **작업 중단.** 볼륨부터 붙이는 게 먼저다 (②) |
+</pre>
+  </div>
+</details>
+
+</main>
+
+<footer>
+  문의: db-viewer 운영자 · 원본 문서 <code>docs/handoff/service-owner-prompt.md</code> ·
+  배포 절차 <code>docs/connect-sources.md</code>
+</footer>
+
+<script>
+  // 클립보드 복사 — file:// 등 clipboard API가 막힌 환경을 위한 폴백 포함
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy") ? resolve() : reject(new Error("copy blocked"));
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+  document.querySelectorAll(".copy-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = document.getElementById(btn.dataset.target);
+      var original = btn.textContent;
+      copyText(pre.textContent).then(function () {
+        btn.textContent = "복사됨 ✓";
+        btn.classList.add("done");
+        setTimeout(function () {
+          btn.textContent = original;
+          btn.classList.remove("done");
+        }, 2000);
+      }).catch(function () {
+        // 복사가 막힌 환경 — 본문을 선택해 주고 사용자가 Ctrl+C 하게 안내
+        var range = document.createRange();
+        range.selectNodeContents(pre);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "Ctrl+C로 복사하세요";
+        setTimeout(function () { btn.textContent = original; }, 2500);
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

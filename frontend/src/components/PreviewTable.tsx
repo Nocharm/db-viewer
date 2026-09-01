@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import {
   applyColumnOrder, copyTextToClipboard, countUniqueValues, moveColumn, sortRows,
   type SortSpec,
@@ -30,6 +31,12 @@ interface Props {
   /** 계속 강조할 컬럼 — 조인 검증이 "지금 보는 컬럼"을 표시하는 데 쓴다(호버 십자와 별개)
    * / a column pinned as highlighted, independent of the hover crosshair */
   highlightColumn?: string | null;
+  /** NOT NULL 필터를 걸고 즉시 재질의 — 미지정이면 메뉴 항목 미노출
+   * / stage NOT NULL and re-query immediately; hidden when unset */
+  onExcludeNulls?: (column: string) => void;
+  /** 필터 바의 컬럼 드롭다운에 이 컬럼을 선택 — 미지정이면 메뉴 항목 미노출
+   * / preselect this column in the filter bar; hidden when unset */
+  onPickFilterColumn?: (column: string) => void;
 }
 
 interface HeaderMenu {
@@ -88,7 +95,7 @@ function useViewportClamp<T extends { x: number; y: number }>(
 
 export function PreviewTable({
   data, hidden, sort, order, onToggleHidden, onSort, onReorder, onQuickFilter, wrapCells,
-  highlightColumn = null,
+  highlightColumn = null, onExcludeNulls, onPickFilterColumn,
 }: Props) {
   const { t } = useI18n();
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
@@ -459,6 +466,25 @@ export function PreviewTable({
                   onClick={() => menuAction(() => setUniqueColumn(menu.column))}
                   data-testid="PreviewTable-uniqueItem">
             {t("preview.uniqueValues")}
+          </button>
+          {onExcludeNulls && (
+            <button className="pressable erd-menu__item"
+                    onClick={() => menuAction(() => onExcludeNulls(menu.column))}
+                    data-testid="PreviewTable-excludeNullsItem">
+              {t("preview.excludeNulls")}
+            </button>
+          )}
+          {onPickFilterColumn && (
+            <button className="pressable erd-menu__item"
+                    onClick={() => menuAction(() => onPickFilterColumn(menu.column))}
+                    data-testid="PreviewTable-filterColumnItem">
+              {t("preview.filterThisColumn")}
+            </button>
+          )}
+          <button className="pressable erd-menu__item"
+                  onClick={() => menuAction(() => copyText(menu.column))}
+                  data-testid="PreviewTable-copyColumnItem">
+            {t("preview.copyColumn")}
           </button>
         </div>
       )}

@@ -896,3 +896,15 @@ input::placeholder {
   fill: var(--canvas);
   fill-opacity: 0.85;
 }
+
+/* 필터 컬럼 셀렉트 플래시 — "이 컬럼 필터 적용" 후 어디로 반영됐는지 시선 유도.
+   accent 링을 두 번 펄스시킨다. 전역 reduced-motion 가드가 자동으로 끈다.
+   / brief accent pulse on the filter column select after "Filter this column" */
+@keyframes filter-flash-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  25%, 75% { box-shadow: 0 0 0 3px var(--focus-blue); }
+}
+.filter-flash {
+  animation: filter-flash-pulse 1.5s ease-in-out;
+  border-color: var(--focus-blue) !important;
+}
