@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.validate import get_join_validator
+from app.api.validate import (
+    ensure_mssql_source,
+    get_join_validator,
+    resolve_object_source_id,
+)
 from app.config import get_settings
 from app.db import get_db
 from app.domain import scoring
@@ -79,6 +83,9 @@ def run_join_check(
     if obj.type != "table":
         raise HTTPException(400, {"message": "join check runs on tables only",
                                   "context": {"object_id": object_id, "type": obj.type}})
+    # object_id는 클라이언트가 주는 값이라 어느 소스의 객체든 가리킬 수 있다 — 조인 검증은
+    # n8n/MSSQL 검증기를 부르므로 다른 엔진의 식별자는 여기서 막는다 (validate.py 참조)
+    ensure_mssql_source(db, resolve_object_source_id(db, obj), {"object_id": object_id})
     src_qname = f"{obj.schema}.{obj.name}"
 
     target_qname = None
@@ -87,6 +94,8 @@ def run_join_check(
         if target is None or target.type != "table":
             raise HTTPException(404, {"message": "target table not found",
                                       "context": {"target_object_id": req.target_object_id}})
+        ensure_mssql_source(db, resolve_object_source_id(db, target),
+                            {"target_object_id": req.target_object_id})
         target_qname = f"{target.schema}.{target.name}"
 
     # load_scoring_columns가 감춘 스키마를 이미 떨구므로 그냥 두면 "후보 0건"으로 조용히

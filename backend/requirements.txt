@@ -10,4 +10,6 @@ uvicorn==0.32.1
 sqlglot==25.34.0
 # 인증 — Keycloak JWT 검증 + AD 동기화 (bpm 패턴·버전 미러링)
 pyjwt[crypto]==2.13.0
+# 소스 접속 비밀번호 Fernet 암호화 — pyjwt[crypto]로 이미 설치되지만 직접 쓰므로 명시한다
+cryptography==50.0.0
 ldap3==2.9.1

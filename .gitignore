@@ -4,6 +4,7 @@ CLAUDE.local.md
 
 # Env / Secrets
 .env
+.env.dev
 .env.*
 !.env.example
 !.env.local.example

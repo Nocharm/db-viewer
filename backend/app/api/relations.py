@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.validate import resolve_column_ref
 from app.db import get_db
-from app.models import AuditLog, CatalogColumn, CatalogObject, Relation
+from app.models import AuditLog, CatalogColumn, CatalogObject, Relation, Snapshot
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.schema_visibility import is_schema_hidden
 
 router = APIRouter(prefix="/api/relations", tags=["relations"])
@@ -78,9 +79,16 @@ def list_pending_relations(db: Session = Depends(get_db)) -> dict:
             if not is_schema_hidden(r.src_object.split(".", 1)[0])
             and not is_schema_hidden(r.tgt_object.split(".", 1)[0])]
 
-    # 프리필용 현 스냅샷 id 매핑 — 관계는 텍스트 식별자라 스냅샷 교체에도 산다
+    # 프리필용 현 스냅샷 id 매핑 — 관계는 텍스트 식별자라 스냅샷 교체에도 산다.
+    # 사내 MSSQL 소스로 고정한다: 관계 검증은 MSSQL 전용 기능이고(스펙 비목표), 스냅샷
+    # id는 전 소스 공통 시퀀스라 소스를 안 걸면 나중에 수집된 PG/SQLite 스냅샷이 최댓값을
+    # 가져가 프리필이 전부 null이 된다(오류 없이 /verify 진입만 조용히 죽는다).
+    # / pinned to the managed MSSQL source: relation verification is MSSQL-only and
+    #   snapshot ids are one global sequence, so an unscoped max() silently prefills nulls
     latest_sid = db.execute(
         select(func.max(CatalogObject.snapshot_id))
+        .join(Snapshot, Snapshot.id == CatalogObject.snapshot_id)
+        .where(Snapshot.data_source_id == MANAGED_MSSQL_SOURCE_ID)
     ).scalar_one_or_none()
     obj_ids: dict[str, int] = {}
     col_ids: dict[tuple[int, str], int] = {}

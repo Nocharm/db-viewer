@@ -10,17 +10,18 @@ import { useEffect, useState } from "react";
 
 import { fetchPreviewAllowlist } from "@/lib/api";
 
-export function usePreviewAllowlist(): Set<string> {
+// sourceId 생략(null) 시 기본 소스 — 허용 목록은 소스별이라 소스를 바꾸면 다시 조회한다
+export function usePreviewAllowlist(sourceId: number | null = null): Set<string> {
   const [allowed, setAllowed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetchPreviewAllowlist()
+    fetchPreviewAllowlist(sourceId)
       .then((res) => setAllowed(new Set(res.items)))
       .catch((e: Error) => {
         // 화면 전체를 막을 일은 아니지만 조용히 넘기지도 않는다 — 콘솔에 남긴다
         console.error("preview allowlist fetch failed", e);
       });
-  }, []);
+  }, [sourceId]);
 
   return allowed;
 }

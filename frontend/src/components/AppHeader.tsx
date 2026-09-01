@@ -111,10 +111,27 @@ const LINKS = [
   { href: "/parsing", key: "nav.parsing" as const },
 ];
 
-export function AppHeader({ children }: { children?: React.ReactNode }) {
+// 비-MSSQL 소스에서 숨기는 링크 — 뷰 lineage 역추적·관계 온디맨드 발견은 MSSQL 전용
+// (스펙 명시적 비목표). 백엔드도 검증·파싱 엔드포인트는 소스를 무시하고 항상 기본
+// 소스를 본다 — 숨기지 않으면 엉뚱한 소스의 데이터를 보고 버그로 오해한다.
+const MSSQL_ONLY_HREFS = new Set(["/verify", "/parsing"]);
+
+export interface AppHeaderProps {
+  children?: React.ReactNode;
+  /** 선택된 소스 엔진 — "mssql"이 아니면 검증·파싱·AI 챗 진입점을 숨긴다.
+   * 소스 선택을 추적하지 않는 화면(로그인·관리 등)은 생략해 기존 동작(전부 노출)을
+   * 유지한다 / omit on pages that don't track source selection to keep everything visible. */
+  sourceEngine?: string | null;
+}
+
+export function AppHeader({ children, sourceEngine }: AppHeaderProps) {
   const me = useMe();
   const { t } = useI18n();
   const pathname = usePathname();
+  // undefined(생략)·null(기본 소스)·"mssql" 전부 노출 — 다른 엔진일 때만 숨긴다
+  const isMssqlSource = sourceEngine === undefined || sourceEngine === null
+    || sourceEngine === "mssql";
+  const links = isMssqlSource ? LINKS : LINKS.filter((l) => !MSSQL_ONLY_HREFS.has(l.href));
 
   return (
     <header
@@ -133,7 +150,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
         DB-viewer
       </a>
       <nav className="flex items-center gap-1">
-        {LINKS.map(({ href, key }) => {
+        {links.map(({ href, key }) => {
           const active = pathname === href;
           return (
             <Link
@@ -161,7 +178,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </nav>
       <div className="ml-auto flex items-center gap-2">
         {children}
-        <ChatPanel />
+        {isMssqlSource && <ChatPanel />}
         <LangToggle />
         <ThemeToggle />
         <UserMenu />

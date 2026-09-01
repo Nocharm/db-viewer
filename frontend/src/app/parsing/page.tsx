@@ -7,7 +7,12 @@ import Link from "next/link";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useI18n } from "@/components/i18n";
-import { fetchParseStats, fetchSnapshots, type ParseStats } from "@/lib/api";
+import {
+  fetchParseStats,
+  fetchSnapshots,
+  MANAGED_MSSQL_SOURCE_ID,
+  type ParseStats,
+} from "@/lib/api";
 
 export default function ParsingPage() {
   const { t } = useI18n();
@@ -15,8 +20,14 @@ export default function ParsingPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 인증 헤더가 붙는 공용 클라이언트 사용 — raw fetch는 auth ON에서 401
-    fetchSnapshots()
+    // 인증 헤더가 붙는 공용 클라이언트 사용 — raw fetch는 auth ON에서 401.
+    // 소스를 사내 MSSQL로 고정한다: 뷰 파싱(Phase 2)은 MSSQL 소스에서만 돈다(스펙 §2.3).
+    // 스냅샷 id는 전 소스 공통 시퀀스라, 소스를 안 걸면 PG/SQLite 스냅샷을 한 번이라도
+    // 수집한 순간 그쪽이 "최신 ready"가 되어 parse_status가 전부 NULL인 빈 대시보드가
+    // 오류 없이 뜬다 — 사용자가 MSSQL을 보고 있는 동안에도 그렇다.
+    // / pinned to the managed MSSQL source: view parsing only runs there, and snapshot
+    //   ids are one global sequence, so an unscoped "latest ready" silently goes blank
+    fetchSnapshots(MANAGED_MSSQL_SOURCE_ID)
       .then((body) => {
         const ready = body.items.find((s) => s.status === "ready");
         if (!ready) throw new Error("ready 스냅샷이 없습니다");

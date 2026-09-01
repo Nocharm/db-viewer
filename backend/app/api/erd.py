@@ -10,17 +10,24 @@ from sqlalchemy.orm import Session
 
 from app.api.objects import _load_fk_edges
 from app.db import get_db
-from app.models import AiSummary, CatalogColumn, CatalogObject, Relation
+from app.models import AiSummary, CatalogColumn, CatalogObject, Relation, Snapshot
+from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services.schema_visibility import get_hidden_schemas
 
 router = APIRouter(prefix="/api/erd", tags=["erd"])
 
 
 @router.get("")
-def get_erd_graph(db: Session = Depends(get_db)) -> dict:
-    sid = db.execute(select(func.max(CatalogObject.snapshot_id))).scalar_one_or_none()
+def get_erd_graph(source_id: int | None = None, db: Session = Depends(get_db)) -> dict:
+    """읽기 전용 ERD 그래프 — source_id 생략 시 기본 소스(소스 개념이 없던 기존 화면 호환)."""
+    target = source_id if source_id is not None else MANAGED_MSSQL_SOURCE_ID
+    sid = db.execute(
+        select(func.max(CatalogObject.snapshot_id))
+        .join(Snapshot, Snapshot.id == CatalogObject.snapshot_id)
+        .where(Snapshot.data_source_id == target)
+    ).scalar_one_or_none()
     if sid is None:
-        return {"snapshot_id": None, "nodes": [], "edges": []}
+        return {"snapshot_id": None, "source_id": target, "nodes": [], "edges": []}
 
     hidden = get_hidden_schemas()
     qname_to_id = {
@@ -90,4 +97,4 @@ def get_erd_graph(db: Session = Depends(get_db)) -> dict:
             .order_by(CatalogObject.schema, CatalogObject.name)
         ).scalars()
     ]
-    return {"snapshot_id": sid, "nodes": nodes, "edges": edges}
+    return {"snapshot_id": sid, "source_id": target, "nodes": nodes, "edges": edges}

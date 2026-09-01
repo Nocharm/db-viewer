@@ -1,6 +1,7 @@
 /** 백엔드 조회 API 클라이언트 / thin fetch wrappers for the query API. */
 
 import type { PreviewFilterCond } from "./preview-utils";
+import { withSourceParam } from "./source-param";
 import type {
   AiTableHit,
   CandidatesResponse,
@@ -27,8 +28,27 @@ function authHeaders(): Record<string, string> {
   return {};
 }
 
+/** 401을 받았을 때 로그인 화면으로 보낼지 판단 / whether a 401 should bounce to /login.
+ *  hasSession은 만료 여부와 무관하게 "저장분이 있었는가"여야 한다 — readStoredSession()의
+ *  null(만료 포함)을 그대로 넘기면 정작 만료 상황에서 리다이렉트가 조용히 스킵된다. */
+export function shouldRedirectToLogin(
+  status: number, pathname: string, hasSession: boolean,
+): boolean {
+  // 로그인 화면 자신에서는 보내지 않는다 — 그 화면의 401은 자격증명 오류라 무한 루프가 된다
+  return status === 401 && hasSession && pathname !== "/login";
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    // 로컬 세션 토큰은 갱신이 없다 — 만료되면 401이 오고, 여기가 유일한 응답 깔때기다.
+    if (typeof window !== "undefined") {
+      const { clearStoredSession, hasStoredSession } = await import("./session-token");
+      if (shouldRedirectToLogin(res.status, window.location.pathname, hasStoredSession())) {
+        clearStoredSession();
+        setAuthToken(null);
+        window.location.href = "/login";
+      }
+    }
     // 백엔드 에러 규약: {"error": {code, message, context}}
     const body = await res.json().catch(() => null);
     const message = body?.error?.message ?? `request failed (${res.status})`;
@@ -70,6 +90,30 @@ async function deleteJson<T>(
   }));
 }
 
+async function patchJson<T>(
+  url: string, body: unknown, extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return handle(await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...extraHeaders },
+    body: JSON.stringify(body),
+  }));
+}
+
+export interface LdapLoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  login_id: string;
+  name: string | null;
+}
+
+export function loginWithLdap(
+  loginId: string, password: string,
+): Promise<LdapLoginResponse> {
+  return postJson("/api/auth/ldap-login", { login_id: loginId, password });
+}
+
 export interface Me {
   login_id: string;
   name: string;
@@ -81,6 +125,125 @@ export interface Me {
 
 export function fetchMe(): Promise<Me> {
   return getJson("/api/me");
+}
+
+export interface DataSourceItem {
+  id: number;
+  name: string;
+  engine: string;
+  access_mode: string;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  username: string | null;
+  file_path: string | null;
+  has_password: boolean;
+  is_enabled: boolean;
+  is_managed: boolean;
+  last_ok_at: string | null;
+  last_error: string | null;
+}
+
+/** 등록된 소스 목록 — sysadmin 전용, 일반 사용자는 403(호출부가 감내한다). */
+export function fetchDataSources(): Promise<{
+  items: DataSourceItem[];
+  secret_key_configured: boolean;
+}> {
+  return getJson("/api/sources");
+}
+
+/** 마이그레이션이 시드한 사내 MSSQL 소스 id — 소스 미지정 요청의 백엔드 기본값과 같다.
+ *  뷰 파싱·관계 검증·AI처럼 MSSQL 전용인 화면은 이 값을 명시해야 한다: 스냅샷 id는
+ *  전 소스 공통 시퀀스라 "최신 스냅샷"이 다른 소스 것으로 넘어갈 수 있다.
+ *  The seeded in-house MSSQL source; MSSQL-only screens must pin to it because snapshot
+ *  ids are one global sequence. */
+export const MANAGED_MSSQL_SOURCE_ID = 1;
+
+/** 소스 선택기용 최소 목록 — 접속정보 없음, 일반 사용자도 읽는다(조회 API와 같은 게이트).
+ *  관리 콘솔은 전체 레코드가 필요해 계속 `fetchDataSources`를 쓴다. */
+export interface SourceOption {
+  id: number;
+  name: string;
+  engine: string;
+  is_enabled: boolean;
+}
+
+export function fetchSourceOptions(): Promise<{ items: SourceOption[] }> {
+  return getJson("/api/sources/options");
+}
+
+export interface DataSourceInput {
+  name: string;
+  engine: "postgres" | "sqlite";
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  // 쓰기 전용 — 응답에는 절대 실리지 않는다 / write-only, never echoed back
+  password?: string;
+  file_path?: string;
+}
+
+/** 소스 등록 — SOURCE_SECRET_KEY 미설정이면 503, 필수 필드 누락이면 400. */
+export function createDataSource(
+  input: DataSourceInput, password: string,
+): Promise<DataSourceItem> {
+  return postJson("/api/sources", input, { "X-Preview-Password": password });
+}
+
+/** 소스 부분 수정 — is_enabled 전환도 여기서. is_managed 소스는 백엔드가 409로 거부. */
+export function updateDataSource(
+  id: number, input: Partial<DataSourceInput> & { is_enabled?: boolean },
+  password: string,
+): Promise<DataSourceItem> {
+  return patchJson(`/api/sources/${id}`, input, { "X-Preview-Password": password });
+}
+
+export interface DeleteBlockedContext {
+  snapshots?: number;
+  preview_allowlist?: number;
+  schema_categories?: number;
+}
+
+/** 삭제 차단(409) 안내 문구를 조립한다 — 백엔드는 context에 개수를 실어 보내는데 공용
+ * handle()은 message만 남기고 context를 버린다. 그 개수가 없으면 "무엇이 얼마나 막고
+ * 있는지"를 안내할 수 없어, deleteDataSource만 이 함수로 직접 조립한다. */
+export function formatDeleteBlockedMessage(
+  context: DeleteBlockedContext | null | undefined,
+  fallback: string,
+): string {
+  if (!context) return fallback;
+  const counts = [
+    context.snapshots ? `스냅샷 ${context.snapshots}건` : null,
+    context.preview_allowlist ? `허용 목록 ${context.preview_allowlist}건` : null,
+    context.schema_categories ? `카테고리 ${context.schema_categories}건` : null,
+  ].filter((part): part is string => part !== null);
+  if (counts.length === 0) return fallback;
+  return `${counts.join("·")}이 이 소스를 참조하고 있어 삭제할 수 없습니다 — `
+    + "비활성화하거나 먼저 정리하세요.";
+}
+
+/** is_managed거나 스냅샷·정책 행이 남아있으면 409 — 공용 handle()을 거치지 않고 직접
+ * 응답을 읽어 context의 개수를 메시지에 싣는다(공유 헬퍼는 그대로 둔다). */
+export async function deleteDataSource(
+  id: number, password: string,
+): Promise<{ id: number; removed: boolean }> {
+  const res = await fetch(`/api/sources/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(), "X-Preview-Password": password },
+  });
+  if (res.ok) return res.json();
+  const body = await res.json().catch(() => null);
+  const fallback = body?.error?.message ?? `request failed (${res.status})`;
+  throw new Error(formatDeleteBlockedMessage(body?.error?.context, fallback));
+}
+
+/** 연결 테스트 — sysadmin이면 비밀번호 없이 호출. 비활성 소스도 테스트 가능(의도적).
+ * 흔한 컨테이너명 오접속을 잡기 위해 실제로 붙은 DB의 이름·버전을 회신한다. */
+export function testDataSource(id: number): Promise<{
+  ok: boolean; version: string; database: string; latency_ms: number;
+}> {
+  return postJson(`/api/sources/${id}/test`, {});
 }
 
 export interface WhitelistEntry {
@@ -133,15 +296,17 @@ export function fetchUsers(
   return getJson(`/api/admin/users?${params}`);
 }
 
-export function searchObjects(q: string, type?: "table" | "view"): Promise<SearchResponse> {
+export function searchObjects(
+  q: string, type?: "table" | "view", sourceId: number | null = null,
+): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   if (type) params.set("type", type);
-  return getJson(`/api/objects?${params}`);
+  return getJson(withSourceParam(`/api/objects?${params}`, sourceId));
 }
 
 /** confirmed+FK만 담은 읽기 전용 전체 그래프 — /erd 전용(앵커·검색 없음). */
-export function fetchErdGraph(): Promise<ErdResponse> {
-  return getJson("/api/erd");
+export function fetchErdGraph(sourceId: number | null = null): Promise<ErdResponse> {
+  return getJson(withSourceParam("/api/erd", sourceId));
 }
 
 export function fetchCandidates(columnId: number): Promise<CandidatesResponse> {
@@ -235,8 +400,13 @@ export interface SnapshotSummary {
   object_count: number;
 }
 
-export function fetchSnapshots(): Promise<{ items: SnapshotSummary[] }> {
-  return getJson("/api/snapshots");
+/** 소스를 생략하면 전 소스의 이력을 준다(관리 콘솔용) — 특정 소스의 "최신 스냅샷"이
+ *  필요한 화면은 반드시 소스를 넘겨야 한다. / omitting the source lists every source's
+ *  history; callers that need one source's latest snapshot must pass it. */
+export function fetchSnapshots(
+  sourceId: number | null = null,
+): Promise<{ items: SnapshotSummary[] }> {
+  return getJson(withSourceParam("/api/snapshots", sourceId));
 }
 
 export interface ParseStats {
@@ -258,8 +428,8 @@ export interface JoinKeyItem {
   table_ids: number[];
 }
 
-export function fetchJoinKeys(): Promise<{ items: JoinKeyItem[] }> {
-  return getJson("/api/join-keys");
+export function fetchJoinKeys(sourceId: number | null = null): Promise<{ items: JoinKeyItem[] }> {
+  return getJson(withSourceParam("/api/join-keys", sourceId));
 }
 
 // 서버 페이지 상한과 동일 — 왕복 수를 최소화한다 / matches the server-side page cap
@@ -271,12 +441,14 @@ const OBJECTS_PAGE_SIZE = 1000;
  * 한 방이라 2,224개가 조용히 잘렸고, 목록에 없는 테이블이 링크로만 열렸다.
  * 목록·카테고리 집계·초성/컬럼 검색이 모두 이 전량 집합을 쓰므로 여기서 다 모은다
  * (렌더는 TableList가 무한 스크롤로 잘라서 그린다). */
-export async function fetchAllObjects(): Promise<SearchResponse> {
-  const first = await getJson<SearchResponse>(`/api/objects?limit=${OBJECTS_PAGE_SIZE}`);
+export async function fetchAllObjects(sourceId: number | null = null): Promise<SearchResponse> {
+  const first = await getJson<SearchResponse>(
+    withSourceParam(`/api/objects?limit=${OBJECTS_PAGE_SIZE}`, sourceId),
+  );
   const items = [...first.items];
   while (items.length < first.total) {
     const page = await getJson<SearchResponse>(
-      `/api/objects?limit=${OBJECTS_PAGE_SIZE}&offset=${items.length}`,
+      withSourceParam(`/api/objects?limit=${OBJECTS_PAGE_SIZE}&offset=${items.length}`, sourceId),
     );
     if (page.items.length === 0) break; // 서버가 빈 페이지를 주면 중단 — 무한 루프 방지
     items.push(...page.items);
@@ -293,16 +465,21 @@ export interface SchemaCategoryItem {
   object_count: number;
 }
 
-export function fetchSchemaCategories(): Promise<{ items: SchemaCategoryItem[] }> {
-  return getJson("/api/schema-categories");
+export function fetchSchemaCategories(
+  sourceId: number | null = null,
+): Promise<{ items: SchemaCategoryItem[] }> {
+  return getJson(withSourceParam("/api/schema-categories", sourceId));
 }
 
 /** 스키마 하나의 카테고리 지정 — 빈 문자열이면 해제. 그 DB의 테이블이 통째로 이동한다.
  * Assigning moves every table of that schema at once; "" clears the mapping. */
 export function assignSchemaCategory(
-  schema: string, category: string,
+  schema: string, category: string, sourceId: number | null = null,
 ): Promise<SchemaCategoryItem> {
-  return putJson(`/api/schema-categories/${encodeURIComponent(schema)}`, { category });
+  return putJson(
+    withSourceParam(`/api/schema-categories/${encodeURIComponent(schema)}`, sourceId),
+    { category },
+  );
 }
 
 export interface ObjectDetail {
@@ -376,8 +553,10 @@ export interface CollectJob {
   updated_at: string;
 }
 
-export function triggerCollectCatalog(): Promise<CollectJob> {
-  return postJson("/api/collect/catalog", {});
+/** source_id 생략 시 기본 소스(사내 MSSQL) — DataSourcePanel이 신규 등록 소스를 지정해 쓴다.
+ * direct 소스(postgres/sqlite)는 뷰 의존 단계가 없어 이 한 번의 호출로 수집이 끝난다. */
+export function triggerCollectCatalog(sourceId: number | null = null): Promise<CollectJob> {
+  return postJson("/api/collect/catalog", sourceId !== null ? { source_id: sourceId } : {});
 }
 
 export function triggerCollectViewDeps(jobId: number): Promise<CollectJob> {
@@ -442,9 +621,11 @@ export interface TablePreview {
   filters: PreviewFilterCond[];
 }
 
-/** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). */
-export function fetchPreviewAllowlist(): Promise<{ items: string[] }> {
-  return getJson("/api/objects/preview-allowlist");
+/** 미리보기가 허용된 스키마 목록 — 버튼 활성 판단용 (일반 사용자도 읽는다). 허용은 소스별. */
+export function fetchPreviewAllowlist(
+  sourceId: number | null = null,
+): Promise<{ items: string[] }> {
+  return getJson(withSourceParam("/api/objects/preview-allowlist", sourceId));
 }
 
 /** 컬럼을 감춘 스키마(HIDDEN_SCHEMAS, 소문자) + 좌측 목록 렌더 토글. */
@@ -504,23 +685,31 @@ export interface PreviewAllowlistAdmin {
   items: PreviewAllowEntry[];
 }
 
-export function fetchPreviewAllowlistAdmin(): Promise<PreviewAllowlistAdmin> {
-  return getJson("/api/admin/preview-allowlist");
+/** 허용 목록 PK가 (data_source_id, schema)라 조회도 소스별 — 미지정 시 사내 MSSQL. */
+export function fetchPreviewAllowlistAdmin(
+  sourceId: number | null = null,
+): Promise<PreviewAllowlistAdmin> {
+  return getJson(withSourceParam("/api/admin/preview-allowlist", sourceId));
 }
 
 // 비밀번호는 헤더로만 실어 보낸다 — URL·본문에 남기지 않는다 (로그·히스토리 노출 방지)
 export function addPreviewAllow(
-  schema: string, password: string, note?: string,
+  schema: string, password: string, note?: string, sourceId: number | null = null,
 ): Promise<{ created: boolean }> {
-  return postJson("/api/admin/preview-allowlist", { schema, note },
-                  { "X-Preview-Password": password });
+  return postJson(
+    "/api/admin/preview-allowlist",
+    { schema, note, ...(sourceId !== null ? { source_id: sourceId } : {}) },
+    { "X-Preview-Password": password },
+  );
 }
 
 export function removePreviewAllow(
-  schema: string, password: string,
+  schema: string, password: string, sourceId: number | null = null,
 ): Promise<{ removed: boolean }> {
-  return deleteJson(`/api/admin/preview-allowlist/${encodeURIComponent(schema)}`,
-                    { "X-Preview-Password": password });
+  return deleteJson(
+    withSourceParam(`/api/admin/preview-allowlist/${encodeURIComponent(schema)}`, sourceId),
+    { "X-Preview-Password": password },
+  );
 }
 
 export function fetchObjectPreview(
@@ -537,10 +726,10 @@ export function fetchObjectPreview(
   return getJson(`/api/objects/${objectId}/preview${suffix}`);
 }
 
-export function fetchColumnsIndex(): Promise<{
+export function fetchColumnsIndex(sourceId: number | null = null): Promise<{
   items: { object_id: number; columns: string[] }[];
 }> {
-  return getJson("/api/objects/columns-index");
+  return getJson(withSourceParam("/api/objects/columns-index", sourceId));
 }
 
 export interface AiJobStatus {

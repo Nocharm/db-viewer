@@ -100,3 +100,33 @@ def fetch_all_users() -> list[RawUser]:
         ]
     finally:
         conn.unbind()
+
+
+def verify_credentials(dn: str, password: str) -> bool:
+    """사용자 DN으로 바인드해 자격증명을 확인 / bind as the user to verify credentials.
+
+    `_connect()`는 서비스 계정으로 붙지만 여기서는 **사용자 자신으로** 붙는다 — 바인드 성공
+    여부가 곧 인증 결과다.
+
+    빈 비밀번호를 바인드 전에 거부하는 이유(RFC 4513): DN은 주고 비밀번호를 비운 바인드를
+    다수의 서버가 **익명 바인드로 처리해 성공을 돌려준다**. 그대로 믿으면 비밀번호를
+    비워두는 것만으로 아무 계정이나 로그인된다.
+
+    접속 자체가 안 되는 경우(LDAPException)는 여기서 삼키지 않는다 — 호출부가 자격증명
+    실패(401)와 인증 서버 장애(503)를 구분해야 하기 때문이다.
+    """
+    if not password:
+        return False
+    settings = get_settings()
+    use_ssl = settings.ldap_url.lower().startswith("ldaps://")
+    needs_tls = use_ssl or settings.ldap_start_tls
+    server = Server(
+        settings.ldap_url, use_ssl=use_ssl, tls=_make_tls() if needs_tls else None
+    )
+    conn = Connection(server, user=dn, password=password, auto_bind=False)
+    try:
+        if settings.ldap_start_tls:
+            conn.start_tls()
+        return bool(conn.bind())
+    finally:
+        conn.unbind()

@@ -8,8 +8,10 @@ import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { AdUserList } from "@/components/admin/AdUserList";
 import { CollectPanel } from "@/components/admin/CollectPanel";
+import { DataSourcePanel } from "@/components/admin/DataSourcePanel";
 import { HiddenSchemaPanel } from "@/components/admin/HiddenSchemaPanel";
 import { PreviewAllowlistPanel } from "@/components/admin/PreviewAllowlistPanel";
+import { SourceSelector } from "@/components/SourceSelector";
 import { useI18n } from "@/components/i18n";
 import { useMe } from "@/components/providers";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
@@ -30,6 +32,9 @@ export default function AdminPage() {
   const [items, setItems] = useState<WhitelistEntry[]>([]);
   // 값이 오르면 AD 목록이 첫 페이지부터 다시 읽는다 (동기화·허용 추가 후)
   const [adRefreshKey, setAdRefreshKey] = useState(0);
+  // 미리보기 허용 목록은 소스별(PK가 (data_source_id, schema)) — 여기서 고른 소스를 따른다.
+  // null은 사내 MSSQL(기본 소스), 소스가 하나뿐이면 SourceSelector가 스스로 숨는다.
+  const [previewSourceId, setPreviewSourceId] = useState<number | null>(null);
   const [loginId, setLoginId] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -124,9 +129,18 @@ export default function AdminPage() {
             </Link>
           </div>
 
+      {/* 소스가 없으면 나머지 관리 기능이 전부 무의미해서 첫 자리 */}
+      <DataSourcePanel />
+
       <CollectPanel />
 
-      <PreviewAllowlistPanel />
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-xs" style={{ color: "var(--muted)" }}>
+          미리보기 허용 대상 소스
+        </span>
+        <SourceSelector value={previewSourceId} onChange={setPreviewSourceId} />
+      </div>
+      <PreviewAllowlistPanel sourceId={previewSourceId} />
 
       <HiddenSchemaPanel />
 

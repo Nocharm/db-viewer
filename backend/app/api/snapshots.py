@@ -20,18 +20,21 @@ ObjKey = tuple[str, str, str]
 
 
 @router.get("")
-def list_snapshots(db: Session = Depends(get_db)) -> dict:
+def list_snapshots(source_id: int | None = None, db: Session = Depends(get_db)) -> dict:
+    """스냅샷 이력 — source_id 생략 시 전체 소스(기존 동작 유지), 지정 시 그 소스만."""
     object_count = (
         select(func.count()).where(CatalogObject.snapshot_id == Snapshot.id).scalar_subquery()
     )
+    stmt = select(Snapshot, object_count).order_by(Snapshot.id.desc())
+    if source_id is not None:
+        stmt = stmt.where(Snapshot.data_source_id == source_id)
     items = [
         {
             "id": snap.id, "collected_at": snap.collected_at.isoformat(),
             "source_db": snap.source_db, "status": snap.status, "object_count": count,
+            "data_source_id": snap.data_source_id,
         }
-        for snap, count in db.execute(
-            select(Snapshot, object_count).order_by(Snapshot.id.desc())
-        )
+        for snap, count in db.execute(stmt)
     ]
     return {"items": items}
 

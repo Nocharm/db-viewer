@@ -22,6 +22,13 @@ interface Props {
   previewLoading: boolean;
   /** 이 테이블의 스키마가 허용 목록에 있는지 — 아니면 버튼을 잠근다 (실제 차단은 서버). */
   previewAllowed: boolean;
+  /** 선택된 소스가 MSSQL인가 — 아니면 AI 요약·설명·조인 검증 버튼을 숨긴다. 이 셋이 부르는
+   * `generateAiSummary`/`explainViewAi`/`runJoinCheck`는 백엔드가 소스를 무시하고 항상
+   * 기본(MSSQL) 소스를 보므로, 다른 소스의 테이블에서 눌러도 엉뚱한 소스의 결과가 그럴듯하게
+   * 나올 수 있다(스펙 명시적 비목표) / these three call endpoints that always target the
+   * default MSSQL source regardless of what's selected; on another source they can return
+   * a plausible-looking result for the wrong table entirely. */
+  isMssqlSource: boolean;
   onPreview: () => void;
   onOpenErd: () => void;
   /** 상세 안의 테이블명 클릭 → 해당 테이블 선택 / click-through to another table */
@@ -113,8 +120,8 @@ function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
 }
 
 export function TableDetail({
-  detail, loading, previewLoading, previewAllowed, onPreview, onOpenErd, onSelectTable,
-  onOpenColumn,
+  detail, loading, previewLoading, previewAllowed, isMssqlSource, onPreview, onOpenErd,
+  onSelectTable, onOpenColumn,
 }: Props) {
   const { t } = useI18n();
   const [checkResults, setCheckResults] = useState<JoinCheckItem[] | null>(null);
@@ -247,34 +254,38 @@ export function TableDetail({
           {aiExplanation}
         </p>
       )}
-      <div className="mb-5 flex gap-2">
-        <button
-          className="icon-button"
-          disabled={aiBusy}
-          onClick={() => runAi(async () => {
-            const res = await generateAiSummary(detail.id);
-            setAiSummary(res.summary);
-            setAiMock(res.mock);
-          })}
-          data-testid="TableDetail-aiSummaryButton"
-        >
-          {aiBusy ? t("ai.working") : t("ai.generateSummary")}
-        </button>
-        {detail.type === "view" && (
+      {/* generateAiSummary/explainViewAi는 항상 기본(MSSQL) 소스를 본다 — 다른 소스에서는
+          숨긴다(엉뚱한 소스의 그럴듯한 결과를 이 테이블의 것으로 오인할 수 있어서) */}
+      {isMssqlSource && (
+        <div className="mb-5 flex gap-2">
           <button
             className="icon-button"
             disabled={aiBusy}
             onClick={() => runAi(async () => {
-              const res = await explainViewAi(detail.id);
-              setAiExplanation(res.explanation);
+              const res = await generateAiSummary(detail.id);
+              setAiSummary(res.summary);
               setAiMock(res.mock);
             })}
-            data-testid="TableDetail-aiExplainButton"
+            data-testid="TableDetail-aiSummaryButton"
           >
-            {aiBusy ? t("ai.working") : t("ai.explainView")}
+            {aiBusy ? t("ai.working") : t("ai.generateSummary")}
           </button>
-        )}
-      </div>
+          {detail.type === "view" && (
+            <button
+              className="icon-button"
+              disabled={aiBusy}
+              onClick={() => runAi(async () => {
+                const res = await explainViewAi(detail.id);
+                setAiExplanation(res.explanation);
+                setAiMock(res.mock);
+              })}
+              data-testid="TableDetail-aiExplainButton"
+            >
+              {aiBusy ? t("ai.working") : t("ai.explainView")}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mb-7 flex flex-wrap gap-3">
         <button
@@ -354,8 +365,9 @@ export function TableDetail({
           )}
         </section>
 
-        {/* 조인 가능성 검증 — 타깃별 최고 페어 T2 일괄 실행 / table-level join check */}
-        {detail.type === "table" && (
+        {/* 조인 가능성 검증 — 타깃별 최고 페어 T2 일괄 실행 / table-level join check.
+            runJoinCheck는 항상 기본(MSSQL) 소스를 본다 — 다른 소스에서는 숨긴다. */}
+        {detail.type === "table" && isMssqlSource && (
           <section className="panel-section" data-testid="TableDetail-joinCheck">
             <div className="mb-1 flex flex-wrap items-center gap-3">
               <div className="panel-section__title !mb-0 flex items-center gap-1.5">
@@ -468,7 +480,7 @@ export function TableDetail({
                   <span className="w-10 text-right text-xs" style={{ color: "var(--slate)" }}>
                     {Math.round(similar.match_rate * 100)}%
                   </span>
-                  {detail.type === "table" && (
+                  {detail.type === "table" && isMssqlSource && (
                     <button
                       className="pressable rounded border px-1.5 py-0.5 text-[11px]"
                       style={{ borderColor: "var(--hairline-strong)", color: "var(--slate)" }}

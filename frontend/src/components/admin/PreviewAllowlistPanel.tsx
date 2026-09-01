@@ -14,7 +14,12 @@ import {
   type SchemaCategoryItem,
 } from "@/lib/api";
 
-export function PreviewAllowlistPanel() {
+interface PreviewAllowlistPanelProps {
+  /** 허용 목록 PK가 (data_source_id, schema)라 소스별로 조회·수정한다 — null은 사내 MSSQL. */
+  sourceId: number | null;
+}
+
+export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) {
   const [password, setPassword] = useState("");
   const [entries, setEntries] = useState<PreviewAllowEntry[]>([]);
   const [passwordConfigured, setPasswordConfigured] = useState(true);
@@ -25,21 +30,21 @@ export function PreviewAllowlistPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() =>
-    fetchPreviewAllowlistAdmin()
+    fetchPreviewAllowlistAdmin(sourceId)
       .then((res) => {
         setEntries(res.items);
         setPasswordConfigured(res.password_configured);
       })
-      .catch((e) => setError(e.message)), []);
+      .catch((e) => setError(e.message)), [sourceId]);
 
   useEffect(() => { void reload(); }, [reload]);
 
   // 스키마 목록은 카탈로그가 곧 원본 — 카테고리 화면과 같은 소스를 쓴다
   useEffect(() => {
-    fetchSchemaCategories()
+    fetchSchemaCategories(sourceId)
       .then((res) => setSchemas(res.items))
       .catch((e) => setError(e.message));
-  }, []);
+  }, [sourceId]);
 
   const allowedBySchema = useMemo(
     () => new Map(entries.map((entry) => [entry.schema, entry])),
@@ -154,8 +159,9 @@ export function PreviewAllowlistPanel() {
                         className="icon-button row-action"
                         disabled={!canEdit}
                         title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
-                        onClick={() => run(() => removePreviewAllow(item.schema, password),
-                                           `${item.schema} 허용 해제`)}
+                        onClick={() => run(
+                          () => removePreviewAllow(item.schema, password, sourceId),
+                          `${item.schema} 허용 해제`)}
                         data-testid={`AdminPage-previewAllowRemoveButton-${item.schema}`}
                       >
                         허용 해제
@@ -166,7 +172,9 @@ export function PreviewAllowlistPanel() {
                         disabled={!canEdit}
                         title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
                         onClick={() => run(
-                          () => addPreviewAllow(item.schema, password, note.trim() || undefined),
+                          () => addPreviewAllow(
+                            item.schema, password, note.trim() || undefined, sourceId,
+                          ),
                           `${item.schema} 미리보기 허용`,
                         )}
                         data-testid={`AdminPage-previewAllowAddButton-${item.schema}`}

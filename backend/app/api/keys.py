@@ -19,9 +19,12 @@ router = APIRouter(tags=["keys"])
 
 
 @router.get("/api/join-keys")
-def list_join_keys(snapshot_id: int | None = None, db: Session = Depends(get_db)) -> dict:
+def list_join_keys(
+    snapshot_id: int | None = None, source_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """FK·뷰 JOIN·검증 관계에 등장한 키 컬럼 집계 / keys seen in FKs, view joins, relations."""
-    snapshot = resolve_snapshot(db, snapshot_id)
+    snapshot = resolve_snapshot(db, snapshot_id, source_id)
 
     # key name → 사용 테이블 id 집합 + 근거별 등장 횟수 / tables and per-source usage
     tables_by_key: dict[str, set[int]] = {}
@@ -78,4 +81,7 @@ def list_join_keys(snapshot_id: int | None = None, db: Session = Depends(get_db)
         for key in tables_by_key
     ]
     items.sort(key=lambda i: (-i["table_count"], -i["usage"], i["key"]))
-    return {"snapshot_id": snapshot.id, "items": items[:40]}
+    return {
+        "snapshot_id": snapshot.id, "source_id": snapshot.data_source_id,
+        "items": items[:40],
+    }

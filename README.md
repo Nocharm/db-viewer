@@ -51,6 +51,9 @@ docker compose up -d --build
 
 배포 전 로컬 리허설(로컬 Keycloak + 선택적 MSSQL/n8n 수집 리허설): `docs/local-test.md`
 실DB 연결(정찰 → 수집 → live 전환) 순서와 체크리스트: **`docs/connect.md`**
+사내 다른 도커 서비스 DB(PostgreSQL/SQLite)를 추가로 붙이는 절차: **`docs/connect-sources.md`**
+(서비스 담당자에게 보낼 요청서: `docs/handoff/service-owner-prompt.md`, 담당자용 안내 페이지: `docs/handoff/integration-guide.html`)
+운영과 완전히 분리된 별도 포트·별도 DB의 개발 스택(LDAP 로그인 등 신규 기능 시험용): **`docs/dev-deploy.md`**
 
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)
 - **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트 (한 세트가 로컬·실서버 겸용:
@@ -108,12 +111,20 @@ curl -s http://182.199.63.71:6678/api/health        # {"status":"ok"} — 인증
 | 고쳤는데 서버에서 같은 에러 | 이미지 재빌드·해시 청크명 변경 여부 확인 → `docker compose build --no-cache frontend` |
 | 특정 사용자가 동기화에서 빠짐 | 의도된 제외 규칙(`ad/org.py`): loginId에 `.` 없음 / 이름에 `_` / 제외 조직 |
 | 전체 동기화 503 | `LDAP_*` 4종 중 빈 값 |
+| LDAP 로그인 폼이 안 보임 | `AUTH_LDAP_LOGIN_ENABLED=true` 후 **`--build`** 했는지 (`NEXT_PUBLIC_*`는 빌드 인라인) |
+| LDAP 로그인이 503 | `SESSION_SECRET_KEY` 미설정 또는 `LDAP_*` 4종 중 빈 값 |
 | 미리보기 버튼이 잠김 / 403 | `/admin` → 미리보기 허용 스키마에 그 객체의 **스키마**가 있는지 (기본은 전부 차단). 그래도 막히면 `HIDDEN_SCHEMAS`에 잡혀 있는지 확인 — 감춤이 허용보다 우선한다 |
 | 허용 목록 수정이 503 | `PREVIEW_ADMIN_PASSWORD` 미설정 — `.env` 채우고 backend 재기동 |
 | 미리보기가 빈 표 | 화면 문구로 구분: "원본 소스가 0행" = W2 실행됨(테이블이 비었거나 필터 불일치). 그 외엔 502 메시지에 n8n 상태·본문이 실린다 |
+| 소스 등록이 503 | `SOURCE_SECRET_KEY` 미설정 — `.env` 채우고 backend 재기동 (`docs/connect-sources.md` §6.1) |
+| 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 같은 컨테이너명(`postgres`)을 씀 — host를 네트워크 alias나 컨테이너 풀네임으로 |
+| backend가 `network ... not found`로 기동 실패 | `dbv-<서비스>` 네트워크가 지워짐 — `docker network create`로 다시 만든다 |
 
 **롤백**: `git checkout <이전 커밋> && docker compose up -d --build` — 데이터는 `pgdata` 볼륨에 유지.
 `docker compose down -v`는 볼륨까지 삭제(주의).
+**단, `alembic downgrade`까지 하면 볼륨이 남아도 행이 지워진다** — 멀티 소스 마이그레이션
+(0015~0017)을 내리면 등록한 소스와 **암호화된 접속 비밀번호**(`data_sources`), 사내 MSSQL
+외 소스의 미리보기 허용목록·카테고리가 사라진다. 지점별 손실 목록: `docs/connect-sources.md` §6.3.
 
 ## 디렉터리
 
