@@ -6,6 +6,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-09-02
+
+- **담당자용 연동 안내 HTML** (`docs/handoff/integration-guide.html`) — 서비스 담당자에게 브라우저로 바로 열어 보낼 수 있는 ELI5 안내 페이지. "읽기 전용 유리창 + 전용 복도" 비유로 설명하고, Claude Code 프롬프트와 `service-owner-prompt.md` 전문을 복사 버튼과 함께 내장(빌드 시 MD에서 이스케이프 주입 — 원본 MD가 단일 진실이고 HTML은 배포본). 머지 전 완결성 재검증: 백엔드 456 passed/4 skipped + ruff 클린, 프론트 144 passed + tsc/eslint/build 클린.
+
 ## 2026-08-26
 
 - **LDAP 로그인 병행 + 개발 서버 배포 설계 확정** (`docs/superpowers/specs/2026-08-26-ldap-login-dev-deploy-design.md`). 지금 로그인은 Keycloak 전용이고 LDAP은 서비스 계정으로 사용자 목록만 읽는 동기화 용도다. 세 갈림길 결정: ① 폴백은 **병행**(사용자가 고름) ② 바인드는 **백엔드 직결**(Keycloak에 의존하면 폴백이 성립하지 않는다) ③ **12시간 단일 토큰, 갱신 없음**. 핵심은 `get_current_user`가 `iss`로 라우팅하되 **두 경로 모두 알고리즘을 고정**하는 것 — 고정하지 않으면 `iss`를 주장하는 다른 알고리즘 토큰이 통과한다. 하류 게이트(화이트리스트·sysadmin)는 손대지 않아도 자동 적용된다.
