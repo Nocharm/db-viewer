@@ -8,6 +8,9 @@
 
 ## 2026-09-02
 
+- **관리자 화면 연동 안내서 다운로드 버튼** — `데이터 소스` 섹션에 [연동 안내서 내려받기] 버튼 추가(`DataSourcePanel-guideDownload`). integration-guide.html은 이미 MD에서 주입된 배포 파생물이라 `docs/handoff/`에서 `frontend/public/handoff/`로 옮겨 웹 서빙(단일 위치, drift 없음). DownloadIcon 신설, README 참조 갱신.
+- **미리보기 컬럼 메뉴 3항목 추가** (`feature/preview-column-menu`) — 헤더 우클릭 메뉴에 빈값 제외하기(NOT NULL 걸고 즉시 재질의)·컬럼명 복사·이 컬럼 필터 적용을 추가. 필터 적용은 필터 바 컬럼 드롭다운을 선택하고 1.5s accent 플래시로 시선을 유도(전역 reduced-motion 가드가 자동으로 끔). 스테이징 로직은 `appendFilterCond`/`condKey`로 순수화해 vitest 커버(중복·상한 시 원본 참조 반환으로 무동작을 동일성으로 감지). 클립보드 헬퍼는 ErdViewer 로컬 정의를 `lib/clipboard.ts`로 승격해 재사용(http 비보안 컨텍스트 execCommand 폴백 유지). 참고: PreviewSection의 기존 condKey가 널바이트 구분자를 쓰고 있어 utils의 공백 구분자 버전으로 정리됨.
+
 - **담당자용 연동 안내 HTML** (`docs/handoff/integration-guide.html`) — 서비스 담당자에게 브라우저로 바로 열어 보낼 수 있는 ELI5 안내 페이지. "읽기 전용 유리창 + 전용 복도" 비유로 설명하고, Claude Code 프롬프트와 `service-owner-prompt.md` 전문을 복사 버튼과 함께 내장(빌드 시 MD에서 이스케이프 주입 — 원본 MD가 단일 진실이고 HTML은 배포본). 머지 전 완결성 재검증: 백엔드 456 passed/4 skipped + ruff 클린, 프론트 144 passed + tsc/eslint/build 클린.
 
 ## 2026-08-26

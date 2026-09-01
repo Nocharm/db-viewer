@@ -110,6 +110,17 @@ export function ArrowDownIcon(props: IconProps) {
   );
 }
 
+/** 파일 내려받기 — 아래 화살표 + 트레이 바닥선 / download to disk. */
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 4v10" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M5 19h14" />
+    </Svg>
+  );
+}
+
 /** 브랜드 마크 — 옐로 라운드 스퀘어 + DB 실린더. app/icon.svg(파비콘)와 같은 도형이다.
  * 둘이 어긋나면 탭과 화면의 브랜드가 달라 보이므로 지오메트리를 맞춰 유지한다.
  * Brand mark mirroring app/icon.svg so the tab and the UI show the same logo. */
