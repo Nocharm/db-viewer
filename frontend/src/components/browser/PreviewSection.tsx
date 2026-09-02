@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/components/i18n";
 import {
   ArrowUpIcon, CaretDownIcon, CloseIcon, ColumnsIcon, DownloadIcon, EllipsisTextIcon,
-  FilterIcon, SearchIcon, SplitIcon, WrapTextIcon,
+  FilterIcon, ResetIcon, SearchIcon, SplitIcon, WrapTextIcon,
 } from "@/components/icons";
 import { InfoTip } from "@/components/InfoTip";
 import { PreviewSqlButton } from "@/components/PreviewSqlButton";
@@ -19,6 +19,7 @@ import {
   buildCsv,
   condKey,
   countUniqueValues,
+  hasUnappliedChanges,
   isNullOp,
   sortRows,
   type PreviewFilterCond,
@@ -141,24 +142,15 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
   useEffect(() => () => {
     if (flashTimer.current !== null) clearTimeout(flashTimer.current);
   }, []);
-  // 안내 필 강조 — 미적용 칩이 남아 있는 동안 상시 테두리 강조, 조건이 새로 추가되는
-  // 순간 1회 플래시로 시선을 [조회] 필로 보낸다 / the hint pill stays armed while
-  // staged-but-unapplied chips exist, and flashes once whenever a condition is added
-  const hasUnapplied = staged.some((c) => !appliedKeys.has(condKey(c)));
-  const [hintFlash, setHintFlash] = useState(false);
-  const hintFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevStagedCount = useRef(staged.length);
-  useEffect(() => {
-    if (staged.length > prevStagedCount.current) {
-      setHintFlash(true);
-      if (hintFlashTimer.current !== null) clearTimeout(hintFlashTimer.current);
-      hintFlashTimer.current = setTimeout(() => setHintFlash(false), 1500);
-    }
-    prevStagedCount.current = staged.length;
-  }, [staged.length]);
-  useEffect(() => () => {
-    if (hintFlashTimer.current !== null) clearTimeout(hintFlashTimer.current);
-  }, []);
+  // 조건이 스테이징과 적용본이 같으면 [조회]는 눌러도 같은 질의 — 비활성으로 막는다
+  const isDirty = hasUnappliedChanges(staged, applied);
+  // 드래프트 작성 중이면 [조회] 자리가 [필터 추가]+[초기화]로 갈라진다
+  const isDrafting = draftColumn !== "" || draftValue.trim() !== "";
+  const resetDraft = () => {
+    setDraftColumn("");
+    setDraftOp("contains");
+    setDraftValue("");
+  };
 
   const pickFilterColumn = (column: string) => {
     setDraftColumn(column);
@@ -176,7 +168,7 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
   const addDraftFilter = () => {
     if (!canAdd) return;
     appendFilter(draftCond);
-    setDraftValue("");
+    resetDraft(); // 칩으로 넘어갔으니 드래프트를 비워 [조회] 자리로 복귀
   };
   // 값 자동완성 — 로드된 행의 고유값 상위 N개 / suggestions from loaded rows
   const valueSuggestions = data && draftColumn !== "" && !isNullOp(draftOp)
@@ -206,7 +198,10 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
           className={`h-10 rounded-lg border px-3 text-sm${filterFlash ? " filter-flash" : ""}`}
           style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-elevated)" }}
           value={draftColumn}
-          onChange={(e) => setDraftColumn(e.target.value)}
+          onChange={(e) => {
+            setDraftColumn(e.target.value);
+            setDraftValue(""); // 컬럼을 바꾸면 이전 컬럼의 값은 무의미 — 자동 초기화
+          }}
           data-testid="PreviewSection-filterColumnSelect"
         >
           <option value="">{t("preview.selectColumn")}</option>
@@ -246,17 +241,42 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
             <option key={value} value={value} />
           ))}
         </datalist>
-        {/* 추가는 스테이징만 — 재질의는 칩 행의 [조회]가 담당 / add only stages */}
-        <button
-          className="btn-secondary"
-          disabled={!canAdd}
-          title={staged.length >= MAX_FILTERS ? t("preview.maxFilters") : undefined}
-          onClick={addDraftFilter}
-          data-testid="PreviewSection-addFilterButton"
-        >
-          <FilterIcon size={11} className="mr-1 inline-block align-middle" />
-          {t("preview.addFilter")}
-        </button>
+        {/* 이 자리는 상태에 따라 갈라진다 — 드래프트 작성 중엔 [추가]+[초기화],
+            평시엔 [조회](조건 변경이 없으면 비활성) / the slot splits while drafting */}
+        {isDrafting ? (
+          <>
+            <button
+              className="btn-secondary"
+              disabled={!canAdd}
+              title={staged.length >= MAX_FILTERS ? t("preview.maxFilters") : undefined}
+              onClick={addDraftFilter}
+              data-testid="PreviewSection-addFilterButton"
+            >
+              <FilterIcon size={11} className="mr-1 inline-block align-middle" />
+              {t("preview.addFilter")}
+            </button>
+            <button
+              className="icon-button h-10"
+              title={t("preview.resetDraft")}
+              onClick={resetDraft}
+              data-testid="PreviewSection-draftResetButton"
+            >
+              <ResetIcon size={12} />
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn-primary !py-0 h-10 inline-flex items-center justify-center text-xs"
+            style={{ minWidth: "8.5rem" }}
+            disabled={tab.loading || !isDirty}
+            title={isDirty ? undefined : t("preview.noChanges")}
+            onClick={() => onRefetch(tab.id, { filters: staged, limit })}
+            data-testid="PreviewSection-runQueryButton"
+          >
+            <SearchIcon size={11} className="mr-1 inline-block align-middle" />
+            {tab.loading ? t("detail.loading") : t("preview.runQuery")}
+          </button>
+        )}
 
         <select
           className="ml-auto h-10 rounded-lg border px-2 text-sm"
@@ -340,7 +360,8 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
              data-testid="PreviewSection-filterChips">
           {staged.map((cond, index) => (
             <span key={condKey(cond)}
-                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]"
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]${
+                    appliedKeys.has(condKey(cond)) ? "" : " chip-pending"}`}
                   style={{ borderColor: "var(--hairline-strong)",
                            background: "var(--surface-elevated)", color: "var(--body-text)",
                            ...(appliedKeys.has(condKey(cond))
@@ -371,19 +392,7 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
             <CloseIcon size={10} className="mr-1 inline-block align-middle" />
             {t("preview.clear")}
           </button>
-          {/* 주 행동이라 남은 폭을 전부 차지 — flex-wrap 컨테이너라 minWidth 미달이면
-              다음 줄로 내려가 전체 폭을 쓴다 / the primary action fills the row's
-              remaining width; below minWidth it wraps to a full-width line */}
-          <button
-            className="btn-primary !py-1.5 inline-flex flex-1 items-center justify-center text-xs"
-            style={{ minWidth: "10rem" }}
-            disabled={tab.loading}
-            onClick={() => onRefetch(tab.id, { filters: staged, limit })}
-            data-testid="PreviewSection-runQueryButton"
-          >
-            <SearchIcon size={11} className="mr-1 inline-block align-middle" />
-            {tab.loading ? t("detail.loading") : t("preview.runQuery")}
-          </button>
+
         </div>
       )}
 
@@ -396,10 +405,7 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
         )}
         <span data-testid="PreviewSection-requeryHint">
           {t("preview.requeryHintPre")}
-          <span
-            className={`hint-pill${hasUnapplied ? " hint-pill--armed" : ""}${hintFlash ? " filter-flash" : ""}`}
-            data-testid="PreviewSection-requeryHintPill"
-          >
+          <span className="hint-pill" data-testid="PreviewSection-requeryHintPill">
             <SearchIcon size={9} className="inline-block align-middle" />
             {t("preview.runQuery")}
           </span>

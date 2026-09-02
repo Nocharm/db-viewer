@@ -95,6 +95,17 @@ export function appendFilterCond(
   return [...staged, cond];
 }
 
+/** 스테이징과 적용본이 다른지 — [조회] 활성 판단과 미적용 칩 표시가 같은 기준을 쓴다.
+ * 순서 무관 집합 비교(스테이징은 appendFilterCond가 중복을 막아 집합으로 안전하다).
+ * / whether staged differs from applied; order-insensitive set compare. */
+export function hasUnappliedChanges(
+  staged: PreviewFilterCond[], applied: PreviewFilterCond[],
+): boolean {
+  if (staged.length !== applied.length) return true;
+  const appliedKeys = new Set(applied.map(condKey));
+  return staged.some((cond) => !appliedKeys.has(condKey(cond)));
+}
+
 export interface PreviewQueryState {
   object: string; // schema.name
   limit: number;

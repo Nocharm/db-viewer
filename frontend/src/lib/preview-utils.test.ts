@@ -8,6 +8,7 @@ import {
   moveColumn,
   condKey,
   countUniqueValues,
+  hasUnappliedChanges,
   sortRows,
   tokenizeSql,
   type PreviewFilterCond,
@@ -186,5 +187,24 @@ describe("appendFilterCond", () => {
   it("treats a duplicate at the cap as duplicate, not as cap overflow", () => {
     const staged = [NOT_NULL];
     expect(appendFilterCond(staged, { ...NOT_NULL }, 1)).toBe(staged);
+  });
+});
+
+describe("hasUnappliedChanges", () => {
+  const A: PreviewFilterCond = { column: "NM", op: "eq", value: "a" };
+  const B: PreviewFilterCond = { column: "QTY", op: "not_null", value: null };
+
+  it("returns false when staged equals applied (order-insensitive)", () => {
+    expect(hasUnappliedChanges([A, B], [B, A])).toBe(false);
+    expect(hasUnappliedChanges([], [])).toBe(false);
+  });
+
+  it("returns true when a condition was added or removed", () => {
+    expect(hasUnappliedChanges([A, B], [A])).toBe(true); // 추가됨
+    expect(hasUnappliedChanges([A], [A, B])).toBe(true); // 제거됨
+  });
+
+  it("returns true when a condition was edited", () => {
+    expect(hasUnappliedChanges([{ ...A, value: "b" }], [A])).toBe(true);
   });
 });

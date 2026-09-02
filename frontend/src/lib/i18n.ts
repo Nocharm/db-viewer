@@ -101,6 +101,8 @@ export const MESSAGES = {
   "preview.runQuery": { ko: "조회", en: "Query" },
   // 서버 MAX_PREVIEW_FILTERS와 같은 숫자 / mirrors the server-side cap
   "preview.maxFilters": { ko: "조건은 최대 5개", en: "Up to 5 conditions" },
+  "preview.resetDraft": { ko: "입력 초기화", en: "Reset input" },
+  "preview.noChanges": { ko: "변경된 조건이 없습니다", en: "No condition changes to apply" },
   // 안내 문구는 핵심 용어를 필(칩)로 감싸 조립한다 — Pre/Post가 필 앞뒤 텍스트
   "preview.requeryHintPre": { ko: "조건은 AND로 결합 — ", en: "Conditions AND together — " },
   "preview.requeryHintPost": {
