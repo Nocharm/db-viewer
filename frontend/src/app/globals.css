@@ -908,3 +908,23 @@ input::placeholder {
   animation: filter-flash-pulse 1.5s ease-in-out;
   border-color: var(--focus-blue) !important;
 }
+
+/* 안내 문구의 핵심 용어 필 — 본문 속 배지. --armed는 미적용 필터 칩이 남아 있는 동안
+   [조회] 필의 테두리를 강조해 "눌러야 반영된다"를 상기시킨다.
+   / inline pill for key terms in hints; --armed borders up while staged chips await [Query] */
+.hint-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 2px;
+  padding: 0 7px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--body-text);
+  background: var(--surface-elevated);
+}
+.hint-pill--armed {
+  border-color: var(--focus-blue);
+  color: var(--focus-blue);
+}

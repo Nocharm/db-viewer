@@ -101,14 +101,14 @@ export const MESSAGES = {
   "preview.runQuery": { ko: "조회", en: "Query" },
   // 서버 MAX_PREVIEW_FILTERS와 같은 숫자 / mirrors the server-side cap
   "preview.maxFilters": { ko: "조건은 최대 5개", en: "Up to 5 conditions" },
-  "preview.requeryHint": {
-    ko: "조건은 AND로 결합 — [조회]가 원본에 재질의 (로컬은 합성 데이터)",
-    en: "Conditions AND together; [Query] re-queries the source (local: synthetic data)",
+  // 안내 문구는 핵심 용어를 필(칩)로 감싸 조립한다 — Pre/Post가 필 앞뒤 텍스트
+  "preview.requeryHintPre": { ko: "조건은 AND로 결합 — ", en: "Conditions AND together — " },
+  "preview.requeryHintPost": {
+    ko: " 를 눌러야 원본에 재질의됩니다",
+    en: " re-queries the source",
   },
-  "preview.quickFilterHint": {
-    ko: "셀 더블클릭 = 그 값으로 필터",
-    en: "Double-click a cell to filter by its value",
-  },
+  "preview.quickFilterHintKey": { ko: "셀 더블클릭", en: "Double-click a cell" },
+  "preview.quickFilterHintPost": { ko: " = 그 값으로 필터", en: " to filter by its value" },
   "preview.clear": { ko: "필터 해제", en: "Clear filters" },
   "preview.empty": {
     ko: "조건에 맞는 행 없음 — 필터를 완화해 보세요",

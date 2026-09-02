@@ -141,6 +141,25 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
   useEffect(() => () => {
     if (flashTimer.current !== null) clearTimeout(flashTimer.current);
   }, []);
+  // 안내 필 강조 — 미적용 칩이 남아 있는 동안 상시 테두리 강조, 조건이 새로 추가되는
+  // 순간 1회 플래시로 시선을 [조회] 필로 보낸다 / the hint pill stays armed while
+  // staged-but-unapplied chips exist, and flashes once whenever a condition is added
+  const hasUnapplied = staged.some((c) => !appliedKeys.has(condKey(c)));
+  const [hintFlash, setHintFlash] = useState(false);
+  const hintFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevStagedCount = useRef(staged.length);
+  useEffect(() => {
+    if (staged.length > prevStagedCount.current) {
+      setHintFlash(true);
+      if (hintFlashTimer.current !== null) clearTimeout(hintFlashTimer.current);
+      hintFlashTimer.current = setTimeout(() => setHintFlash(false), 1500);
+    }
+    prevStagedCount.current = staged.length;
+  }, [staged.length]);
+  useEffect(() => () => {
+    if (hintFlashTimer.current !== null) clearTimeout(hintFlashTimer.current);
+  }, []);
+
   const pickFilterColumn = (column: string) => {
     setDraftColumn(column);
     setFilterFlash(true);
@@ -342,15 +361,6 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
             </span>
           ))}
           <button
-            className="btn-primary !py-1.5 text-xs"
-            disabled={tab.loading}
-            onClick={() => onRefetch(tab.id, { filters: staged, limit })}
-            data-testid="PreviewSection-runQueryButton"
-          >
-            <SearchIcon size={11} className="mr-1 inline-block align-middle" />
-            {tab.loading ? t("detail.loading") : t("preview.runQuery")}
-          </button>
-          <button
             className="icon-button"
             onClick={() => {
               setStaged([]);
@@ -360,6 +370,19 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
           >
             <CloseIcon size={10} className="mr-1 inline-block align-middle" />
             {t("preview.clear")}
+          </button>
+          {/* 주 행동이라 남은 폭을 전부 차지 — flex-wrap 컨테이너라 minWidth 미달이면
+              다음 줄로 내려가 전체 폭을 쓴다 / the primary action fills the row's
+              remaining width; below minWidth it wraps to a full-width line */}
+          <button
+            className="btn-primary !py-1.5 inline-flex flex-1 items-center justify-center text-xs"
+            style={{ minWidth: "10rem" }}
+            disabled={tab.loading}
+            onClick={() => onRefetch(tab.id, { filters: staged, limit })}
+            data-testid="PreviewSection-runQueryButton"
+          >
+            <SearchIcon size={11} className="mr-1 inline-block align-middle" />
+            {tab.loading ? t("detail.loading") : t("preview.runQuery")}
           </button>
         </div>
       )}
@@ -371,8 +394,21 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
             {t("preview.masked")} {data.masked_columns.length}{t("preview.maskedSuffix")}
           </span>
         )}
-        <span>{t("preview.requeryHint")}</span>
-        <span>{t("preview.quickFilterHint")}</span>
+        <span data-testid="PreviewSection-requeryHint">
+          {t("preview.requeryHintPre")}
+          <span
+            className={`hint-pill${hasUnapplied ? " hint-pill--armed" : ""}${hintFlash ? " filter-flash" : ""}`}
+            data-testid="PreviewSection-requeryHintPill"
+          >
+            <SearchIcon size={9} className="inline-block align-middle" />
+            {t("preview.runQuery")}
+          </span>
+          {t("preview.requeryHintPost")}
+        </span>
+        <span data-testid="PreviewSection-quickFilterHint">
+          <span className="hint-pill">{t("preview.quickFilterHintKey")}</span>
+          {t("preview.quickFilterHintPost")}
+        </span>
       </div>
 
       <div className="scroll-area rounded-lg border"
