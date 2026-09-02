@@ -649,10 +649,19 @@ export interface AuditPage {
 }
 
 export function fetchAuditLog(
-  opts: { action?: string; limit?: number; offset?: number } = {},
+  opts: {
+    action?: string; requestedBy?: string; q?: string;
+    /** 기간 [from, to) — ISO 문자열, 프론트가 로컬 자정 기준으로 변환 */
+    dateFrom?: string; dateTo?: string;
+    limit?: number; offset?: number;
+  } = {},
 ): Promise<AuditPage> {
   const params = new URLSearchParams();
   if (opts.action) params.set("action", opts.action);
+  if (opts.requestedBy) params.set("requested_by", opts.requestedBy);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.dateFrom) params.set("date_from", opts.dateFrom);
+  if (opts.dateTo) params.set("date_to", opts.dateTo);
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
   if (opts.offset !== undefined) params.set("offset", String(opts.offset));
   const query = params.toString();

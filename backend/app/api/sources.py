@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_preview_admin, require_sysadmin
 from app.db import get_db
+from app.auth import get_current_user
 from app.models import AuditLog, DataSource, PreviewAllowlist, SchemaCategory, Snapshot
 from app.sources.connection import clear_sa_engine, get_sa_engine
 from app.sources.crypto import CryptoNotConfigured, encrypt_secret, is_crypto_configured
@@ -187,12 +188,19 @@ def update_data_source(
     admin: str = Depends(require_sysadmin),
 ) -> dict:
     source = _get_editable(db, source_id)
+    # 감사에 "무엇이" 바뀌었는지 필드명만 남긴다 — 값(호스트·계정 등)은 남기지 않는다.
+    # 이름만으로는 활성화 토글인지 자격증명 교체인지 구분이 안 됐다 / field names only
+    changed: list[str] = []
     if req.name is not None:
         source.name = req.name.strip()
+        changed.append("name")
     for field in ("host", "port", "database", "username", "file_path", "is_enabled"):
         value = getattr(req, field)
         if value is not None:
             setattr(source, field, value)
+            changed.append(field)
+    if req.password:
+        changed.append("password")
     if req.password:
         try:
             source.password_enc = encrypt_secret(req.password)
@@ -201,7 +209,8 @@ def update_data_source(
     source.updated_at = datetime.now(UTC)
     # 낡은 접속정보(host·비밀번호·파일경로)로 계속 붙지 않게 캐시를 비운다 (이월 4)
     clear_sa_engine(source.id)
-    db.add(AuditLog(action="source_update", detail=source.name,
+    db.add(AuditLog(action="source_update",
+                    detail=f"{source.name} [{', '.join(changed) or 'no-op'}]",
                     requested_by=admin, requested_at=source.updated_at))
     return _serialize(source)
 
@@ -247,7 +256,10 @@ def delete_data_source(
 
 
 @router.post("/{source_id}/test")
-def test_data_source(source_id: int, db: Session = Depends(get_db)) -> dict:
+def test_data_source(
+    source_id: int, db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+) -> dict:
     """실제로 붙은 DB의 이름·버전을 회신한다 — 흔한 컨테이너명 오접속을 눈으로 잡는다.
 
     get_source(allow_disabled=True)를 거친다 — 존재하지 않으면(404) 걸러지지만,
@@ -285,6 +297,8 @@ def test_data_source(source_id: int, db: Session = Depends(get_db)) -> dict:
                        extra={"source_id": source.id, "error_type": error_type})
         source.last_error = error_type
         source.updated_at = now
+        db.add(AuditLog(action="source_test", detail=f"{source.name} fail ({error_type})",
+                        requested_by=user, requested_at=now))
         db.commit()
         raise HTTPException(503, {"message": str(e),
                                   "context": {"source": source.name}}) from e
@@ -298,6 +312,8 @@ def test_data_source(source_id: int, db: Session = Depends(get_db)) -> dict:
                        exc_info=True)
         source.last_error = error_type
         source.updated_at = now
+        db.add(AuditLog(action="source_test", detail=f"{source.name} fail ({error_type})",
+                        requested_by=user, requested_at=now))
         # get_db는 라우트가 던진 예외를 받으면 세션을 롤백한다 — 실패 기록이 그
         # 롤백에 같이 쓸려가지 않도록 여기서 먼저 커밋해 둔다
         db.commit()
@@ -309,5 +325,8 @@ def test_data_source(source_id: int, db: Session = Depends(get_db)) -> dict:
     source.last_ok_at = now
     source.last_error = None
     source.updated_at = now
+    # 저장된 자격증명으로 남의 DB에 실제 접속한 조작 — 성공도 남긴다
+    db.add(AuditLog(action="source_test", detail=f"{source.name} ok",
+                    requested_by=user, requested_at=now))
     return {"ok": True, "version": row["version"], "database": row["database"],
             "latency_ms": round((time.monotonic() - started) * 1000, 1)}
