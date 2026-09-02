@@ -924,7 +924,13 @@ input::placeholder {
   color: var(--body-text);
   background: var(--surface-elevated);
 }
-.hint-pill--armed {
-  border-color: var(--focus-blue);
-  color: var(--focus-blue);
+
+/* 미적용 필터 칩 — [조회] 전이라는 신호로 테두리를 천천히 깜빡인다(대시 유지).
+   전역 reduced-motion 가드가 자동으로 끈다 / staged-but-unapplied chips blink slowly */
+@keyframes chip-pending-blink {
+  0%, 100% { border-color: var(--hairline-strong); }
+  50% { border-color: var(--focus-blue); }
+}
+.chip-pending {
+  animation: chip-pending-blink 2.4s ease-in-out infinite;
 }

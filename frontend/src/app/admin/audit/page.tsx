@@ -21,9 +21,30 @@ const ACTION_LABELS: Record<string, string> = {
   hidden_schema_render_set: "감춘 스키마 표시 토글",
   table_preview: "테이블 미리보기 (실값 반출)",
   join_preview: "조인 미리보기 (실값 반출)",
-  relation_confirm: "관계 확정",
-  login: "로그인",
+  // 백엔드 action 코드가 짧다 — relations.py는 "confirm", validate.py는 "preview"
+  confirm: "관계 확정",
+  preview: "조인 검증 미리보기 (실값 반출)",
+  login: "로그인 (Keycloak)",
+  ldap_login: "로그인 (LDAP)",
+  source_create: "데이터 소스 등록",
+  source_update: "데이터 소스 수정",
+  source_delete: "데이터 소스 삭제",
+  source_test: "소스 연결 테스트",
+  collect_trigger: "카탈로그 수집 트리거",
+  ad_sync_all: "AD 전체 동기화",
 };
+
+// 로컬 날짜 입력(YYYY-MM-DD)을 [from, to) ISO로 — to는 다음 날 자정(미포함 상한)
+function toIsoRange(from: string, to: string): { dateFrom?: string; dateTo?: string } {
+  const range: { dateFrom?: string; dateTo?: string } = {};
+  if (from) range.dateFrom = new Date(`${from}T00:00:00`).toISOString();
+  if (to) {
+    const next = new Date(`${to}T00:00:00`);
+    next.setDate(next.getDate() + 1);
+    range.dateTo = next.toISOString();
+  }
+  return range;
+}
 
 export default function AuditPage() {
   const me = useMe();
@@ -31,6 +52,10 @@ export default function AuditPage() {
   const [actions, setActions] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [action, setAction] = useState("");
+  const [requestedBy, setRequestedBy] = useState("");
+  const [q, setQ] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +63,13 @@ export default function AuditPage() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchAuditLog({ action: action || undefined, limit: PAGE_SIZE, offset })
+    fetchAuditLog({
+      action: action || undefined,
+      requestedBy: requestedBy.trim() || undefined,
+      q: q.trim() || undefined,
+      ...toIsoRange(dateFrom, dateTo),
+      limit: PAGE_SIZE, offset,
+    })
       .then((res) => {
         setItems(res.items);
         setActions(res.actions);
@@ -46,9 +77,13 @@ export default function AuditPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [action, offset]);
+  }, [action, requestedBy, q, dateFrom, dateTo, offset]);
 
-  useEffect(() => { load(); }, [load]);
+  // 텍스트 입력은 타자마다 요청하지 않게 짧게 디바운스 — 셀렉트·날짜·페이지는 즉시
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
 
   if (!me?.is_sysadmin) {
     return (
@@ -83,7 +118,7 @@ export default function AuditPage() {
             최신순이며 수정·삭제 경로는 없습니다.
           </p>
 
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <select
               className="rounded border px-3 py-1.5 text-sm"
               style={{ borderColor: "var(--border-light)" }}
@@ -96,6 +131,51 @@ export default function AuditPage() {
                 <option key={code} value={code}>{ACTION_LABELS[code] ?? code}</option>
               ))}
             </select>
+            <input
+              className="w-32 rounded border px-3 py-1.5 text-sm"
+              style={{ borderColor: "var(--border-light)" }}
+              placeholder="요청자"
+              value={requestedBy}
+              onChange={(e) => { setRequestedBy(e.target.value); setOffset(0); }}
+              data-testid="AuditPage-requestedByFilter"
+            />
+            <input
+              className="w-48 rounded border px-3 py-1.5 text-sm"
+              style={{ borderColor: "var(--border-light)" }}
+              placeholder="대상 검색 (테이블·스키마…)"
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setOffset(0); }}
+              data-testid="AuditPage-detailFilter"
+            />
+            <input
+              type="date"
+              className="rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "var(--border-light)" }}
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setOffset(0); }}
+              data-testid="AuditPage-dateFromFilter"
+            />
+            <span className="text-xs" style={{ color: "var(--muted)" }}>–</span>
+            <input
+              type="date"
+              className="rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "var(--border-light)" }}
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setOffset(0); }}
+              data-testid="AuditPage-dateToFilter"
+            />
+            {(action || requestedBy || q || dateFrom || dateTo) && (
+              <button
+                className="icon-button"
+                onClick={() => {
+                  setAction(""); setRequestedBy(""); setQ("");
+                  setDateFrom(""); setDateTo(""); setOffset(0);
+                }}
+                data-testid="AuditPage-clearFilters"
+              >
+                필터 해제
+              </button>
+            )}
             <button className="icon-button" onClick={load} disabled={loading}
                     data-testid="AuditPage-refreshButton">
               {loading ? "불러오는 중…" : "새로고침"}

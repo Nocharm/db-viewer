@@ -15,7 +15,7 @@ from app.adapters.collect_runner import CollectRunner
 from app.auth import require_sysadmin
 from app.config import get_settings
 from app.db import get_db, get_session_factory
-from app.models import CollectJob, DataSource, Snapshot
+from app.models import AuditLog, CollectJob, DataSource, Snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,10 @@ def trigger_catalog_step(
     if req.source_id is not None:
         runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = _create_job(db, "step", req.triggered_by)
+    # 소스 DB를 통째로 읽으러 가는 조작 — 누가 어느 소스에 걸었는지 남긴다
+    db.add(AuditLog(action="collect_trigger",
+                    detail=f"catalog source={req.source_id if req.source_id is not None else 'default'}",
+                    requested_by=req.triggered_by, requested_at=datetime.now(UTC)))
     background.add_task(_run_catalog_step, session_factory, runner, job.id)
     return _job_payload(job)
 
@@ -239,6 +243,9 @@ def trigger_full_collection(
     if req.source_id is not None:
         runner = get_collect_runner_for(req.source_id, db, session_factory)
     job = _create_job(db, "full", req.triggered_by)
+    db.add(AuditLog(action="collect_trigger",
+                    detail=f"full source={req.source_id if req.source_id is not None else 'default'}",
+                    requested_by=req.triggered_by, requested_at=datetime.now(UTC)))
     background.add_task(_run_full, session_factory, runner, job.id)
     return _job_payload(job)
 

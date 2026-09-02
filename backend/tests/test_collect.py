@@ -453,3 +453,24 @@ def test_view_deps_trigger_still_409s_for_unfinished_non_direct_job(cclient, mig
 
     # Assert
     assert res.status_code == 409
+
+
+def test_collect_trigger_is_audited(cclient, monkeypatch):
+    # Arrange: 관리자 신원으로 조회할 수 있게
+    from app.config import get_settings
+
+    monkeypatch.setenv("DBV_SYSADMINS", "admin.user")
+    get_settings.cache_clear()
+
+    # Act: 카탈로그 수집을 건다
+    res = cclient.post("/api/collect/catalog", json={"triggered_by": "kim.ops"})
+    assert res.status_code == 202
+
+    # Assert: 누가 어느 소스에 걸었는지 남는다 (기본 소스는 'default')
+    items = cclient.get("/api/admin/audit",
+                        headers={"X-Dev-User": "admin.user"}).json()["items"]
+    triggers = [i for i in items if i["action"] == "collect_trigger"]
+    assert len(triggers) == 1
+    assert triggers[0]["detail"] == "catalog source=default"
+    assert triggers[0]["requested_by"] == "kim.ops"
+    get_settings.cache_clear()

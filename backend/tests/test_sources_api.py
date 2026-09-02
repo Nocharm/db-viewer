@@ -588,3 +588,44 @@ def test_source_options_are_readable_by_a_non_sysadmin_without_connection_detail
         assert secret not in options.text
     # 관리용 전체 목록은 여전히 sysadmin 전용
     assert admin_list.status_code == 403
+
+
+def test_connection_test_and_update_are_audited(client, monkeypatch, tmp_path):
+    # Arrange: 실제 sqlite 파일로 소스를 만들고
+    _configure(monkeypatch)
+    db_path = tmp_path / "audit-probe.db"
+    sqlite3.connect(str(db_path)).close()
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcaudit", "engine": "sqlite", "file_path": str(db_path)}).json()
+    sid = created["id"]
+
+    # Act: 연결 테스트 성공 + 이름·활성화 두 필드 수정
+    assert client.post(f"/api/sources/{sid}/test", headers=HEADERS).status_code == 200
+    client.patch(f"/api/sources/{sid}", headers=HEADERS,
+                 json={"name": "svcaudit2", "is_enabled": False})
+
+    # Assert: 저장된 자격증명으로 붙어본 조작(성공 포함)과 "무엇이" 바뀌었는지가 남는다
+    items = client.get("/api/admin/audit", headers=HEADERS).json()["items"]
+    by_action = {i["action"]: i for i in items}
+    assert by_action["source_test"]["detail"] == "svcaudit ok"
+    assert by_action["source_update"]["detail"] == "svcaudit2 [name, is_enabled]"
+    get_settings.cache_clear()
+
+
+def test_failed_connection_test_is_audited(client, monkeypatch):
+    # Arrange: 존재하지 않는 파일 — 접속이 실패해야 한다
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcbroken", "engine": "sqlite",
+        "file_path": "/nonexistent/broken.db"}).json()
+
+    # Act
+    res = client.post(f"/api/sources/{created['id']}/test", headers=HEADERS)
+
+    # Assert: 502로 실패해도 감사 행은 남는다 (commit-before-raise)
+    assert res.status_code == 502
+    items = client.get("/api/admin/audit", headers=HEADERS).json()["items"]
+    fails = [i for i in items if i["action"] == "source_test"]
+    assert len(fails) == 1
+    assert fails[0]["detail"].startswith("svcbroken fail (")
+    get_settings.cache_clear()

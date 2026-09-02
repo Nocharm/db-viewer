@@ -200,6 +200,10 @@ def add_preview_allow(
 @router.get("/audit")
 def get_audit_log(
     action: str | None = None,
+    requested_by: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -212,6 +216,20 @@ def get_audit_log(
     "이게 전부"라고 거짓말하기 때문 (objects 검색과 같은 이유).
     """
     filters = [AuditLog.action == action] if action else []
+    # 요청자·대상은 부분일치 — 감사 화면에서 사번 일부·테이블명 일부로 좁힌다.
+    # LIKE 메타문자(%·_)는 이스케이프해 리터럴로 취급 / escape LIKE wildcards
+    def contains(column, term: str):
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return column.ilike(f"%{escaped}%", escape="\\")
+    if requested_by:
+        filters.append(contains(AuditLog.requested_by, requested_by))
+    if q:
+        filters.append(contains(AuditLog.detail, q))
+    # 기간은 [from, to) — 프론트가 로컬 자정 기준으로 변환해 보낸다
+    if date_from is not None:
+        filters.append(AuditLog.requested_at >= date_from)
+    if date_to is not None:
+        filters.append(AuditLog.requested_at < date_to)
     total = db.execute(
         select(func.count()).select_from(AuditLog).where(*filters)
     ).scalar_one()
@@ -299,7 +317,7 @@ def remove_preview_allow(
 
 
 @router.post("/users/sync")
-def sync_users(db: Session = Depends(get_db)) -> dict:
+def sync_users(db: Session = Depends(get_db), admin: str = Depends(require_sysadmin)) -> dict:
     """AD 전체 동기화 — 5분 스로틀, LDAP 미설정 시 503 / throttled full sync."""
     global _last_full_sync
     if not get_settings().ldap_enabled:
@@ -312,5 +330,12 @@ def sync_users(db: Session = Depends(get_db)) -> dict:
     from app.ad import service as ad_service
 
     summary = ad_service.sync_all(db)
+    # purge는 접근 주체 목록을 줄이는 조작 — 몇 명이 사라졌는지까지 감사에 남긴다
+    db.add(AuditLog(
+        action="ad_sync_all",
+        detail=f"scanned={summary.scanned} upserted={summary.upserted} "
+               f"excluded={summary.excluded} purged={summary.purged}",
+        requested_by=admin, requested_at=datetime.now(UTC),
+    ))
     return {"scanned": summary.scanned, "upserted": summary.upserted,
             "excluded": summary.excluded, "purged": summary.purged}
