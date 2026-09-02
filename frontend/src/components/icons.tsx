@@ -139,6 +139,50 @@ export function CodeIcon(props: IconProps) {
   );
 }
 
+/** 목록 — 고유값 등 리스트형 보기 / a list of rows. */
+export function ListIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h.01" />
+      <path d="M9 6h11" />
+      <path d="M4 12h.01" />
+      <path d="M9 12h11" />
+      <path d="M4 18h.01" />
+      <path d="M9 18h11" />
+    </Svg>
+  );
+}
+
+/** 숨기기 — 눈 + 사선 / hide from view. */
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" />
+      <path d="M4.5 4.5l15 15" />
+    </Svg>
+  );
+}
+
+/** 제외 — 금지 원 / exclude, a ban sign. */
+export function BanIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M6 6l12 12" />
+    </Svg>
+  );
+}
+
+/** 복사 — 겹친 사각형 / copy to clipboard. */
+export function CopyIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+    </Svg>
+  );
+}
+
 export function DownloadIcon(props: IconProps) {
   return (
     <Svg {...props}>

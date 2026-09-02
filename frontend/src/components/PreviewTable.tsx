@@ -4,7 +4,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
+import {
+  ArrowDownIcon, ArrowUpIcon, BanIcon, CloseIcon, CopyIcon, EyeOffIcon, FilterIcon,
+  ListIcon, ResetIcon,
+} from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import type { TablePreview } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
@@ -443,48 +446,48 @@ export function PreviewTable({
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => onSort({ column: menu.column, dir: "asc" }))}
                   data-testid="PreviewTable-sortAscItem">
-            {t("preview.sortAsc")} <ArrowUpIcon size={11} className="inline-block align-middle" />
+            <ArrowUpIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.sortAsc")}
           </button>
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => onSort({ column: menu.column, dir: "desc" }))}
                   data-testid="PreviewTable-sortDescItem">
-            {t("preview.sortDesc")} <ArrowDownIcon size={11} className="inline-block align-middle" />
+            <ArrowDownIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.sortDesc")}
           </button>
           {sort !== null && (
             <button className="pressable erd-menu__item"
                     onClick={() => menuAction(() => onSort(null))}
                     data-testid="PreviewTable-clearSortItem">
-              {t("preview.clearSort")}
+              <ResetIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.clearSort")}
             </button>
           )}
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => onToggleHidden(menu.column))}
                   data-testid="PreviewTable-hideColumnItem">
-            {t("preview.hideColumn")}
+            <EyeOffIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.hideColumn")}
           </button>
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => setUniqueColumn(menu.column))}
                   data-testid="PreviewTable-uniqueItem">
-            {t("preview.uniqueValues")}
+            <ListIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.uniqueValues")}
           </button>
           {onExcludeNulls && (
             <button className="pressable erd-menu__item"
                     onClick={() => menuAction(() => onExcludeNulls(menu.column))}
                     data-testid="PreviewTable-excludeNullsItem">
-              {t("preview.excludeNulls")}
+              <BanIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.excludeNulls")}
             </button>
           )}
           {onPickFilterColumn && (
             <button className="pressable erd-menu__item"
                     onClick={() => menuAction(() => onPickFilterColumn(menu.column))}
                     data-testid="PreviewTable-filterColumnItem">
-              {t("preview.filterThisColumn")}
+              <FilterIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.filterThisColumn")}
             </button>
           )}
           <button className="pressable erd-menu__item"
                   onClick={() => menuAction(() => copyText(menu.column))}
                   data-testid="PreviewTable-copyColumnItem">
-            {t("preview.copyColumn")}
+            <CopyIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.copyColumn")}
           </button>
         </div>
       )}
