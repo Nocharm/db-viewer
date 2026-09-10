@@ -40,6 +40,12 @@ class ValueProbeJob(Base):
     progress_total: Mapped[int] = mapped_column(Integer)
     progress_done: Mapped[int] = mapped_column(Integer)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # 연관 뷰 옵션 — 선택 스키마 밖에서 lineage로 찾아 자동 포함한 스키마와, 정책(숨김·허용 목록)
+    # 때문에 제외한 뷰 목록(JSON). 실행 직전 게이트 재검사가 related_schemas까지 본다.
+    # / related-view option: auto-included schemas and policy-skipped views (JSON)
+    include_related_views: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    related_schemas: Mapped[str] = mapped_column(Text, server_default="[]")
+    related_skipped: Mapped[str] = mapped_column(Text, server_default="[]")
     current_qname: Mapped[str | None] = mapped_column(String(261))
     triggered_by: Mapped[str] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)

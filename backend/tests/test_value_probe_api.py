@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.value_probe import get_probe_session_factory
 from app.config import get_settings
-from app.models import Base, CatalogObject, ValueProbeHit, ViewLineageFlat
+from app.models import Base, CatalogColumn, CatalogObject, ValueProbeHit, ViewLineageFlat
 
 
 @pytest.fixture()
@@ -253,3 +253,101 @@ def test_heavy_and_cancel_are_owner_only(pclient, load_fixture, allow_preview):
     other = {"X-Dev-User": "someone.else"}
     assert pclient.post(f"/api/value-probe/{job_id}/heavy", json={"target_ids": [1]}, headers=other).status_code == 404
     assert pclient.post(f"/api/value-probe/{job_id}/cancel", headers=other).status_code == 404
+
+
+def _add_related_view(migrated_engine, sid: int, schema: str = "OTHER") -> int:
+    """다른 스키마에서 dbo.APV_APRV.APRVCD를 읽는 뷰 1개 + lineage / a view in another schema."""
+    with sessionmaker(bind=migrated_engine)() as db:
+        base = db.execute(sa.select(CatalogObject).where(
+            CatalogObject.snapshot_id == sid, CatalogObject.schema == "dbo",
+            CatalogObject.name == "APV_APRV")).scalar_one()
+        view = CatalogObject(snapshot_id=sid, schema=schema, name="V_RELATED", type="view",
+                             object_id=990001, row_count=None,
+                             definition="SELECT APRVCD AS RELATED_CD FROM dbo.APV_APRV",
+                             dmv_unresolved=False)
+        db.add(view)
+        db.flush()
+        db.add(CatalogColumn(object_id=view.id, name="RELATED_CD", ordinal=1, data_type="int",
+                             max_length=4, is_nullable=True, is_pk=False, is_computed=False))
+        db.add(ViewLineageFlat(snapshot_id=sid, view_object_id=view.id, view_column="RELATED_CD",
+                               base_object_id=base.id, base_column="APRVCD", depth=1,
+                               mapping_kind="derived", flag=None))
+        db.commit()
+        return view.id
+
+
+def test_related_views_are_off_by_default(pclient, load_fixture, allow_preview, migrated_engine):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X")
+    _add_related_view(migrated_engine, sid)
+    _, _, value = _known_value(load_fixture)
+    res = _start(pclient, value)
+    assert res.json()["plan"]["related_views"] == {"included": 0, "skipped": []}
+    job = pclient.get(f"/api/value-probe/{res.json()['job_id']}").json()
+    assert job["include_related_views"] is False and job["related_schemas"] == []
+
+
+def test_related_view_outside_the_allowlist_is_reported_not_probed(pclient, load_fixture, allow_preview, migrated_engine):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X")
+    _add_related_view(migrated_engine, sid)
+    _, _, value = _known_value(load_fixture)
+    res = _start(pclient, value, include_related_views=True)
+    assert res.status_code == 202, res.json()
+    plan = res.json()["plan"]["related_views"]
+    assert plan == {"included": 0, "skipped": [
+        {"qname": "OTHER.V_RELATED", "schema": "OTHER", "reason": "not_allowed"}]}
+    with migrated_engine.connect() as conn:
+        probed = conn.execute(sa.text(
+            "SELECT COUNT(*) FROM value_probe_targets WHERE job_id = :j AND qname = 'OTHER.V_RELATED'"
+        ), {"j": res.json()["job_id"]}).scalar_one()
+    assert probed == 0
+    job = pclient.get(f"/api/value-probe/{res.json()['job_id']}").json()
+    assert job["related_view_skipped"][0]["reason"] == "not_allowed"
+
+
+def test_hidden_related_view_schema_is_reported_as_hidden(pclient, load_fixture, allow_preview, migrated_engine, monkeypatch):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X", "OTHER.X")
+    _add_related_view(migrated_engine, sid)
+    monkeypatch.setattr(get_settings(), "hidden_schemas", "other")
+    _, _, value = _known_value(load_fixture)
+    res = _start(pclient, value, include_related_views=True)
+    assert res.json()["plan"]["related_views"]["skipped"][0]["reason"] == "hidden"
+
+
+def test_allowed_related_view_joins_the_plan_and_the_gates(pclient, load_fixture, allow_preview, migrated_engine):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X", "OTHER.X")
+    _add_related_view(migrated_engine, sid)
+    _, _, value = _known_value(load_fixture)
+    res = _start(pclient, value, include_related_views=True)
+    assert res.json()["plan"]["related_views"] == {"included": 1, "skipped": []}
+    job_id = res.json()["job_id"]
+    with migrated_engine.connect() as conn:
+        target = conn.execute(sa.text(
+            "SELECT tier, object_type FROM value_probe_targets WHERE job_id = :j AND qname = 'OTHER.V_RELATED'"
+        ), {"j": job_id}).one()
+    assert target.object_type == "view"
+    job = pclient.get(f"/api/value-probe/{job_id}").json()
+    assert job["related_schemas"] == ["OTHER"] and job["include_related_views"] is True
+    # 감사 로그에 연관 뷰 포함/제외 수가 남는다 / audit carries the related-view counts
+    with migrated_engine.connect() as conn:
+        detail = conn.execute(sa.text(
+            "SELECT detail FROM audit_logs WHERE action = 'value_probe' ORDER BY id DESC LIMIT 1"
+        )).scalar_one()
+    assert "related_views=+1/-0" in detail
+
+
+def test_runner_gate_covers_related_schemas(pclient, load_fixture, allow_preview, migrated_engine, monkeypatch):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X", "OTHER.X")
+    _add_related_view(migrated_engine, sid)
+    _, _, value = _known_value(load_fixture)
+    monkeypatch.setattr(get_settings(), "value_probe_max_concurrent", 0)  # 큐에 머문다
+    job_id = _start(pclient, value, include_related_views=True).json()["job_id"]
+    with migrated_engine.begin() as conn:
+        conn.execute(sa.text("DELETE FROM preview_allowlist WHERE data_source_id = 1 AND schema = 'OTHER'"))
+    monkeypatch.setattr(get_settings(), "value_probe_max_concurrent", 1)
+    job = pclient.get(f"/api/value-probe/{job_id}").json()
+    assert job["status"] == "failed" and job["error"] == "schema gate revoked"

@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
 from app.adapters.n8n_query import N8nQueryError
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.models import Base, CatalogObject, PreviewAllowlist, ValueProbeJob, ValueProbeTarget
 from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services import value_probe as service
@@ -244,3 +244,39 @@ def test_runner_fails_a_job_whose_schema_was_revoked(client, migrated_engine, lo
     with factory() as db:
         job = db.get(ValueProbeJob, job_id)
         assert job.status == "failed" and job.error == "schema gate revoked"
+
+
+def test_find_related_views_respects_hidden_and_allowlist(client, migrated_engine, load_fixture, monkeypatch):
+    sid = _seed(client, load_fixture)
+    from datetime import UTC, datetime
+
+    from app.models import CatalogColumn, CatalogObject, PreviewAllowlist, ViewLineageFlat
+    now = datetime.now(UTC)
+    with sessionmaker(bind=migrated_engine)() as db:
+        base = db.execute(sa.select(CatalogObject).where(
+            CatalogObject.snapshot_id == sid, CatalogObject.schema == "dbo",
+            CatalogObject.name == "APV_APRV")).scalar_one()
+        for schema, name in (("ALLOWED", "V_A"), ("BLOCKED", "V_B"), ("HIDDEN", "V_H")):
+            view = CatalogObject(snapshot_id=sid, schema=schema, name=name, type="view",
+                                 object_id=hash((schema, name)) % 10_000_000, row_count=None,
+                                 definition="SELECT APRVCD FROM dbo.APV_APRV", dmv_unresolved=False)
+            db.add(view)
+            db.flush()
+            db.add(CatalogColumn(object_id=view.id, name="APRVCD", ordinal=1, data_type="int",
+                                 max_length=4, is_nullable=True, is_pk=False, is_computed=False))
+            db.add(ViewLineageFlat(snapshot_id=sid, view_object_id=view.id, view_column="APRVCD",
+                                   base_object_id=base.id, base_column="APRVCD", depth=1,
+                                   mapping_kind="direct", flag=None))
+        db.add(PreviewAllowlist(data_source_id=MANAGED_MSSQL_SOURCE_ID, schema="ALLOWED",
+                                note=None, added_by="test", created_at=now))
+        db.add(PreviewAllowlist(data_source_id=MANAGED_MSSQL_SOURCE_ID, schema="HIDDEN",
+                                note=None, added_by="test", created_at=now))
+        db.commit()
+    monkeypatch.setattr(get_settings(), "hidden_schemas", "hidden")
+
+    with sessionmaker(bind=migrated_engine)() as db:
+        related = service.find_related_views(db, sid, ["dbo"], MANAGED_MSSQL_SOURCE_ID)
+    assert related.schemas == ("ALLOWED",)
+    assert len(related.object_ids) == 1
+    assert sorted(s["reason"] for s in related.skipped) == ["hidden", "not_allowed"]
+    assert {s["qname"] for s in related.skipped} == {"BLOCKED.V_B", "HIDDEN.V_H"}

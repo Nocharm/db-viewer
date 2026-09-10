@@ -22,7 +22,7 @@ from app.models import AuditLog, CatalogObject, DataSource, Snapshot, ViewLineag
 from app.models.value_probe import ValueProbeHit, ValueProbeJob, ValueProbeTarget
 from app.services.preview_policy import is_preview_allowed
 from app.services.schema_visibility import is_schema_hidden
-from app.services.value_probe import build_plan, run_startable_probe_jobs
+from app.services.value_probe import RelatedViews, build_plan, find_related_views, run_startable_probe_jobs
 
 router = APIRouter(prefix="/api/value-probe", tags=["value-probe"])
 
@@ -41,6 +41,8 @@ class ValueProbeRequest(BaseModel):
     value: str = Field(min_length=1, max_length=PROBE_VALUE_MAX_LEN)
     mode: ProbeMode = "normalized"
     hint: str | None = Field(None, max_length=128)
+    # 선택 스키마 밖의 뷰(lineage로 찾은)까지 후보에 넣을지 — 기본은 끈다(기존 동작 보존)
+    include_related_views: bool = False
 
 
 class HeavyRequest(BaseModel):
@@ -117,9 +119,11 @@ def start_value_probe(
         raise HTTPException(400, {"message": "no schema selected", "context": {}})
     _check_schema_gates(db, source.id, schemas)
 
+    related = (find_related_views(db, snapshot.id, schemas, source.id)
+               if req.include_related_views else RelatedViews((), (), ()))
     settings = get_settings()
     targets = build_plan(db, snapshot.id, schemas, source.engine, value, req.mode, req.hint,
-                         settings)
+                         settings, extra_object_ids=related.object_ids)
     auto = [t for t in targets if t.tier == "auto"]
     if req.mode == "contains" and len(auto) > settings.value_probe_contains_max_tables:
         raise HTTPException(400, {
@@ -134,6 +138,9 @@ def start_value_probe(
         hint=req.hint, schemas=json.dumps(schemas), status="queued" if auto else "done",
         progress_total=len(auto), progress_done=0, cancel_requested=False,
         triggered_by=login_id, created_at=now, finished_at=None if auto else now,
+        include_related_views=req.include_related_views,
+        related_schemas=json.dumps(list(related.schemas)),
+        related_skipped=json.dumps(list(related.skipped)),
     )
     db.add(job)
     db.flush()
@@ -146,10 +153,12 @@ def start_value_probe(
             est_rows=target.est_rows, status="pending",
         ))
     heavy_count = len(targets) - len(auto)
+    detail = (f"source={source.id} schemas={_format_schemas(schemas)} mode={req.mode} "
+              f"value='{value}' targets auto={len(auto)} heavy={heavy_count}")
+    if req.include_related_views:
+        detail += f" related_views=+{len(related.object_ids)}/-{len(related.skipped)}"
     db.add(AuditLog(
-        action="value_probe",
-        detail=(f"source={source.id} schemas={_format_schemas(schemas)} mode={req.mode} "
-                f"value='{value}' targets auto={len(auto)} heavy={heavy_count}")[:600],
+        action="value_probe", detail=detail[:600],
         requested_by=login_id, requested_at=now,
     ))
     db.flush()
@@ -158,7 +167,9 @@ def start_value_probe(
     return {
         "job_id": job.id, "status": job.status,
         "plan": {"auto": len(auto), "heavy": heavy_count,
-                 "columns": sum(len(t.columns) for t in targets)},
+                 "columns": sum(len(t.columns) for t in targets),
+                 "related_views": {"included": len(related.object_ids),
+                                    "skipped": list(related.skipped)}},
     }
 
 
@@ -227,6 +238,9 @@ def get_value_probe_job(
         "error": job.error, "current_qname": job.current_qname,
         "value": job.value, "mode": job.mode, "schemas": json.loads(job.schemas),
         "source_id": job.data_source_id,
+        "include_related_views": job.include_related_views,
+        "related_schemas": json.loads(job.related_schemas or "[]"),
+        "related_view_skipped": json.loads(job.related_skipped or "[]"),
         "hits": [
             {
                 "object_id": hit.object_id, "qname": hit.qname, "object_type": hit.object_type,
@@ -266,8 +280,9 @@ def run_heavy_targets(
                        "targets",
             "context": {"job_id": job.id, "status": job.status},
         })
-    # 허용 목록은 잡 생성 후 관리자가 철회했을 수 있다 — 승격 시점에 다시 확인한다
-    _check_schema_gates(db, job.data_source_id, json.loads(job.schemas))
+    # 허용 목록은 잡 생성 후 관리자가 철회했을 수 있다 — 승격 시점에 다시 확인한다(연관 뷰 스키마 포함)
+    _check_schema_gates(db, job.data_source_id,
+                        json.loads(job.schemas) + json.loads(job.related_schemas or "[]"))
     wanted = set(req.target_ids)
     targets = db.execute(
         select(ValueProbeTarget)

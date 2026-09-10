@@ -8,9 +8,10 @@
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import DBAPIError, DisconnectionError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import Session, aliased, sessionmaker
@@ -29,6 +30,50 @@ logger = logging.getLogger(__name__)
 # 대상 단위로 격리하는 소스 오류 — 조립 버그(CompileError 등)는 잡 전체를 failed로 드러낸다
 SOURCE_ERRORS = (DBAPIError, SATimeoutError, DisconnectionError, N8nQueryError)
 
+
+@dataclass(frozen=True)
+class RelatedViews:
+    """선택 스키마 밖에서 찾은 연관 뷰 — 포함할 객체 id, 그 스키마, 정책으로 제외한 목록."""
+
+    object_ids: tuple[int, ...]
+    schemas: tuple[str, ...]
+    skipped: tuple[dict, ...]
+
+
+def find_related_views(
+    db: Session, snapshot_id: int, schemas: list[str], source_id: int,
+) -> RelatedViews:
+    """선택 스키마의 객체를 lineage로 읽는 다른 스키마의 뷰.
+
+    값을 실제로 읽는 대상이므로 그 뷰의 스키마도 숨김이 아니고 허용 목록에 있어야 한다.
+    조건에 안 맞는 뷰는 조용히 빼지 않고 사유와 함께 돌려준다 — 화면이 ⓘ로 보여준다.
+    """
+    base_obj = aliased(CatalogObject)
+    view_obj = aliased(CatalogObject)
+    rows = db.execute(
+        select(view_obj.id, view_obj.schema, view_obj.name).distinct()
+        .join(ViewLineageFlat, ViewLineageFlat.view_object_id == view_obj.id)
+        .join(base_obj, base_obj.id == ViewLineageFlat.base_object_id)
+        .where(ViewLineageFlat.snapshot_id == snapshot_id, view_obj.type == "view",
+               base_obj.schema.in_(schemas), view_obj.schema.notin_(schemas))
+        .order_by(view_obj.schema, view_obj.name)
+    ).all()
+    object_ids: list[int] = []
+    included: list[str] = []
+    skipped: list[dict] = []
+    for view_id, schema, name in rows:
+        qname = f"{schema}.{name}"
+        if is_schema_hidden(schema):
+            skipped.append({"qname": qname, "schema": schema, "reason": "hidden"})
+        elif not is_preview_allowed(db, source_id, schema):
+            skipped.append({"qname": qname, "schema": schema, "reason": "not_allowed"})
+        else:
+            object_ids.append(view_id)
+            if schema not in included:
+                included.append(schema)
+    return RelatedViews(tuple(object_ids), tuple(included), tuple(skipped))
+
+
 # n8n 오류 메시지에서 kind·status만 뽑아낸다 — url=·body=(드라이버 원문)는 절대 통과시키지 않는다
 _N8N_KIND_RE = re.compile(r"kind=(\w+)")
 _N8N_STATUS_RE = re.compile(r"status=(\d+)")
@@ -36,15 +81,22 @@ _N8N_STATUS_RE = re.compile(r"status=(\d+)")
 
 def load_probe_catalog(
     db: Session, snapshot_id: int, schemas: list[str],
+    extra_object_ids: tuple[int, ...] | list[int] = (),
 ) -> tuple[list[domain.ProbeCatalogColumn], dict[int, domain.ProbeCatalogObject]]:
-    """선택 스키마의 객체·컬럼 + 뷰 lineage(direct 컬럼 집합, 베이스 행 수)."""
+    """선택 스키마의 객체·컬럼 + 뷰 lineage(direct 컬럼 집합, 베이스 행 수).
+
+    extra_object_ids: 연관 뷰 옵션으로 선택 스키마 밖에서 추가된 객체 id — scope에 or로 합친다.
+    """
     hidden = get_hidden_schemas()
     wanted = [schema for schema in schemas if schema.lower() not in hidden]
-    if not wanted:
+    if not wanted and not extra_object_ids:
         return [], {}
+    scope = CatalogObject.schema.in_(wanted)
+    if extra_object_ids:
+        scope = or_(scope, CatalogObject.id.in_(list(extra_object_ids)))
     objects = db.execute(
         select(CatalogObject)
-        .where(CatalogObject.snapshot_id == snapshot_id, CatalogObject.schema.in_(wanted))
+        .where(CatalogObject.snapshot_id == snapshot_id, scope)
         .order_by(CatalogObject.schema, CatalogObject.name)
     ).scalars().all()
     if not objects:
@@ -53,12 +105,14 @@ def load_probe_catalog(
     view_obj = aliased(CatalogObject)
     direct: set[tuple[int, str]] = set()
     base_counts: dict[int, list[int | None]] = {}
+    view_scope = (or_(view_obj.schema.in_(wanted), view_obj.id.in_(list(extra_object_ids)))
+                  if extra_object_ids else view_obj.schema.in_(wanted))
     lineage_rows = db.execute(
         select(ViewLineageFlat.view_object_id, ViewLineageFlat.view_column,
                ViewLineageFlat.mapping_kind, CatalogObject.row_count)
         .join(view_obj, view_obj.id == ViewLineageFlat.view_object_id)
         .join(CatalogObject, CatalogObject.id == ViewLineageFlat.base_object_id, isouter=True)
-        .where(ViewLineageFlat.snapshot_id == snapshot_id, view_obj.schema.in_(wanted))
+        .where(ViewLineageFlat.snapshot_id == snapshot_id, view_scope)
     ).all()
     for view_id, view_column, kind, row_count in lineage_rows:
         if kind == "direct":
@@ -68,7 +122,7 @@ def load_probe_catalog(
     column_rows = db.execute(
         select(CatalogColumn)
         .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
-        .where(CatalogObject.snapshot_id == snapshot_id, CatalogObject.schema.in_(wanted))
+        .where(CatalogObject.snapshot_id == snapshot_id, scope)
         .order_by(CatalogColumn.object_id, CatalogColumn.ordinal)
     ).scalars().all()
     columns = [
@@ -94,10 +148,11 @@ def load_probe_catalog(
 def build_plan(
     db: Session, snapshot_id: int, schemas: list[str], engine: str,
     value: str, mode: str, hint: str | None, settings: Settings,
+    extra_object_ids: tuple[int, ...] | list[int] = (),
 ) -> list[domain.PlannedTarget]:
     """요청 하나의 대상 목록 — 쿼리 없이 카탈로그만으로 만든다."""
     interp = domain.interpret_value(value, mode)
-    columns, catalog = load_probe_catalog(db, snapshot_id, schemas)
+    columns, catalog = load_probe_catalog(db, snapshot_id, schemas, extra_object_ids)
     blacklist = {name.upper() for name in settings.low_cardinality_blacklist}
     candidates = domain.select_candidate_columns(
         columns, interp, engine, mode, settings.low_cardinality_min_distinct, blacklist,
@@ -214,7 +269,9 @@ def _execute_probe(job_id: int, session_factory: sessionmaker, settings: Setting
             return
         # 허용 목록은 관리자가 언제든 바꿀 수 있는 상태고, 큐에서 다른 잡 뒤에 기다리는 동안
         # 철회될 수 있다 — 기동 직전에 다시 확인해야 철회 후 값 쿼리가 나가는 창을 막는다
-        for schema in json.loads(job.schemas):
+        # (연관 뷰 스키마도 같은 값 쿼리 경로를 타므로 게이트에 포함한다)
+        gate_schemas = json.loads(job.schemas) + json.loads(job.related_schemas or "[]")
+        for schema in gate_schemas:
             if is_schema_hidden(schema) or not is_preview_allowed(db, job.data_source_id, schema):
                 job.status = "failed"
                 job.error = "schema gate revoked"
