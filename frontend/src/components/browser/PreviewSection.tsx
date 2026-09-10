@@ -102,6 +102,19 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 탭 전환 시에만 동기화
   }, [tab.id]);
 
+  // 딥링크로 필터를 실어 연 첫 조회 — 탭 생성 시점엔 data가 없어 staged가 비므로, 첫 데이터가
+  // 도착할 때 한 번만 서버 echo를 칩으로 올린다. 이후 재조회엔 손대지 않는다(사용자 칩 편집 보존).
+  // / first-data sync for tabs opened with filters; later refetches never touch staged chips
+  const syncedFirstDataTabRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!tab.data || syncedFirstDataTabRef.current === tab.id) return;
+    syncedFirstDataTabRef.current = tab.id;
+    const serverFilters = tab.data.filters;
+    if (serverFilters.length > 0) {
+      setStaged((cur) => (cur.length === 0 ? serverFilters : cur));
+    }
+  }, [tab.id, tab.data]);
+
   useEffect(() => {
     if (!columnsOpen) return;
     const handleClick = (e: MouseEvent) => {
