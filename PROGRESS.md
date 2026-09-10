@@ -6,6 +6,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-09-10
+
+- **값 추적(value probe) 설계 스펙** (feature/value-probe). 화면에 보인 값 하나로 어느 `스키마.객체.컬럼`에 있는지 찾되 소스 DB 쿼리를 후보 객체당 1개로 묶는 기능. 핵심 결정: 스키마(=시스템)를 명시적으로 고르고 자동 확장 없음, 카탈로그(타입·길이·마스킹·저카디널리티·뷰 direct lineage)만으로 후보를 잘라낸 뒤 `TOP 1 … WHERE c1 IN (…) OR c2 IN (…)` 한 방, `row_count` 임계값 초과·미상·복잡한 뷰는 heavy로 분리해 선택 실행, 일치 모드는 표기 변형(기본)·정확·부분(후보 20개 이하만), 결과는 목록 + 미리보기 딥링크. 통계 사전 판정·값 지문 인덱스·다중값 공존 검색은 비목표. 스펙 `docs/superpowers/specs/2026-09-10-value-probe-design.md`.
+
 ## 2026-09-02
 
 - **관리자 화면 연동 안내서 다운로드 버튼** — `데이터 소스` 섹션에 [연동 안내서 내려받기] 버튼 추가(`DataSourcePanel-guideDownload`). integration-guide.html은 이미 MD에서 주입된 배포 파생물이라 `docs/handoff/`에서 `frontend/public/handoff/`로 옮겨 웹 서빙(단일 위치, drift 없음). DownloadIcon 신설, README 참조 갱신.
