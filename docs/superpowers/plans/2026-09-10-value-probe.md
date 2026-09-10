@@ -479,7 +479,9 @@ def interpret_value(raw: str, mode: str) -> ValueInterpretation:
         number = _parse_number(stripped)
         ints = (int(number),) if number is not None and number == number.to_integral_value() else ()
         decimals = (_canon_decimal(number),) if number is not None else ()
-        dates = (stripped,) if _ISO_DATE_RE.match(stripped) and _parse_date(stripped) else ()
+        # 초 없는 "2026-09-10 14:30"도 정규화해야 _match_date의 19자 비교가 성립한다
+        parsed_exact = _parse_date(stripped) if _ISO_DATE_RE.match(stripped) else None
+        dates = (parsed_exact[0],) if parsed_exact else ()
         guid = _parse_guid(stripped)
         return ValueInterpretation(raw, (raw,), ints, decimals, dates,
                                    (guid,) if guid else ())
