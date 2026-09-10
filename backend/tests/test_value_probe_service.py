@@ -129,6 +129,18 @@ def test_cancel_requested_stops_before_the_first_target(client, migrated_engine,
         assert pending == job.progress_total
 
 
+def test_cancel_wins_even_when_no_auto_target_exists(client, migrated_engine, load_fixture, fixture_dir):
+    sid = _seed(client, load_fixture)
+    _, _, value = _known_value(load_fixture)
+    factory = sessionmaker(bind=migrated_engine)
+    # 대상이 하나도 없는 스키마 — 루프에 들어가지 않는 경로 / no targets, loop never runs
+    job_id = _new_job(factory, sid, value, schemas=("NO_SUCH_SCHEMA",), cancel=True)
+    service.run_startable_probe_jobs(factory, _settings(fixture_dir))
+    with factory() as db:
+        job = db.get(ValueProbeJob, job_id)
+        assert job.status == "cancelled" and job.finished_at is not None
+
+
 def test_one_failing_target_does_not_fail_the_job(client, migrated_engine, load_fixture, fixture_dir, monkeypatch):
     sid = _seed(client, load_fixture)
     obj, column, value = _known_value(load_fixture)

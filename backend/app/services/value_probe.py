@@ -170,9 +170,22 @@ def _probe_target(prober, schema: str, name: str, columns: list[domain.ProbeColu
     return "done", None, hits
 
 
+def _mark_cancelled(job: ValueProbeJob) -> None:
+    """취소 표시 — 루프 진입 전(대상 0건 포함)·도중 두 지점이 공유 / shared by both cancel sites."""
+    job.status = "cancelled"
+    job.current_qname = None
+    job.finished_at = datetime.now(UTC)
+
+
 def _execute_probe(job_id: int, session_factory: sessionmaker, settings: Settings) -> None:
     with session_factory() as db:
         job = db.get(ValueProbeJob, job_id)
+        if job.cancel_requested:
+            # 대상 목록이 비어(전부 heavy·후보 없음) 루프에 진입하지 못해도 취소가 이겨야 한다
+            # / must win even when the loop never runs (all-heavy or no candidates)
+            _mark_cancelled(job)
+            db.commit()
+            return
         source = db.get(DataSource, job.data_source_id)
         if source is None or not source.is_enabled:
             raise RuntimeError("data source unavailable")
@@ -189,9 +202,7 @@ def _execute_probe(job_id: int, session_factory: sessionmaker, settings: Setting
         with session_factory() as db:
             job = db.get(ValueProbeJob, job_id)
             if job.cancel_requested:
-                job.status = "cancelled"
-                job.current_qname = None
-                job.finished_at = datetime.now(UTC)
+                _mark_cancelled(job)
                 db.commit()
                 return
             target = db.get(ValueProbeTarget, target_id)
