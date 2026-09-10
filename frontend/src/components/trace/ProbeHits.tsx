@@ -62,7 +62,8 @@ export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsP
                     {t("trace.hits.storedAs")} <code>{hit.matched_variant}</code>
                   </span>
                 )}
-                <Link href={buildPreviewHref(hit, sourceId)} className="row-action ml-auto"
+                {/* row-action은 tr:hover에서만 드러난다 — 목록 행(li)의 주 행동은 항상 보여야 한다 */}
+                <Link href={buildPreviewHref(hit, sourceId)} className="btn-secondary ml-auto"
                       data-testid={`ProbeHits-preview-${key}`}>
                   {t("trace.hits.openPreview")}
                 </Link>
