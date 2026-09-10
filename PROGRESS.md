@@ -16,6 +16,7 @@
 - **W2 value_probe/value_count + 실행기 3종** — n8n 템플릿(타입별 리터럴·숫자 검증·LIKE 이스케이프, node 실행 테스트), N8nValueProber(재시도 0), FakeValueProber(value_sets 조회), create_value_prober 팩토리. n8n README에 requestTimeout 배포 점검 항목.
 - **값 추적 서비스** — 카탈로그 적재(선택 스키마·숨김 제외·뷰 direct lineage·베이스 행 수), build_plan, 백그라운드 러너(동시 수 가드, 대상마다 커밋, 취소, 대상 오류 격리, heavy 건수 생략). 픽스처 값 집합으로 끝까지 실행 검증.
 - **값 추적 API** — POST 202(숨김→허용 목록→계획→contains 범위 검사→감사), GET 폴링(진행 중 hits·heavy·실패 대상·MSSQL lineage 접기), heavy 승격, 취소, 요청자 본인/sysadmin만 조회. 재기동 시 running 잡 failed 처리. README 화면 절.
+- **값 추적 프론트 API·순수 로직** — api.ts 타입·함수 4개, lib/value-probe.ts(폼 검증, 선택 가능 스키마, 미리보기 딥링크 href, 폴링 지속, 나머지 스키마, 건수 표기, filters 파라미터 검증) + vitest.
 
 ## 2026-09-02
 

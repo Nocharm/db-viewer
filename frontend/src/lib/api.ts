@@ -596,6 +596,80 @@ export function fetchScanJob(jobId: number): Promise<ScanJobStatus> {
   return getJson(`/api/jobs/${jobId}`);
 }
 
+// ---------- 값 추적 (value probe) — 202 + 폴링, ScanJobStatus와 같은 형태 ----------
+
+export type ValueProbeMode = "normalized" | "exact" | "contains";
+
+export interface ValueProbeHit {
+  object_id: number;
+  qname: string;
+  object_type: "table" | "view";
+  column: string;
+  /** null = 건수 생략(heavy 객체) / null when the count query was skipped */
+  match_count: number | null;
+  count_capped: boolean;
+  /** 실제로 맞은 저장 형태 — 미리보기 필터에 이 값을 넣는다 / the variant that matched */
+  matched_variant: string;
+  /** 이 컬럼을 direct로 노출하는 뷰들 (MSSQL lineage) / views exposing this column */
+  exposed_by_views: string[];
+  /** 뷰 파생 컬럼 히트의 원본 / source of a derived view column */
+  derived_from: { qname: string; column: string } | null;
+}
+
+export interface ValueProbeHeavy {
+  target_id: number;
+  qname: string;
+  est_rows: number | null;
+  reason: "rows" | "unknown_rows" | "view_shape";
+}
+
+export interface ValueProbeJob {
+  job_id: number;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  progress: { done: number; total: number };
+  error: string | null;
+  current_qname: string | null;
+  value: string;
+  mode: ValueProbeMode;
+  schemas: string[];
+  source_id: number;
+  hits: ValueProbeHit[];
+  heavy: ValueProbeHeavy[];
+  failed_targets: { qname: string; status: string; error: string | null }[];
+}
+
+export interface ValueProbeStart {
+  job_id: number;
+  status: string;
+  plan: { auto: number; heavy: number; columns: number };
+}
+
+export interface ValueProbeRequest {
+  source_id: number;
+  schemas: string[];
+  value: string;
+  mode: ValueProbeMode;
+  hint?: string;
+}
+
+export function startValueProbe(req: ValueProbeRequest): Promise<ValueProbeStart> {
+  return postJson("/api/value-probe", req);
+}
+
+export function fetchValueProbeJob(jobId: number): Promise<ValueProbeJob> {
+  return getJson(`/api/value-probe/${jobId}`);
+}
+
+export function runValueProbeHeavy(
+  jobId: number, targetIds: number[],
+): Promise<{ job_id: number; status: string; promoted: number }> {
+  return postJson(`/api/value-probe/${jobId}/heavy`, { target_ids: targetIds });
+}
+
+export function cancelValueProbe(jobId: number): Promise<{ job_id: number; status: string }> {
+  return postJson(`/api/value-probe/${jobId}/cancel`, {});
+}
+
 /** AI 요약 생성·갱신 (캐시 무시) / regenerate the cached AI summary. */
 export function generateAiSummary(
   objectId: number,
