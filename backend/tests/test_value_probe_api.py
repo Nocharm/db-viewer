@@ -349,5 +349,6 @@ def test_runner_gate_covers_related_schemas(pclient, load_fixture, allow_preview
     with migrated_engine.begin() as conn:
         conn.execute(sa.text("DELETE FROM preview_allowlist WHERE data_source_id = 1 AND schema = 'OTHER'"))
     monkeypatch.setattr(get_settings(), "value_probe_max_concurrent", 1)
-    job = pclient.get(f"/api/value-probe/{job_id}").json()
+    pclient.get(f"/api/value-probe/{job_id}")           # 이 폴링이 러너를 깨운다 / this poll kicks the runner
+    job = pclient.get(f"/api/value-probe/{job_id}").json()  # 다음 폴링이 결과를 본다 / the next one observes
     assert job["status"] == "failed" and job["error"] == "schema gate revoked"
