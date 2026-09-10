@@ -97,3 +97,31 @@ def create_collect_runner(
     if settings.source_mode != "fixture":
         raise RuntimeError("N8N_WEBHOOK_BASE is required outside fixture mode")
     return FixtureCollectRunner(session_factory, settings.resolved_fixture_dir)
+
+
+def create_value_prober(settings: Settings, source: "DataSource | None" = None):
+    """값 추적 실행기 — create_table_preview와 같은 분기 / value prober, same gate as preview.
+
+    값을 읽는 경로라 미리보기와 같은 규칙을 지킨다: direct 소스는 항상 실데이터, n8n 소스는
+    SOURCE_MODE=live에서만, 원천이 붙어 있는데 live가 아니면 합성 대신 명시 실패.
+    """
+    if source is not None and source.access_mode == "direct":
+        from app.sources.connection import get_sa_engine
+        from app.sources.direct_probe import DirectValueProber
+
+        return DirectValueProber(get_sa_engine(source))
+    if settings.source_mode == "live":
+        if not settings.n8n_webhook_base:
+            raise RuntimeError("live mode requires N8N_WEBHOOK_BASE (W2 query executor)")
+        from app.adapters.n8n_query import N8nValueProber
+
+        return N8nValueProber(settings.n8n_webhook_base, settings.n8n_query_timeout)
+    if settings.n8n_webhook_base:
+        raise SyntheticDataRefused(
+            "value probe needs a real data source — a source is configured "
+            f"(N8N_WEBHOOK_BASE) but SOURCE_MODE={settings.source_mode}; set "
+            "SOURCE_MODE=live and restart the backend (docs/connect.md step 8)."
+        )
+    from app.adapters.value_probe import FakeValueProber
+
+    return FakeValueProber(settings.resolved_fixture_dir / "value_sets.json")

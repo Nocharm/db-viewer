@@ -13,6 +13,7 @@
 - **값 추적 플래너 도메인** (feature/value-probe). 값 해석(표기 변형·숫자·날짜·GUID), 엔진별 타입 패밀리, 카탈로그만으로 후보 컬럼 축소, 프로브 행의 컬럼 판정. 순수 함수, 쿼리 0개.
 - **값 추적 테이블·설정** — value_probe_jobs/targets/hits(0018), 튜닝값 3개(.env). 계획을 행으로 남겨 진행률·heavy·선택 실행·재시작 복원의 근거로 쓴다.
 - **직결 프로브 SQL·실행기** — build_probe_sql/build_count_sql(바운드 파라미터, 타입별 바인딩, LIKE 이스케이프)과 DirectValueProber. 실제 SQLite 파일로 테이블·뷰·건수 상한 왕복 검증.
+- **W2 value_probe/value_count + 실행기 3종** — n8n 템플릿(타입별 리터럴·숫자 검증·LIKE 이스케이프, node 실행 테스트), N8nValueProber(재시도 0), FakeValueProber(value_sets 조회), create_value_prober 팩토리. n8n README에 requestTimeout 배포 점검 항목.
 
 ## 2026-09-02
 

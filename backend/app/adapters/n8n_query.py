@@ -13,6 +13,7 @@ from dataclasses import asdict
 from urllib.error import HTTPError, URLError
 
 from app.domain.validation import ColumnRef, ContainmentResult, JoinStepRef
+from app.domain.value_probe import ProbeColumn
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def _unwrap_query_envelope(payload: object) -> tuple[object, str | None]:
 
 
 def _post_query(
-    webhook_base: str, body: dict, timeout: int
+    webhook_base: str, body: dict, timeout: int, retries: int = RETRY_COUNT,
 ) -> tuple[list[dict], str | None]:
     """행과 실행 SQL을 함께 돌려준다.
 
@@ -126,11 +127,12 @@ def _post_query(
     Accepts both the wrapped and the legacy shape so backend and n8n can deploy
     independently; also unwraps a single-element list (a half-updated deploy where the
     workflow JSON hasn't been re-imported yet) instead of misreading the wrapper as a row.
+    retries=0은 값 추적 프로브용 — 타임아웃된 쿼리를 다시 보내면 부하만 두 배다.
     """
     url = f"{webhook_base.rstrip('/')}/dbv-query"
     kind = body.get("kind", "")
     last_error: Exception | None = None
-    for attempt in range(RETRY_COUNT + 1):
+    for attempt in range(retries + 1):
         try:
             raw = _read_payload(url, body, timeout)
         except HTTPError as e:
@@ -276,3 +278,35 @@ class N8nTablePreview:
                 "query) — 재배포가 필요합니다 (advanced filters는 신 W2 전용)"
             )
         return rows
+
+
+class N8nValueProber:
+    """값 추적 — W2의 value_probe/value_count 템플릿 실행 (재시도 없음).
+
+    타임아웃된 프로브를 다시 보내면 소스 부하만 두 배다 — 5xx·연결 오류도 그 대상 하나의
+    실패로 기록하고 다음 대상으로 넘어간다 (services/value_probe.py).
+    """
+
+    def __init__(self, webhook_base: str, timeout: int):
+        self._base = webhook_base
+        self._timeout = timeout
+
+    def probe(self, schema: str, name: str, columns: list[ProbeColumn]) -> list[dict]:
+        rows, _ = _post_query(self._base, {
+            "kind": "value_probe", "schema": schema, "table": name,
+            "columns": [column.to_dict() for column in columns],
+        }, self._timeout, retries=0)
+        return rows
+
+    def count(self, schema: str, name: str, column: ProbeColumn, cap: int) -> int:
+        rows, _ = _post_query(self._base, {
+            "kind": "value_count", "schema": schema, "table": name,
+            "column": column.to_dict(), "cap": cap,
+        }, self._timeout, retries=0)
+        if not rows:
+            # 집계 쿼리는 항상 1행이다 — 0행이면 실행되지 않았다는 뜻 (containment와 동일)
+            raise N8nQueryError(
+                "n8n returned no rows for the value_count aggregate — the W2 query "
+                f"did not run ({schema}.{name}.{column.name})"
+            )
+        return int(rows[0]["n"])

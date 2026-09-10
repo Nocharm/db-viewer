@@ -61,12 +61,20 @@ n8n(`http://182.199.63.71:5678`) → Workflows → Add workflow → 우상단 �
   `objects`, `columns`, `key_constraints`, `foreign_keys`, `view_definitions`,
   `view_deps`, `view_refs`. 파라미터는 **정수만** 보간되고 SQL 문자열은 받지 않는다.
 - **W2 `dbv-query`** — body `{kind, 식별자…}`. kind는 `containment`, `join_preview`,
-  `table_preview`, `multi_join_preview`. 값 데이터에 닿으므로 `SOURCE_MODE=live` 게이트
-  뒤에서만 쓰인다(W1은 메타데이터 전용이라 게이트와 무관 — 두 실행기를 분리해 둔 이유).
+  `table_preview`, `multi_join_preview`, `value_probe`, `value_count`. 값 데이터에
+  닿으므로 `SOURCE_MODE=live` 게이트 뒤에서만 쓰인다(W1은 메타데이터 전용이라 게이트와
+  무관 — 두 실행기를 분리해 둔 이유).
   - `multi_join_preview` — body `{kind: "multi_join_preview", limit, steps: [...]}`.
     각 step은 `{left_schema, left_table, left_column, right_schema, right_table,
     right_column, join_type}`(`join_type`은 `inner` | `left`). 첫 step의 left가 FROM,
     이후 각 step이 JOIN 한 줄을 추가한다(별칭 t0..tN, `tools/build_n8n_workflow.py` 참고).
+  - `value_probe` / `value_count` — 값 추적(`/api/value-probe`). body
+    `{kind: "value_probe", schema, table, columns: [{name, literal, values, op}]}` →
+    `SELECT TOP 1 c1, c2 … WHERE c1 IN (…) OR c2 IN (…)`; `{kind: "value_count", schema, table,
+    column, cap}` → `COUNT(*)` over `TOP cap+1`. `literal`은 `text-narrow`('…')·`text-wide`(N'…')·
+    `number`(숫자 검증 통과분만)·`date`·`guid`. 백엔드는 이 두 kind에 **재시도하지 않는다**.
+    **배포 점검**: T-SQL로는 문장 타임아웃을 걸 수 없어 n8n MSSQL 자격증명의 `requestTimeout`
+    (mssql 드라이버 기본 15초)이 프로브의 실질 상한이다 — 값 추적을 켜기 전에 이 값을 확인한다.
   - **노드 4개**(다른 kind와 공유) — `webhook → Build query(Code) → MSSQL →
     Attach query(Code)`. 마지막 `Attach query` 노드가 실행문과 결과를 `{query, rows}`
     단일 객체로 묶어 응답하며, webhook은 `responseData=firstEntryJson`을 쓴다 — W1은
