@@ -205,3 +205,64 @@ def test_match_columns_returns_only_matches():
             vp.ProbeColumn("B", vp.FAMILY_INT, "number", (5,))]
     matched = vp.match_columns({"A": "y", "B": "5"}, cols)
     assert [(m.name, m.matched_variant) for m in matched] == [("B", "5")]
+
+
+def _obj(object_id, qname, object_type="table", row_count=100, definition=None, base=()):
+    return vp.ProbeCatalogObject(object_id, qname, object_type, row_count, definition, tuple(base))
+
+
+def _pc(name):
+    return vp.ProbeColumn(name, vp.FAMILY_TEXT, "text-narrow", ("x",))
+
+
+def test_plan_groups_columns_per_object_and_orders_tables_first():
+    objects = {1: _obj(1, "SAP.T_ORD", row_count=500), 2: _obj(2, "SAP.V_ORD", "view", None, "SELECT 1", (500,))}
+    candidates = [(2, _pc("ORD_NO")), (1, _pc("ORD_NO")), (1, _pc("CUST_NM"))]
+    targets = vp.plan_targets(candidates, objects, None, 2_000_000)
+    assert [(t.qname, [c.name for c in t.columns]) for t in targets] == [
+        ("SAP.T_ORD", ["ORD_NO", "CUST_NM"]), ("SAP.V_ORD", ["ORD_NO"]),
+    ]
+    assert [t.rank for t in targets] == [1, 2]
+
+
+def test_plan_ranks_hint_matches_before_small_tables():
+    objects = {1: _obj(1, "SAP.T_A", row_count=10), 2: _obj(2, "SAP.T_ORD", row_count=1000)}
+    candidates = [(1, _pc("X")), (2, _pc("ORD_NO"))]
+    targets = vp.plan_targets(candidates, objects, "주문번호 ORD_NO", 2_000_000)
+    assert [t.qname for t in targets] == ["SAP.T_ORD", "SAP.T_A"]
+
+
+def test_plan_orders_by_row_count_when_no_hint():
+    objects = {1: _obj(1, "SAP.T_BIG", row_count=9000), 2: _obj(2, "SAP.T_SMALL", row_count=10)}
+    targets = vp.plan_targets([(1, _pc("A")), (2, _pc("A"))], objects, None, 2_000_000)
+    assert [t.qname for t in targets] == ["SAP.T_SMALL", "SAP.T_BIG"]
+
+
+def test_plan_marks_heavy_by_rows_unknown_rows_and_view_shape():
+    objects = {
+        1: _obj(1, "SAP.T_HUGE", row_count=5_000_000),
+        2: _obj(2, "SAP.T_UNKNOWN", row_count=None),
+        3: _obj(3, "SAP.V_AGG", "view", None, "SELECT a, COUNT(*) FROM t GROUP BY a", (10,)),
+        4: _obj(4, "SAP.V_PLAIN", "view", None, "SELECT a FROM t", (10, None)),
+    }
+    candidates = [(i, _pc("A")) for i in objects]
+    by_name = {t.qname: t for t in vp.plan_targets(candidates, objects, None, 2_000_000)}
+    assert (by_name["SAP.T_HUGE"].tier, by_name["SAP.T_HUGE"].heavy_reason) == ("heavy", "rows")
+    assert by_name["SAP.T_UNKNOWN"].heavy_reason == "unknown_rows"
+    assert by_name["SAP.V_AGG"].heavy_reason == "view_shape"
+    assert by_name["SAP.V_PLAIN"].tier == "auto" and by_name["SAP.V_PLAIN"].est_rows == 10
+
+
+def test_plan_splits_wide_objects_into_column_chunks():
+    objects = {1: _obj(1, "SAP.T_WIDE")}
+    candidates = [(1, _pc(f"C{i}")) for i in range(95)]
+    targets = vp.plan_targets(candidates, objects, None, 2_000_000, max_columns=40)
+    assert [len(t.columns) for t in targets] == [40, 40, 15]
+    assert [t.rank for t in targets] == [1, 2, 3]
+
+
+def test_score_hint_levels():
+    assert vp.score_hint(None, "T_ORD", ["ORD_NO"]) == 0
+    assert vp.score_hint("ORD_NO", "T_X", ["ORD_NO"]) == 3
+    assert vp.score_hint("ORD", "T_X", ["ORD_NO"]) == 2
+    assert vp.score_hint("ORD", "T_ORD", ["ZZZ"]) == 1
