@@ -29,6 +29,11 @@ import {
 // 진행 폴링 간격(ms) — 실행 중일 때만 돈다 (CollectPanel과 동일) / poll only while running
 const POLL_MS = 1500;
 
+// catch 변수는 unknown이다 — Error가 아닌 값이 와도 화면에 "undefined"를 찍지 않게 한다
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export default function TracePage() {
   return (
     <Suspense fallback={null}>
@@ -97,7 +102,7 @@ function TracePageInner() {
       setPlan(started.plan);
       setJob(await fetchValueProbeJob(started.job_id));
     } catch (e) {
-      setError((e as Error).message);
+      setError(toErrorMessage(e));
     } finally {
       setStarting(false);
     }
@@ -123,7 +128,7 @@ function TracePageInner() {
       await cancelValueProbe(jobId);
       await refresh(jobId);
     } catch (e) {
-      setError((e as Error).message);
+      setError(toErrorMessage(e));
     }
   }, [jobId, refresh]);
 
@@ -133,7 +138,7 @@ function TracePageInner() {
       await runValueProbeHeavy(jobId, targetIds);
       await refresh(jobId);
     } catch (e) {
-      setError((e as Error).message);
+      setError(toErrorMessage(e));
     }
   }, [jobId, refresh]);
 
