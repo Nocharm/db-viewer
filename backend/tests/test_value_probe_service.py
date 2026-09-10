@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.adapters.n8n_query import N8nQueryError
 from app.config import Settings
-from app.models import Base, CatalogObject, ValueProbeJob, ValueProbeTarget
+from app.models import Base, CatalogObject, PreviewAllowlist, ValueProbeJob, ValueProbeTarget
 from app.models.sources import MANAGED_MSSQL_SOURCE_ID
 from app.services import value_probe as service
 
@@ -35,7 +35,7 @@ def _settings(fixture_dir, **overrides) -> Settings:
 
 
 def _new_job(factory, snapshot_id: int, value: str, schemas=("dbo",), mode="normalized",
-             settings: Settings | None = None, cancel=False) -> int:
+             settings: Settings | None = None, cancel=False, allowed: bool = True) -> int:
     now = datetime.now(UTC)
     with factory() as db:
         job = ValueProbeJob(data_source_id=MANAGED_MSSQL_SOURCE_ID, snapshot_id=snapshot_id,
@@ -44,6 +44,12 @@ def _new_job(factory, snapshot_id: int, value: str, schemas=("dbo",), mode="norm
                             cancel_requested=cancel, triggered_by="test", created_at=now)
         db.add(job)
         db.flush()
+        if allowed:
+            # 러너가 기동 직전에 허용 목록을 재확인한다 — 기본은 허용해 기존 테스트를 보존한다
+            for schema in schemas:
+                if db.get(PreviewAllowlist, (MANAGED_MSSQL_SOURCE_ID, schema)) is None:
+                    db.add(PreviewAllowlist(data_source_id=MANAGED_MSSQL_SOURCE_ID, schema=schema,
+                                            note=None, added_by="test", created_at=now))
         targets = service.build_plan(db, snapshot_id, list(schemas), "mssql", value, mode, None,
                                      settings or Settings(_env_file=None))
         for target in targets:
@@ -216,3 +222,14 @@ def test_heavy_targets_are_skipped_until_promoted(client, migrated_engine, load_
         hits = db.execute(sa.select(Base.metadata.tables["value_probe_hits"])).all()
         hit = next(h for h in hits if h.qname == obj and h.column_name == column)
         assert hit.match_count is None
+
+
+def test_runner_fails_a_job_whose_schema_was_revoked(client, migrated_engine, load_fixture, fixture_dir):
+    sid = _seed(client, load_fixture)
+    _, _, value = _known_value(load_fixture)
+    factory = sessionmaker(bind=migrated_engine)
+    job_id = _new_job(factory, sid, value, allowed=False)   # 허용 목록에 dbo가 없다 — 러너가 실행 직전에 막아야 한다
+    service.run_startable_probe_jobs(factory, _settings(fixture_dir))
+    with factory() as db:
+        job = db.get(ValueProbeJob, job_id)
+        assert job.status == "failed" and job.error == "schema gate revoked"

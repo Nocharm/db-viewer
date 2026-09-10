@@ -208,3 +208,48 @@ def test_lineage_folds_views_under_table_hits_and_names_derived_sources(pclient,
     assert table_hit["exposed_by_views"] == [view_qname]
     view_hit = next(h for h in job["hits"] if h["qname"] == view_qname)
     assert view_hit["derived_from"] == {"qname": obj, "column": column}
+
+
+def test_heavy_promotion_rechecks_the_allowlist(pclient, load_fixture, allow_preview, migrated_engine):
+    sid = _seed(pclient, load_fixture)
+    allow_preview("dbo.X")
+    obj, _, value = _known_value(load_fixture)
+    schema, name = obj.split(".", 1)
+    with sessionmaker(bind=migrated_engine)() as db:
+        target_obj = db.execute(sa.select(CatalogObject).where(
+            CatalogObject.snapshot_id == sid, CatalogObject.schema == schema,
+            CatalogObject.name == name)).scalar_one()
+        target_obj.row_count = 9_000_000
+        db.commit()
+    job_id = _start(pclient, value).json()["job_id"]
+    heavy = next(h for h in pclient.get(f"/api/value-probe/{job_id}").json()["heavy"] if h["qname"] == obj)
+    # 관리자가 허용 목록에서 스키마를 뺀 뒤 승격하면 막혀야 한다 / revoked after the job was created
+    with migrated_engine.begin() as conn:
+        conn.execute(sa.text("DELETE FROM preview_allowlist WHERE data_source_id = 1 AND schema = 'dbo'"))
+    res = pclient.post(f"/api/value-probe/{job_id}/heavy", json={"target_ids": [heavy["target_id"]]})
+    assert res.status_code == 403
+    assert res.json()["error"]["context"]["schema"] == "dbo"
+
+
+def test_heavy_promotion_on_a_running_job_is_409(pclient, load_fixture, allow_preview, migrated_engine):
+    _seed(pclient, load_fixture)
+    allow_preview("dbo.X")
+    _, _, value = _known_value(load_fixture)
+    job_id = _start(pclient, value).json()["job_id"]
+    with migrated_engine.begin() as conn:
+        conn.execute(sa.text("UPDATE value_probe_jobs SET status = 'running' WHERE id = :j"), {"j": job_id})
+        auto_id = conn.execute(sa.text(
+            "SELECT id FROM value_probe_targets WHERE job_id = :j LIMIT 1"), {"j": job_id}).scalar_one()
+        conn.execute(sa.text("UPDATE value_probe_targets SET tier = 'heavy' WHERE id = :t"), {"t": auto_id})
+    res = pclient.post(f"/api/value-probe/{job_id}/heavy", json={"target_ids": [auto_id]})
+    assert res.status_code == 409
+
+
+def test_heavy_and_cancel_are_owner_only(pclient, load_fixture, allow_preview):
+    _seed(pclient, load_fixture)
+    allow_preview("dbo.X")
+    _, _, value = _known_value(load_fixture)
+    job_id = _start(pclient, value).json()["job_id"]
+    other = {"X-Dev-User": "someone.else"}
+    assert pclient.post(f"/api/value-probe/{job_id}/heavy", json={"target_ids": [1]}, headers=other).status_code == 404
+    assert pclient.post(f"/api/value-probe/{job_id}/cancel", headers=other).status_code == 404

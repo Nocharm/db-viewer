@@ -68,6 +68,27 @@ def _latest_ready_snapshot(db: Session, source_id: int) -> Snapshot | None:
     ).scalar_one_or_none()
 
 
+def _check_schema_gates(db: Session, source_id: int, schemas: list[str]) -> None:
+    """숨김 → 허용 목록 순 게이트 — 잡 생성 시와 heavy 승격 시(재조회) 둘 다에서 부른다.
+
+    허용 목록은 관리자가 언제든 바꿀 수 있는 상태이고 잡 행은 무기한 남으므로, 승격 시점에도
+    다시 확인해야 한다 — 그렇지 않으면 철회된 뒤에도 원본 값 쿼리가 나갈 수 있다.
+    """
+    for schema in schemas:
+        if is_schema_hidden(schema):
+            raise HTTPException(403, {
+                "message": "this schema is hidden — its columns and values are not served "
+                           "(HIDDEN_SCHEMAS)",
+                "context": {"schema": schema},
+            })
+        if not is_preview_allowed(db, source_id, schema):
+            raise HTTPException(403, {
+                "message": "preview is not allowed for this schema — an admin must add it "
+                           "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
+                "context": {"schema": schema},
+            })
+
+
 @router.post("", status_code=202)
 def start_value_probe(
     req: ValueProbeRequest,
@@ -94,19 +115,7 @@ def start_value_probe(
     schemas = list(dict.fromkeys(s.strip() for s in req.schemas if s.strip()))
     if not schemas:
         raise HTTPException(400, {"message": "no schema selected", "context": {}})
-    for schema in schemas:
-        if is_schema_hidden(schema):
-            raise HTTPException(403, {
-                "message": "this schema is hidden — its columns and values are not served "
-                           "(HIDDEN_SCHEMAS)",
-                "context": {"schema": schema},
-            })
-        if not is_preview_allowed(db, source.id, schema):
-            raise HTTPException(403, {
-                "message": "preview is not allowed for this schema — an admin must add it "
-                           "to the preview allowlist (관리 콘솔 → 미리보기 허용 스키마)",
-                "context": {"schema": schema},
-            })
+    _check_schema_gates(db, source.id, schemas)
 
     settings = get_settings()
     targets = build_plan(db, snapshot.id, schemas, source.engine, value, req.mode, req.hint,
@@ -251,6 +260,14 @@ def run_heavy_targets(
 ) -> dict:
     """선택한 heavy 대상만 auto로 승격해 이어서 실행 — 사용자의 명시적 선택이 비용 승인이다."""
     job = _load_owned_job(db, job_id, login_id)
+    if job.status == "running":
+        raise HTTPException(409, {
+            "message": "job is still running — wait for it to finish before promoting heavy "
+                       "targets",
+            "context": {"job_id": job.id, "status": job.status},
+        })
+    # 허용 목록은 잡 생성 후 관리자가 철회했을 수 있다 — 승격 시점에 다시 확인한다
+    _check_schema_gates(db, job.data_source_id, json.loads(job.schemas))
     wanted = set(req.target_ids)
     targets = db.execute(
         select(ValueProbeTarget)

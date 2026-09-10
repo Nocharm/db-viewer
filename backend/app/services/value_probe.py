@@ -20,7 +20,8 @@ from app.config import Settings
 from app.domain import value_probe as domain
 from app.models import CatalogColumn, CatalogObject, DataSource, ViewLineageFlat
 from app.models.value_probe import ValueProbeHit, ValueProbeJob, ValueProbeTarget
-from app.services.schema_visibility import get_hidden_schemas
+from app.services.preview_policy import is_preview_allowed
+from app.services.schema_visibility import get_hidden_schemas, is_schema_hidden
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,16 @@ def _execute_probe(job_id: int, session_factory: sessionmaker, settings: Setting
             _mark_cancelled(job)
             db.commit()
             return
+        # 허용 목록은 관리자가 언제든 바꿀 수 있는 상태고, 큐에서 다른 잡 뒤에 기다리는 동안
+        # 철회될 수 있다 — 기동 직전에 다시 확인해야 철회 후 값 쿼리가 나가는 창을 막는다
+        for schema in json.loads(job.schemas):
+            if is_schema_hidden(schema) or not is_preview_allowed(db, job.data_source_id, schema):
+                job.status = "failed"
+                job.error = "schema gate revoked"
+                job.current_qname = None
+                job.finished_at = datetime.now(UTC)
+                db.commit()
+                return
         source = db.get(DataSource, job.data_source_id)
         if source is None or not source.is_enabled:
             raise RuntimeError("data source unavailable")
