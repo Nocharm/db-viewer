@@ -53,6 +53,17 @@ def test_probe_posts_column_specs_and_returns_rows(captured):
     }]
 
 
+def test_probe_serializes_numeric_values_as_strings(captured):
+    """숫자 값을 문자열로 보낸다 — JSON number를 거치면 16자리 이상 bigint가 정밀도를 잃는다."""
+    captured["response"] = {"query": "SELECT TOP 1 ...", "rows": []}
+    numeric = vp.ProbeColumn("AMT", vp.FAMILY_INT, "number", (1000, "250.5"))
+    N8nValueProber("http://n8n/webhook", 5).probe("SAP", "T_ORD", [numeric])
+    assert captured["bodies"][-1]["columns"] == [{
+        "name": "AMT", "family": "int", "literal": "number",
+        "values": ["1000", "250.5"], "op": "eq",
+    }]
+
+
 def test_count_reads_n_and_requires_a_row(captured):
     captured["response"] = {"query": "SELECT COUNT(*) ...", "rows": [{"n": 3}]}
     prober = N8nValueProber("http://n8n/webhook", 5)

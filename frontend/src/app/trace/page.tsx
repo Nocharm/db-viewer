@@ -61,7 +61,7 @@ function TracePageInner() {
   useEffect(() => {
     fetchSchemaCategories(sourceId)
       .then((res) => setCategories(res.items))
-      .catch((e: Error) => setError(e.message));
+      .catch((e: unknown) => setError(toErrorMessage(e)));
   }, [sourceId]);
   const schemaOptions = selectableSchemas(categories, allowed, hidden);
   const allowedNames = schemaOptions.map((item) => item.schema);
@@ -113,7 +113,7 @@ function TracePageInner() {
   useEffect(() => {
     if (!polling || jobId === null) return;
     const timer = setInterval(() => {
-      fetchValueProbeJob(jobId).then(setJob).catch((e: Error) => setError(e.message));
+      fetchValueProbeJob(jobId).then(setJob).catch((e: unknown) => setError(toErrorMessage(e)));
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [polling, jobId]);

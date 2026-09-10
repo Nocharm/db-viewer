@@ -7,6 +7,7 @@
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 # 대상 단위로 격리하는 소스 오류 — 조립 버그(CompileError 등)는 잡 전체를 failed로 드러낸다
 SOURCE_ERRORS = (DBAPIError, SATimeoutError, DisconnectionError, N8nQueryError)
+
+# n8n 오류 메시지에서 kind·status만 뽑아낸다 — url=·body=(드라이버 원문)는 절대 통과시키지 않는다
+_N8N_KIND_RE = re.compile(r"kind=(\w+)")
+_N8N_STATUS_RE = re.compile(r"status=(\d+)")
 
 
 def load_probe_catalog(
@@ -135,11 +140,27 @@ def run_startable_probe_jobs(session_factory: sessionmaker, settings: Settings) 
 
 
 def _classify_error(error: Exception) -> tuple[str, str]:
-    """(대상 상태, 기록 문자열) — n8n 오류는 진단 문구를, SQLAlchemy 오류는 클래스명만."""
-    is_timeout = isinstance(error, SATimeoutError) or "timeout" in str(error).lower()
+    """(대상 상태, 기록 문자열) — n8n 오류는 kind·status만 요약하고, SQLAlchemy 오류는 클래스명만.
+
+    n8n 메시지 원문에는 webhook url·드라이버 응답 본문(계정명 등)이 들어있어 그대로
+    저장하면 안 된다(스펙 §6.3) — 정규식으로 kind=/status=만 뽑아 재조립한다.
+    """
+    message = str(error)
+    is_timeout = (
+        isinstance(error, SATimeoutError)
+        or "timeout" in message.lower()
+        or "timed out" in message.lower()
+    )
     status = "timeout" if is_timeout else "error"
     if isinstance(error, N8nQueryError):
-        return status, str(error)[:200]
+        kind_match = _N8N_KIND_RE.search(message)
+        status_match = _N8N_STATUS_RE.search(message)
+        if kind_match is None and status_match is None:
+            return status, "n8n query failed"
+        parts = [f"kind={kind_match.group(1)}"] if kind_match else []
+        if status_match is not None:
+            parts.append(f"status={status_match.group(1)}")
+        return status, "n8n query failed: " + " ".join(parts)
     return status, type(error).__name__[:200]
 
 
@@ -150,6 +171,10 @@ def _probe_target(prober, schema: str, name: str, columns: list[domain.ProbeColu
         rows = prober.probe(schema, name, columns)
     except SOURCE_ERRORS as e:
         status, text = _classify_error(e)
+        # 드라이버 원문(url·body)은 여기 로그에만 남는다 — API·DB엔 _classify_error의 요약만
+        logger.warning("value probe target failed",
+                       extra={"object": f"{schema}.{name}", "error_type": type(e).__name__},
+                       exc_info=True)
         return status, text, []
     if not rows:
         return "done", None, []

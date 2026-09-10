@@ -280,6 +280,16 @@ class N8nTablePreview:
         return rows
 
 
+def _serialize_probe_column(column: ProbeColumn) -> dict:
+    """프로브 컬럼을 JSON으로 인코딩 — 값은 전부 문자열로 보낸다.
+
+    JSON number는 W2의 JS `Number()`를 거치는데, 2^53을 넘는 bigint(16자리 이상)는
+    거기서 정밀도가 깨져 조용히 매칭 0건이 된다 — 문자열로 보내고 W2가 검증된 숫자
+    리터럴로 그대로 꽂는다(build_n8n_workflow.py의 `num` 헬퍼).
+    """
+    return {**column.to_dict(), "values": [str(v) for v in column.values]}
+
+
 class N8nValueProber:
     """값 추적 — W2의 value_probe/value_count 템플릿 실행 (재시도 없음).
 
@@ -294,14 +304,14 @@ class N8nValueProber:
     def probe(self, schema: str, name: str, columns: list[ProbeColumn]) -> list[dict]:
         rows, _ = _post_query(self._base, {
             "kind": "value_probe", "schema": schema, "table": name,
-            "columns": [column.to_dict() for column in columns],
+            "columns": [_serialize_probe_column(column) for column in columns],
         }, self._timeout, retries=0)
         return rows
 
     def count(self, schema: str, name: str, column: ProbeColumn, cap: int) -> int:
         rows, _ = _post_query(self._base, {
             "kind": "value_count", "schema": schema, "table": name,
-            "column": column.to_dict(), "cap": cap,
+            "column": _serialize_probe_column(column), "cap": cap,
         }, self._timeout, retries=0)
         if not rows:
             # 집계 쿼리는 항상 1행이다 — 0행이면 실행되지 않았다는 뜻 (containment와 동일)

@@ -177,8 +177,19 @@ def test_one_failing_target_does_not_fail_the_job(client, migrated_engine, load_
         assert job.status == "done"
         failed = db.execute(sa.select(ValueProbeTarget).where(
             ValueProbeTarget.job_id == job_id, ValueProbeTarget.qname == obj)).scalars().first()
-        assert failed.status == "error" and "504" in failed.error
-        assert "value_probe" in failed.error
+        assert failed.status == "error"
+        assert failed.error == "n8n query failed: kind=value_probe status=504"
+
+
+def test_classify_error_redacts_urls_and_bodies_and_detects_timed_out():
+    from app.adapters.n8n_query import N8nQueryError
+    status, text = service._classify_error(N8nQueryError(
+        "n8n rejected the query: kind=value_probe url=http://n8n.internal/webhook/dbv-query "
+        "status=502 body=Login failed for user 'svc_dbviewer'"))
+    assert (status, text) == ("error", "n8n query failed: kind=value_probe status=502")
+    status, text = service._classify_error(N8nQueryError(
+        "n8n query failed after retries: kind=value_count url=http://n8n.internal/x (<urlopen error timed out>)"))
+    assert status == "timeout" and "internal" not in text and "urlopen" not in text
 
 
 def test_unavailable_source_marks_the_job_failed(client, migrated_engine, load_fixture, fixture_dir):

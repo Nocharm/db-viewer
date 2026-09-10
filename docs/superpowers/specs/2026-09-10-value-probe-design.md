@@ -350,6 +350,9 @@ sysadmin에게만 허용해 타인의 검색값이 노출되지 않게 한다.
 - **미리보기 딥링크 확장**: `page.tsx`의 `?preview=1` 효과가 `filters` 파라미터를 파싱해
   `preview.refetch(id, {filters})`로 넘긴다. 파싱 결과는 `useMemo`로 고정한다(과거 무한 리렌더
   이슈 지점). 잘못된 JSON은 무시하고 필터 없이 연다.
+- 알려진 한계: 직결 소스(PG/SQLite)의 미리보기 eq 필터는 `UPPER(CAST(col AS TEXT))` 비교라,
+  소수 컬럼 히트(예: REAL 1000.0 → 변형값 '1000')는 딥링크 미리보기에서 0행이 나올 수 있다.
+  MSSQL은 암시 변환으로 영향 없음. 후속 과제.
 - `data-testid`: `ValueProbePage-root/findButton/cancelButton/progress/emptyState/errorText/
   continueButton/heavyRunButton`, `ValueProbePage-hit-${qname}.${column}`,
   `ValueProbePage-heavy-${targetId}`, `ValueProbePage-schema-${schema}`.

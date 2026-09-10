@@ -401,6 +401,17 @@ def test_w2_value_probe_escapes_identifiers_and_like_metacharacters() -> None:
     assert query == "SELECT TOP 1 [A]]B] FROM [S]]x].[T] WHERE [A]]B] LIKE N'%50[%][_][[]x]%'"
 
 
+def test_w2_value_probe_keeps_big_integers_verbatim() -> None:
+    """16자리 이상 bigint는 JSON number를 거치면 2^53에서 정밀도가 깨진다 — 백엔드가
+    문자열로 보낸 검증된 숫자 리터럴을 W2가 Number()에 넣지 않고 그대로 꽂는지 확인."""
+    _require_node()
+    query = _run_build_query_js(_w2_build_query_js(), {
+        "kind": "value_probe", "schema": "S", "table": "T",
+        "columns": [{"name": "ID", "literal": "number", "values": ["123456789012345678901", "-42", "250.50"], "op": "eq"}],
+    })
+    assert query.endswith("WHERE [ID] IN (123456789012345678901, -42, 250.50)")
+
+
 def test_w2_value_probe_limits_columns_and_values() -> None:
     _require_node()
     js = _w2_build_query_js()
