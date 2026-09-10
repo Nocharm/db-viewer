@@ -202,7 +202,10 @@ def interpret_value(raw: str, mode: str) -> ValueInterpretation:
         number = _parse_number(stripped)
         ints = (int(number),) if number is not None and number == number.to_integral_value() else ()
         decimals = (_canon_decimal(number),) if number is not None else ()
-        dates = (stripped,) if _ISO_DATE_RE.match(stripped) and _parse_date(stripped) else ()
+        # _parse_date pads HH:MM to HH:MM:SS — without it, match_cell's 19-char
+        # comparison against a seconds-bearing DB value fails / canonicalize, don't echo raw
+        parsed = _parse_date(stripped) if _ISO_DATE_RE.match(stripped) else None
+        dates = (parsed[0],) if parsed else ()
         guid = _parse_guid(stripped)
         return ValueInterpretation(raw, (raw,), ints, decimals, dates,
                                    (guid,) if guid else ())

@@ -73,6 +73,13 @@ def test_contains_mode_uses_stripped_raw_only():
     assert interp.text == ("abc",)
 
 
+def test_exact_mode_canonicalizes_a_datetime_without_seconds():
+    interp = vp.interpret_value("2026-09-10 14:30", "exact")
+    assert interp.dates == ("2026-09-10 14:30:00",)
+    column = vp.ProbeColumn("DT", vp.FAMILY_DATE, "date", interp.dates)
+    assert vp.match_cell("2026-09-10T14:30:00", column) == "2026-09-10 14:30:00"
+
+
 # ---------- families ----------
 
 def test_families_per_engine():
