@@ -18,6 +18,7 @@
 - **값 추적 API** — POST 202(숨김→허용 목록→계획→contains 범위 검사→감사), GET 폴링(진행 중 hits·heavy·실패 대상·MSSQL lineage 접기), heavy 승격, 취소, 요청자 본인/sysadmin만 조회. 재기동 시 running 잡 failed 처리. README 화면 절.
 - **값 추적 프론트 API·순수 로직** — api.ts 타입·함수 4개, lib/value-probe.ts(폼 검증, 선택 가능 스키마, 미리보기 딥링크 href, 폴링 지속, 나머지 스키마, 건수 표기, filters 파라미터 검증) + vitest.
 - **미리보기 딥링크 필터** — usePreviewTabs.open에 첫 조회용 filters 추가, ?preview=1 효과가 ?filters= JSON을 검증(parseFiltersParam, useMemo 고정)해 넘긴다. 잘못된 값은 무필터로 연다.
+- **/trace 화면** — 조건(스키마 다중 선택=허용∩숨김아님·카테고리 묶음, 값, 라벨 힌트, 모드)·진행(배지·바·현재 대상·경과·취소)·결과(히트 즉시 표시, 미리보기 딥링크, 노출 뷰 접기, 파생 원본, 실패 대상, 빈 상태+나머지 스키마 계속)·무거운 객체(선택 실행) 카드 4개. 헤더 링크, i18n, 감사 라벨.
 
 ## 2026-09-02
 

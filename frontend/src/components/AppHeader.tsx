@@ -108,6 +108,7 @@ const LINKS = [
   { href: "/", key: "nav.tables" as const },
   { href: "/verify", key: "nav.verify" as const },
   { href: "/erd", key: "nav.erd" as const },
+  { href: "/trace", key: "nav.trace" as const },
   { href: "/parsing", key: "nav.parsing" as const },
 ];
 
