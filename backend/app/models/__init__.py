@@ -17,6 +17,7 @@ from app.models.jobs import AiJob, CollectJob, ScanJob, ScanResult
 from app.models.preview_policy import PreviewAllowlist
 from app.models.relations import AiEmbedding, AiSummary, AuditLog, JoinValidationHistory, Relation
 from app.models.sources import DataSource
+from app.models.value_probe import ValueProbeHit, ValueProbeJob, ValueProbeTarget
 from app.models.users import AppUser, LoginWhitelist
 
 __all__ = [
@@ -42,6 +43,9 @@ __all__ = [
     "Relation",
     "SchemaCategory",
     "Snapshot",
+    "ValueProbeHit",
+    "ValueProbeJob",
+    "ValueProbeTarget",
     "ViewDep",
     "ViewJoin",
     "ViewLineageFlat",
