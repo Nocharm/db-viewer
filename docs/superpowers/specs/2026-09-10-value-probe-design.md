@@ -353,6 +353,12 @@ sysadmin에게만 허용해 타인의 검색값이 노출되지 않게 한다.
 - 알려진 한계: 직결 소스(PG/SQLite)의 미리보기 eq 필터는 `UPPER(CAST(col AS TEXT))` 비교라,
   소수 컬럼 히트(예: REAL 1000.0 → 변형값 '1000')는 딥링크 미리보기에서 0행이 나올 수 있다.
   MSSQL은 암시 변환으로 영향 없음. 후속 과제.
+- 뷰 「쿼리 보기」(`GET /api/views/{id}/definition`): 정의 SQL은 구조 정보라 숨김 스키마만 403이고
+  허용 목록·감사는 적용하지 않는다. **정책 결정**: 보이는 스키마의 뷰 정의가 숨김 스키마의
+  객체·컬럼명을 본문에 담고 있으면 그대로 보인다 — 기존 `/api/views/{id}/lineage`(base_column
+  무필터)·AI 뷰 설명(정의 발췌)과 같은 노출 수준이며, 숨김 정책은 그 스키마 자신의 컬럼과 값을
+  막는 것이다. 운영 점검: 정의에 `OPENROWSET`·`PWD=` 같은 자격증명 리터럴이 있는지 실 카탈로그에서
+  1회 확인한다. 후속 과제: AI 뷰 설명 경로에는 숨김 스키마 게이트가 없다.
 - `data-testid`: `ValueProbePage-root/findButton/cancelButton/progress/emptyState/errorText/
   continueButton/heavyRunButton`, `ValueProbePage-hit-${qname}.${column}`,
   `ValueProbePage-heavy-${targetId}`, `ValueProbePage-schema-${schema}`.
