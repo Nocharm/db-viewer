@@ -477,6 +477,35 @@ export const MESSAGES = {
   },
   "admin.embedIndexFailed": { ko: "인덱싱 실패", en: "Indexing failed" },
 
+  "admin.tabs.label": { ko: "관리 영역", en: "Admin areas" },
+  "admin.tabs.hint": {
+    ko: "탭을 고르세요 — ←/→ 키로도 이동합니다",
+    en: "Pick a tab — ←/→ keys move between them",
+  },
+  "admin.tab.sources": { ko: "소스·수집", en: "Sources & collection" },
+  "admin.tab.sourcesDesc": {
+    ko: "연결할 DB를 등록·테스트하고 카탈로그를 수집합니다",
+    en: "Register and test source databases, then collect their catalogs",
+  },
+  "admin.tab.access": { ko: "공개 범위", en: "Disclosure" },
+  "admin.tab.accessDesc": {
+    ko: "실제 값이 보이는 미리보기 허용 스키마와 컬럼 비공개 스키마의 표시 여부",
+    en: "Which schemas may show real values, and whether hidden schemas are listed",
+  },
+  "admin.tab.ai": { ko: "AI 색인", en: "AI index" },
+  "admin.tab.aiDesc": {
+    ko: "의미 검색용 테이블 임베딩을 만들고 이어갑니다",
+    en: "Build and resume the table embeddings behind semantic search",
+  },
+  "admin.tab.users": { ko: "사용자", en: "Users" },
+  "admin.tab.usersDesc": {
+    ko: "로그인 화이트리스트와 AD 사용자 동기화",
+    en: "Login whitelist and AD user sync",
+  },
+  "admin.tab.audit": { ko: "감사 로그", en: "Audit log" },
+
+  "source.pickerLabel": { ko: "데이터 소스", en: "Data source" },
+
   "ai.generateSummary": { ko: "AI 요약 생성", en: "Generate AI summary" },
   "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },

@@ -199,10 +199,21 @@ export function updateDataSource(
   return patchJson(`/api/sources/${id}`, input, { "X-Preview-Password": password });
 }
 
-export interface DeleteBlockedContext {
-  snapshots?: number;
-  preview_allowlist?: number;
-  schema_categories?: number;
+/** 소스와 함께 지워지는 행의 개수 — 삭제 확인 화면이 보여주고, 백엔드 409 컨텍스트도 같은
+ * 키를 쓴다. snapshots는 카탈로그(객체·컬럼·뷰 조인)를 FK로 끌고 내려간다.
+ * / rows removed alongside the source; same keys as the 409 context */
+export interface SourceDependents {
+  snapshots: number;
+  preview_allowlist: number;
+  schema_categories: number;
+  value_probe_jobs: number;
+}
+
+export type DeleteBlockedContext = Partial<SourceDependents>;
+
+/** 삭제 확인용 — 이 소스를 지우면 함께 사라지는 행의 개수. 관리형 소스는 409. */
+export function fetchSourceDependents(id: number): Promise<SourceDependents> {
+  return getJson(`/api/sources/${id}/dependents`);
 }
 
 /** 삭제 차단(409) 안내 문구를 조립한다 — 백엔드는 context에 개수를 실어 보내는데 공용
@@ -217,18 +228,21 @@ export function formatDeleteBlockedMessage(
     context.snapshots ? `스냅샷 ${context.snapshots}건` : null,
     context.preview_allowlist ? `허용 목록 ${context.preview_allowlist}건` : null,
     context.schema_categories ? `카테고리 ${context.schema_categories}건` : null,
+    context.value_probe_jobs ? `값 추적 잡 ${context.value_probe_jobs}건` : null,
   ].filter((part): part is string => part !== null);
   if (counts.length === 0) return fallback;
   return `${counts.join("·")}이 이 소스를 참조하고 있어 삭제할 수 없습니다 — `
-    + "비활성화하거나 먼저 정리하세요.";
+    + "함께 삭제되는 내용을 확인한 뒤 삭제하거나, 비활성화하세요.";
 }
 
-/** is_managed거나 스냅샷·정책 행이 남아있으면 409 — 공용 handle()을 거치지 않고 직접
- * 응답을 읽어 context의 개수를 메시지에 싣는다(공유 헬퍼는 그대로 둔다). */
+/** is_managed면 409. 스냅샷·정책 행·값 추적 잡이 남아 있으면 cascade 없이는 409 — 화면은
+ * 확인 체크 뒤 cascade=true로 한 번에 지운다. 공용 handle()을 거치지 않고 직접 응답을
+ * 읽어 context의 개수를 메시지에 싣는다(공유 헬퍼는 그대로 둔다). */
 export async function deleteDataSource(
-  id: number, password: string,
-): Promise<{ id: number; removed: boolean }> {
-  const res = await fetch(`/api/sources/${id}`, {
+  id: number, password: string, options: { cascade?: boolean } = {},
+): Promise<{ id: number; removed: boolean; removed_dependents: SourceDependents }> {
+  const query = options.cascade ? "?cascade=true" : "";
+  const res = await fetch(`/api/sources/${id}${query}`, {
     method: "DELETE",
     headers: { ...authHeaders(), "X-Preview-Password": password },
   });

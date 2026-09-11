@@ -160,7 +160,7 @@
     <tr><td><b>DB-viewer</b> 로고</td><td>누르면 처음 화면으로 돌아가며 검색어·필터·선택이 모두 초기화됩니다.</td></tr>
     <tr><td>메뉴 <code>테이블 · 조인 검증 · ERD · 값 추적 · 파싱 지표</code></td><td>화면 이동. <b>사내 MSSQL이 아닌 소스</b>(PostgreSQL·SQLite)를 보고 있으면 <code>조인 검증</code>과 <code>파싱 지표</code>는 숨겨집니다. 그 두 기능은 MSSQL 전용입니다.</td></tr>
     <tr><td>메뉴 <code>관리</code></td><td>시스템 관리자에게만 보입니다.</td></tr>
-    <tr><td>소스 선택(드롭다운)</td><td>여러 DB가 등록된 경우에만 나타납니다. 바꾸면 그 DB 기준으로 목록·미리보기가 전부 새로 시작되고, 주소에 <code>?source=</code>가 붙어 새로고침해도 유지됩니다.</td></tr>
+    <tr><td>소스 선택(드롭다운)</td><td>여러 DB가 등록된 경우에만, <strong>JOIN KEYS 바 왼쪽</strong>에 나타납니다(다른 화면에서는 헤더 우측). 아이콘·엔진 배지가 붙은 메뉴에서 고르며 ↑↓·Enter·Esc로도 조작됩니다. 바꾸면 그 DB 기준으로 목록·미리보기가 전부 새로 시작되고, 주소에 <code>?source=</code>가 붙어 새로고침해도 유지됩니다.</td></tr>
     <tr><td>말풍선 아이콘 (스키마 Q&amp;A)</td><td>MSSQL 소스에서만. 자연어로 "수주와 출하를 잇는 테이블은?" 같은 질문을 할 수 있습니다(8장).</td></tr>
     <tr><td><span class="btn">사용 안내</span></td><td>이 문서를 HTML 파일로 내려받습니다.</td></tr>
     <tr><td><code>EN</code> / <code>한</code></td><td>한국어 ↔ 영어 전환. 브라우저에 기억됩니다.</td></tr>
@@ -471,7 +471,7 @@
     <tr><td>무거운 객체가 많다</td><td>큰 테이블이 많거나 계보가 안 풀린 뷰가 많음</td><td>정말 필요한 것만 체크해 <span class="btn">선택 실행</span>. 파싱 지표에서 계보 실패 원인 확인</td></tr>
     <tr><td>미리보기 표가 비어 있음</td><td>문구가 두 가지: 조건이 좁음 / 테이블이 실제로 0행</td><td>4-5절 참고</td></tr>
     <tr><td>미리보기가 502 오류</td><td>원본 DB에 연결이 안 됨(n8n 워크플로 비활성, 자격증명, 네트워크)</td><td>관리자에게 오류 문구 그대로 전달</td></tr>
-    <tr><td>조인 검증·파싱 지표 메뉴가 안 보임</td><td>MSSQL이 아닌 소스를 보는 중</td><td>헤더 소스 선택에서 사내 MSSQL로 전환</td></tr>
+    <tr><td>조인 검증·파싱 지표 메뉴가 안 보임</td><td>MSSQL이 아닌 소스를 보는 중</td><td>소스 선택(테이블 화면은 JOIN KEYS 바 왼쪽, 그 외 화면은 헤더)에서 사내 MSSQL로 전환</td></tr>
     <tr><td>AI 요약에 <code>목업</code> 배지</td><td>사내 LLM 미연결</td><td>정상. 연결되면 실제 요약으로 바뀜</td></tr>
     <tr><td>뷰 쿼리 보기에 "정의가 수집되지 않았다"</td><td>수집 시 원본 DB의 VIEW DEFINITION 권한 없음</td><td>DBA에게 권한 요청 후 카탈로그 재수집</td></tr>
     <tr><td>복사 버튼이 "복사 실패"</td><td>http 환경에서 클립보드 제한</td><td>텍스트를 직접 드래그해 복사</td></tr>

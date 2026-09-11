@@ -64,7 +64,7 @@ docker compose up -d --build
 배포 전 로컬 리허설(로컬 Keycloak + 선택적 MSSQL/n8n 수집 리허설): `docs/local-test.md`
 실DB 연결(정찰 → 수집 → live 전환) 순서와 체크리스트: **`docs/connect.md`**
 사내 다른 도커 서비스 DB(PostgreSQL/SQLite)를 추가로 붙이는 절차: **`docs/connect-sources.md`**
-(서비스 담당자에게 보낼 요청서: `docs/handoff/service-owner-prompt.md`, 담당자용 안내 페이지: `frontend/public/handoff/integration-guide.html`, 관리자 화면 `데이터 소스` 섹션의 [연동 안내서] 버튼 또는 웹에서 `/handoff/integration-guide.html`로 접근)
+(서비스 담당자에게 보낼 요청서: `docs/handoff/service-owner-prompt.md`, 담당자용 안내 페이지: `frontend/public/handoff/integration-guide.html`, 관리자 화면 *소스·수집* 탭의 [연동 안내서 내려받기] 버튼 또는 웹에서 `/handoff/integration-guide.html`로 접근)
 사용자용 서비스 사용 안내(화면별 조작·값 추적·FAQ): `frontend/public/handoff/user-guide.html` — 헤더 우측 [사용 안내] 버튼 또는 `/handoff/user-guide.html`
 운영과 완전히 분리된 별도 포트·별도 DB의 개발 스택(LDAP 로그인 등 신규 기능 시험용): **`docs/dev-deploy.md`**
 
@@ -72,7 +72,8 @@ docker compose up -d --build
 - **n8n**: http://182.199.63.71:5678 — `n8n/workflows/*.json` 임포트 (한 세트가 로컬·실서버 겸용:
   `$env` 있으면 그 값, 없으면 리터럴 폴백 — 절차: `n8n/workflows/README.md`)
   - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
-- Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의)
+- Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의).
+  다른 서비스 DB를 붙이는 전용 네트워크는 `10.203.<n>.0/24` (`n`은 1부터, 첫 연결이 1 사용 — `docs/connect-sources.md` §1)
 
 ## 인증 (Keycloak + LDAP + 화이트리스트)
 
@@ -92,12 +93,12 @@ docker compose up -d --build
   제외 규칙(외부 조직·서비스 계정)은 `backend/app/ad/org.py`
 - **개발 모드**: `AUTH_ENABLED=false`(기본)면 Keycloak 없이 동작 — `X-Dev-User` 헤더 신뢰 (bpm 패턴)
 - **미리보기 허용 목록**: 실제 값이 화면에 나가는 경로(테이블 미리보기·조인 샘플)는 **기본 전부 차단**이고,
-  `/admin` → *미리보기 허용 스키마*에 등록된 **스키마의 객체 전부**가 열린다. 목록 **수정**은 `PREVIEW_ADMIN_PASSWORD`
+  `/admin` → *공개 범위* 탭 → *미리보기 허용 스키마*에 등록된 **스키마의 객체 전부**가 열린다. 목록 **수정**은 `PREVIEW_ADMIN_PASSWORD`
   (`.env`) 입력을 추가로 요구하며, 값이 비어 있으면 수정 자체가 막힌다(503). 추가·삭제는 감사 로그에 기록
 - **컬럼 비공개 스키마**: `HIDDEN_SCHEMAS`(`.env`, 쉼표 구분·대소문자 무시)에 넣은 스키마는 컬럼·조인 검증·
   미리보기·ERD 노드가 전부 빠지고, 화면에서 그 테이블로 타고 들어갈 수 없다. 미리보기 허용 목록과 **독립**이며
   (허용돼 있어도 감춤이 이긴다), 값이 아니라 **구조(컬럼)**를 통제한다는 점이 다르다.
-  **무엇을 감출지는 환경변수만** 정한다(배포 권한 필요) — `/admin` → *컬럼 비공개 스키마*의 토글은
+  **무엇을 감출지는 환경변수만** 정한다(배포 권한 필요) — `/admin` → *공개 범위* 탭 → *컬럼 비공개 스키마*의 토글은
   좌측 스키마·카테고리 목록과 테이블 목록에 **이름을 노출할지**만 정하며(기본 숨김), 켜도 컬럼은 열리지 않는다.
   토글 변경은 `PREVIEW_ADMIN_PASSWORD`를 요구하고 감사 로그에 남는다. 숨김 상태에선 관리 화면도
   스키마 이름 대신 건수만 보여준다(표시로 바꾸면 이름이 나온다)
@@ -126,11 +127,12 @@ curl -s http://182.199.63.71:6678/api/health        # {"status":"ok"} — 인증
 | 전체 동기화 503 | `LDAP_*` 4종 중 빈 값 |
 | LDAP 로그인 폼이 안 보임 | `AUTH_LDAP_LOGIN_ENABLED=true` 후 **`--build`** 했는지 (`NEXT_PUBLIC_*`는 빌드 인라인) |
 | LDAP 로그인이 503 | `SESSION_SECRET_KEY` 미설정 또는 `LDAP_*` 4종 중 빈 값 |
-| 미리보기 버튼이 잠김 / 403 | `/admin` → 미리보기 허용 스키마에 그 객체의 **스키마**가 있는지 (기본은 전부 차단). 그래도 막히면 `HIDDEN_SCHEMAS`에 잡혀 있는지 확인 — 감춤이 허용보다 우선한다 |
+| 미리보기 버튼이 잠김 / 403 | `/admin` → *공개 범위* 탭 → 미리보기 허용 스키마에 그 객체의 **스키마**가 있는지 (기본은 전부 차단). 그래도 막히면 `HIDDEN_SCHEMAS`에 잡혀 있는지 확인 — 감춤이 허용보다 우선한다 |
 | 허용 목록 수정이 503 | `PREVIEW_ADMIN_PASSWORD` 미설정 — `.env` 채우고 backend 재기동 |
 | 미리보기가 빈 표 | 화면 문구로 구분: "원본 소스가 0행" = W2 실행됨(테이블이 비었거나 필터 불일치). 그 외엔 502 메시지에 n8n 상태·본문이 실린다 |
 | 소스 등록이 503 | `SOURCE_SECRET_KEY` 미설정 — `.env` 채우고 backend 재기동 (`docs/connect-sources.md` §6.1) |
 | 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 같은 컨테이너명(`postgres`)을 씀 — host를 네트워크 alias나 컨테이너 풀네임으로 |
+| 소스 삭제가 "스냅샷이 참조" 409 | 스냅샷·허용 목록·카테고리·값 추적 잡이 남아 있다 — *소스·수집* 탭 [삭제] → 함께 삭제되는 항목 확인 체크 → [함께 삭제]. API 직접 호출은 `DELETE /api/sources/{id}?cascade=true`. 기록을 남기려면 비활성화 |
 | backend가 `network ... not found`로 기동 실패 | `dbv-<서비스>` 네트워크가 지워짐 — `docker network create`로 다시 만든다 |
 
 **롤백**: `git checkout <이전 커밋> && docker compose up -d --build` — 데이터는 `pgdata` 볼륨에 유지.

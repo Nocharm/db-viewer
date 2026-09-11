@@ -20,16 +20,17 @@ describe("formatDeleteBlockedMessage", () => {
   it("names a single blocking count", () => {
     expect(formatDeleteBlockedMessage({ snapshots: 3 }, "fallback")).toBe(
       "스냅샷 3건이 이 소스를 참조하고 있어 삭제할 수 없습니다 — "
-      + "비활성화하거나 먼저 정리하세요.",
+      + "함께 삭제되는 내용을 확인한 뒤 삭제하거나, 비활성화하세요.",
     );
   });
 
   it("joins multiple blocking counts in a fixed order", () => {
     expect(formatDeleteBlockedMessage(
-      { snapshots: 3, preview_allowlist: 2, schema_categories: 1 }, "fallback",
+      { snapshots: 3, preview_allowlist: 2, schema_categories: 1, value_probe_jobs: 4 },
+      "fallback",
     )).toBe(
-      "스냅샷 3건·허용 목록 2건·카테고리 1건이 이 소스를 참조하고 있어 "
-      + "삭제할 수 없습니다 — 비활성화하거나 먼저 정리하세요.",
+      "스냅샷 3건·허용 목록 2건·카테고리 1건·값 추적 잡 4건이 이 소스를 참조하고 있어 "
+      + "삭제할 수 없습니다 — 함께 삭제되는 내용을 확인한 뒤 삭제하거나, 비활성화하세요.",
     );
   });
 
@@ -38,7 +39,7 @@ describe("formatDeleteBlockedMessage", () => {
       { snapshots: 0, preview_allowlist: 2, schema_categories: 0 }, "fallback",
     )).toBe(
       "허용 목록 2건이 이 소스를 참조하고 있어 삭제할 수 없습니다 — "
-      + "비활성화하거나 먼저 정리하세요.",
+      + "함께 삭제되는 내용을 확인한 뒤 삭제하거나, 비활성화하세요.",
     );
   });
 });

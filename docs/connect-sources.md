@@ -19,13 +19,20 @@ DB 컨테이너 둘만 그 네트워크에 넣는다.** 대상 서비스의 기�
 (subnet 172.36~46 부근, 서비스마다 제각각)는 한 줄도 건드리지 않는다.
 
 ```bash
-docker network create --subnet 172.50.<n>.0/24 dbv-<서비스키>
-# 예: docker network create --subnet 172.50.0.0/24 dbv-svca
+docker network create --subnet 10.203.<n>.0/24 dbv-<서비스키>
+# 예: docker network create --subnet 10.203.2.0/24 dbv-svca
 ```
 
-`<n>`은 서비스마다 다른 정수(0, 1, 2, …)로 겹치지 않게 관리한다. `172.50.x.0/24`는
-기존 서비스 대역(172.36~172.46)에도, db-viewer 자신의 대역(`172.48.0.0/16`,
-`docker-compose.yml` `networks.dbviewer` 참고)에도 겹치지 않는다.
+`<n>`은 1부터 서비스마다 다른 정수(1, 2, 3, …)로 겹치지 않게 관리한다 — **첫 연결이
+`10.203.1.0/24`를 이미 쓰고 있으므로** 다음 서비스는 `10.203.2.0/24`부터. `10.203.x.0/24`는
+RFC1918 사설 대역이고, 기존 서비스 대역(172.36~172.46)·db-viewer 자신의 대역(`172.48.0.0/16`,
+`docker-compose.yml` `networks.dbviewer` 참고)·개발 스택(`172.49.0.0/16`)과 겹치지 않는다.
+이미 쓰인 `<n>`은 아래로 확인한다:
+
+```bash
+docker network ls --filter name=dbv- --format '{{.Name}}' \
+  | xargs -I{} docker network inspect -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}}{{end}}' {}
+```
 
 ### 왜 이 방식인가 (검토했던 대안)
 
@@ -295,9 +302,9 @@ disabled — enable it before connecting"). 의도적 설계다 — 정상 운�
 | 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 같은 컨테이너명(`postgres`)을 씀 — host를 네트워크 alias나 컨테이너 풀네임으로 (7-2) |
 | backend가 `network ... not found`로 기동 실패 | `dbv-<서비스>` 네트워크가 지워졌다 — `docker network create`로 다시 만든다 (1) |
 | 대상 서비스 재기동 후 자기들끼리 못 찾음 | compose에 `networks:`를 명시하면서 `default:`를 빠뜨렸다 (3의 함정) |
-| `Pool overlaps with other one on this address space` | 서브넷 `172.50.<n>.0/24`가 이미 쓰이는 중 — 다른 `<n>` 사용 |
+| `Pool overlaps with other one on this address space` | 서브넷 `10.203.<n>.0/24`가 이미 쓰이는 중 — 다른 `<n>` 사용 (1의 확인 명령으로 사용 중인 값 조회) |
 | 연결 테스트가 502 | 소스 DB 자체 접속 실패(호스트·포트·자격증명) — 응답의 `error_type`과 backend 로그(`exc_info=True`로 전문 기록) 확인 |
 | 연결 테스트가 503 | 소스 장애가 아니라 이쪽 설정 문제 — `SOURCE_SECRET_KEY` 미설정 또는 키 불일치(비밀번호 복호화 실패) |
 | 연결 테스트가 400 | 그 소스가 n8n 경유(access_mode≠direct)이거나, engine이 postgres/sqlite가 아닌 행 — 둘 다 접속을 시도하지도 않고 거부한다(`sources.py` `/test`) |
-| 소스 삭제가 409 | 그 소스에 수집된 스냅샷이 있거나(스냅샷 1건이라도) 미리보기 허용목록·카테고리에 정책 행이 남아 있다 — 비활성화로 대체하거나 그 행들을 먼저 정리 |
+| 소스 삭제가 409 | 그 소스에 스냅샷·미리보기 허용목록·카테고리·값 추적 잡이 남아 있는데 `cascade` 없이 호출했다 — 관리 화면 *소스·수집* 탭의 [삭제]는 함께 삭제되는 항목 개수를 보여주고 체크를 받은 뒤 `DELETE /api/sources/{id}?cascade=true`로 한 번에 지운다(스냅샷의 카탈로그·컬럼·뷰 조인은 FK CASCADE). 접속만 끊고 기록을 남기려면 비활성화 |
 | `alembic upgrade head`가 실패 | 6.3의 롤백 절차(`alembic downgrade 0014`)로 되돌리고 원인 조사 후 재시도. 절대 실패 상태로 backend를 계속 띄워두지 않는다 |
