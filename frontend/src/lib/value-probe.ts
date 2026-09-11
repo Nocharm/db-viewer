@@ -92,6 +92,21 @@ export function takeSkippedForDisplay(
   };
 }
 
+/** 좌측 진행 순서의 단계 상태 — /verify의 VerifyStepState와 같은 어휘 / step display state */
+export type ProbeStepState = "done" | "current" | "locked" | "blocked";
+
+/** 조건 → 진행 → 찾은 컬럼 → 무거운 객체(선택) 4단계 상태. 잡이 없으면 조건만 열려 있고,
+ *  실행 중엔 진행·결과가 함께 진행 중(히트가 도착하는 대로 쌓인다), 무거운 객체는 건너뛴
+ *  대상이 있을 때만 열린다 / the four step states, in order. */
+export function getProbeStepStates(job: ValueProbeJob | null): ProbeStepState[] {
+  if (job === null) return ["current", "locked", "locked", "locked"];
+  const running = shouldKeepPolling(job.status);
+  const progress: ProbeStepState = running ? "current" : job.status === "failed" ? "blocked" : "done";
+  const hits: ProbeStepState = running ? "current" : "done";
+  const heavy: ProbeStepState = job.heavy.length > 0 ? "current" : "locked";
+  return ["done", progress, hits, heavy];
+}
+
 export type FindButtonMode = "find" | "progress" | "stop";
 
 /** 찾기 버튼의 세 얼굴 — 대기·진행·중단(호버/키포커스) / the find button's three states. */

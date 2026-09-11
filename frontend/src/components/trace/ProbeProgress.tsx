@@ -14,6 +14,8 @@ import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { describeSkippedView, shouldKeepPolling, takeSkippedForDisplay } from "@/lib/value-probe";
 
 interface ProbeProgressProps {
+  /** 좌측 진행 순서가 스크롤해 오는 앵커 / anchor for the side navigator */
+  id?: string;
   job: ValueProbeJob;
   plan: ValueProbeStart["plan"] | null;
 }
@@ -23,7 +25,7 @@ const STATUS_KEYS: Record<ValueProbeJob["status"], MessageKey> = {
   failed: "trace.status.failed", cancelled: "trace.status.cancelled",
 };
 
-export function ProbeProgress({ job, plan }: ProbeProgressProps) {
+export function ProbeProgress({ id, job, plan }: ProbeProgressProps) {
   const { t } = useI18n();
   const active = shouldKeepPolling(job.status);
   const seconds = useElapsedSeconds(active);
@@ -38,7 +40,7 @@ export function ProbeProgress({ job, plan }: ProbeProgressProps) {
   const { shown: shownSkipped, rest: restSkipped } = takeSkippedForDisplay(skipped);
 
   return (
-    <section className="card p-4" data-testid="ProbeProgress-root">
+    <section id={id} className="card p-4" data-testid="ProbeProgress-root">
       <StepCardHeader no={2} icon={<SampleIcon size={14} />} title={t("trace.progress.title")}
                       desc={t("trace.progress.desc")}>
         <span className={`badge ${badge}`} data-testid="ProbeProgress-status">

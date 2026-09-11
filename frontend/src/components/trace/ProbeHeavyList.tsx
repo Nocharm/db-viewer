@@ -12,6 +12,8 @@ import type { ValueProbeHeavy, ValueProbeJob } from "@/lib/api";
 import type { MessageKey } from "@/lib/i18n";
 
 interface ProbeHeavyListProps {
+  /** 좌측 진행 순서가 스크롤해 오는 앵커 / anchor for the side navigator */
+  id?: string;
   job: ValueProbeJob;
   busy: boolean;
   onRun: (targetIds: number[]) => void;
@@ -30,7 +32,7 @@ const REASON_BADGES: Record<ValueProbeHeavy["reason"], string> = {
   view_shape: "badge--ai",
 };
 
-export function ProbeHeavyList({ job, busy, onRun }: ProbeHeavyListProps) {
+export function ProbeHeavyList({ id, job, busy, onRun }: ProbeHeavyListProps) {
   const { t } = useI18n();
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
@@ -42,7 +44,7 @@ export function ProbeHeavyList({ job, busy, onRun }: ProbeHeavyListProps) {
   });
 
   return (
-    <section className="card p-4" data-testid="ProbeHeavyList-root">
+    <section id={id} className="card p-4" data-testid="ProbeHeavyList-root">
       <StepCardHeader no={4} icon={<DatabaseIcon size={14} />} title={t("trace.heavy.title")}
                       desc={t("trace.heavy.desc")}>
         <span className="hint-pill" data-testid="ProbeHeavyList-skippedHint">
