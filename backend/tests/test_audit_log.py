@@ -31,7 +31,8 @@ def _actions(client, **params) -> list[str]:
 
 def test_empty_before_anything_happens(client):
     body = client.get("/api/admin/audit").json()
-    assert body == {"total": 0, "actions": [], "items": []}
+    assert body == {"total": 0, "actions": [], "requesters": [], "targets": [],
+                    "counts_by_action": {}, "failed_logins": 0, "items": []}
 
 
 def test_preview_allowlist_edits_are_recorded(client, load_fixture, preview_password):
@@ -166,3 +167,26 @@ def test_filters_by_date_range(client, sysadmins):
     before = client.get("/api/admin/audit", params={"date_to": yesterday},
                         headers=_admin_headers("kim.admin")).json()
     assert before["total"] == 0
+
+
+def test_target_is_recorded_and_filterable(client, sysadmins):
+    client.post("/api/admin/whitelist", headers=_admin_headers("kim.admin"),
+                json={"login_id": "hong.gil"})
+    client.post("/api/admin/whitelist", headers=_admin_headers("kim.admin"),
+                json={"login_id": "park.min"})
+    body = client.get("/api/admin/audit", params={"target": "hong"},
+                      headers=_admin_headers("kim.admin")).json()
+    assert [item["target"] for item in body["items"]] == ["hong.gil"]
+    assert body["requesters"] == ["kim.admin"]
+    assert body["targets"] == ["hong.gil", "park.min"]
+
+
+def test_summary_counts_ignore_the_action_filter(client, sysadmins):
+    client.post("/api/admin/whitelist", headers=_admin_headers("kim.admin"),
+                json={"login_id": "hong.gil"})
+    client.delete("/api/admin/whitelist/hong.gil", headers=_admin_headers("kim.admin"))
+    body = client.get("/api/admin/audit", params={"action": "whitelist_add"},
+                      headers=_admin_headers("kim.admin")).json()
+    assert body["total"] == 1
+    assert body["counts_by_action"] == {"whitelist_add": 1, "whitelist_remove": 1}
+    assert body["failed_logins"] == 0

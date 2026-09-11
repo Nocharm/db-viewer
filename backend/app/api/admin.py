@@ -67,7 +67,7 @@ def add_whitelist(
         db.add(LoginWhitelist(login_id=login_id, note=req.note, added_by=admin, created_at=now))
     else:
         existing.note = req.note
-    db.add(AuditLog(action="whitelist_add", detail=login_id,
+    db.add(AuditLog(action="whitelist_add", target=login_id, detail=login_id,
                     requested_by=admin, requested_at=now))
     return {"login_id": login_id, "created": existing is None}
 
@@ -83,7 +83,7 @@ def remove_whitelist(
         raise HTTPException(404, {"message": "not in whitelist",
                                   "context": {"login_id": login_id}})
     db.delete(row)
-    db.add(AuditLog(action="whitelist_remove", detail=login_id,
+    db.add(AuditLog(action="whitelist_remove", target=login_id, detail=login_id,
                     requested_by=admin, requested_at=datetime.now(UTC)))
     return {"login_id": login_id, "removed": True}
 
@@ -201,6 +201,7 @@ def add_preview_allow(
 def get_audit_log(
     action: str | None = None,
     requested_by: str | None = None,
+    target: str | None = None,
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
@@ -215,21 +216,26 @@ def get_audit_log(
     조인 샘플)이 모두 같은 표에 쌓인다. `total`을 함께 주는 건 잘린 목록만 보면 화면이
     "이게 전부"라고 거짓말하기 때문 (objects 검색과 같은 이유).
     """
-    filters = [AuditLog.action == action] if action else []
-    # 요청자·대상은 부분일치 — 감사 화면에서 사번 일부·테이블명 일부로 좁힌다.
+    # 요청자·대상·내용은 부분일치 — 감사 화면에서 사번 일부·테이블명 일부로 좁힌다.
     # LIKE 메타문자(%·_)는 이스케이프해 리터럴로 취급 / escape LIKE wildcards
     def contains(column, term: str):
         escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         return column.ilike(f"%{escaped}%", escape="\\")
+    # action을 뺀 필터 — 요약 타일(counts_by_action·failed_logins)은 "이 기간·이 사람"의
+    # 전체 분포를 보여줘야 하므로 동작 필터에 영향받지 않는다
+    base = []
     if requested_by:
-        filters.append(contains(AuditLog.requested_by, requested_by))
+        base.append(contains(AuditLog.requested_by, requested_by))
+    if target:
+        base.append(contains(AuditLog.target, target))
     if q:
-        filters.append(contains(AuditLog.detail, q))
+        base.append(contains(AuditLog.detail, q))
     # 기간은 [from, to) — 프론트가 로컬 자정 기준으로 변환해 보낸다
     if date_from is not None:
-        filters.append(AuditLog.requested_at >= date_from)
+        base.append(AuditLog.requested_at >= date_from)
     if date_to is not None:
-        filters.append(AuditLog.requested_at < date_to)
+        base.append(AuditLog.requested_at < date_to)
+    filters = [*base, *([AuditLog.action == action] if action else [])]
     total = db.execute(
         select(func.count()).select_from(AuditLog).where(*filters)
     ).scalar_one()
@@ -242,13 +248,36 @@ def get_audit_log(
     actions = list(db.execute(
         select(AuditLog.action).distinct().order_by(AuditLog.action)
     ).scalars())
+    # 요청자·대상 드롭다운 축 — 500개 상한: 그 이상이면 검색창 타이핑으로 좁힌다
+    requesters = list(db.execute(
+        select(AuditLog.requested_by).distinct().order_by(AuditLog.requested_by).limit(500)
+    ).scalars())
+    targets = list(db.execute(
+        select(AuditLog.target).where(AuditLog.target.is_not(None))
+        .distinct().order_by(AuditLog.target).limit(500)
+    ).scalars())
+    counts = db.execute(
+        select(AuditLog.action, func.count()).where(*base).group_by(AuditLog.action)
+    ).all()
+    # 로그인 실패·거부 — LDAP 실패 행은 detail이 "<id> fail"로 끝난다 (auth_login.py)
+    failed_logins = db.execute(
+        select(func.count()).select_from(AuditLog).where(
+            *base,
+            or_(AuditLog.action == "access_denied",
+                (AuditLog.action == "ldap_login") & AuditLog.detail.like("% fail")),
+        )
+    ).scalar_one()
     return {
         "total": total,
         "actions": actions,
+        "requesters": requesters,
+        "targets": targets,
+        "counts_by_action": {name: count for name, count in counts},
+        "failed_logins": failed_logins,
         "items": [
             {
-                "id": row.id, "action": row.action, "detail": row.detail,
-                "requested_by": row.requested_by,
+                "id": row.id, "action": row.action, "target": row.target,
+                "detail": row.detail, "requested_by": row.requested_by,
                 "requested_at": row.requested_at.isoformat(),
             }
             for row in rows

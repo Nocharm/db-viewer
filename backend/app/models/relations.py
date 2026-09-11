@@ -121,6 +121,9 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     action: Mapped[str] = mapped_column(String(32))
+    # 조작 대상 하나(테이블·스키마·login_id·소스명·job) — 감사 화면 드롭다운·필터 축.
+    # detail은 자유 문장이라 축으로 못 쓴다 / one target per row, the filter axis
+    target: Mapped[str | None] = mapped_column(String(300), nullable=True)
     detail: Mapped[str] = mapped_column(String(600))
     requested_by: Mapped[str] = mapped_column(String(64))
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
