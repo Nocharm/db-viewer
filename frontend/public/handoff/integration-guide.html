@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
   /* 단일 파일·라이트 전용 — 내려받아 메일로 보내도 그대로 보이게 외부 스크립트 없음.
-     두 독자(서비스 담당자 = 앰버, db-viewer 담당자 = 틸)를 색으로 구분한다 */
+     두 독자(서비스 담당자 = 앰버, db-viewer 담당자 = 틸)를 색으로 구분한다.
+     그림책 구성: 걸음마다 그림이 먼저, 말은 짧게, 명령은 복사 블록으로 */
   :root {
     --bg: #f6f9f7;
     --surface: #ffffff;
@@ -49,6 +50,8 @@
   .eyebrow { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .lede { font-size: 20px; color: var(--muted); max-width: 720px; }
   .sub { color: var(--muted); font-size: 15px; margin-top: -4px; margin-bottom: 20px; }
+  .tldr { border-left: 4px solid var(--dbv); background: var(--surface); border-radius: 0 12px 12px 0; padding: 14px 18px; margin: 18px 0 0; max-width: 720px; }
+  .tldr strong { color: var(--dbv); }
 
   /* 독자 필터 — 내 역할이 아닌 단계는 흐리게(숨기지 않는다: 흐름은 계속 보여야 한다) */
   .role-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 8px; }
@@ -74,12 +77,47 @@
   .badge.dbv { background: var(--dbv-bg); color: var(--dbv); }
   .badge.both { background: var(--surface-dim); color: var(--muted); }
 
+  /* 낱말 — 비유 ↔ 실제 이름 대응표 */
+  .words { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 4px 28px; margin: 14px 0 0; }
+  .words > div { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--hairline); font-size: 15px; }
+  .words dt { font-weight: 700; white-space: nowrap; }
+  .words dd { margin: 0; color: var(--muted); }
+
   .figure {
     background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px;
     padding: 18px 18px 8px; margin: 18px 0 8px;
   }
   .figure svg { width: 100%; height: auto; display: block; }
   .caption { font-size: 15px; color: var(--muted); margin: 8px 4px 0; }
+
+  /* 그림 공통 낱말 — 건물(컨테이너)·울타리(default)·복도(네트워크)·문·문패 */
+  .fig text { font-family: var(--sans); }
+  .fig .t { fill: var(--ink); font-size: 14px; }
+  .fig .th { font-weight: 700; font-size: 16px; }
+  .fig .t-dbv { fill: var(--dbv); } .fig .t-svc { fill: var(--svc); } .fig .t-mute { fill: var(--muted); } .fig .t-bad { fill: var(--danger); }
+  .fig .mono { font-family: var(--mono); font-size: 12.5px; }
+  .fig .fence { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .fig .bld-dbv { fill: var(--dbv-bg); stroke: var(--dbv); stroke-width: 2; }
+  .fig .bld-svc { fill: var(--svc-bg); stroke: var(--svc); stroke-width: 2; }
+  .fig .room { fill: var(--surface); stroke: var(--hairline); stroke-width: 1.5; }
+  .fig .room-db { fill: var(--surface); stroke: var(--svc); stroke-width: 2; }
+  .fig .box { fill: var(--surface); stroke: var(--dbv); stroke-width: 2; }
+  .fig .store { fill: var(--surface-dim); stroke: var(--muted); stroke-width: 1.5; }
+  .fig .door { fill: var(--dbv); }
+  .fig .link { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+  .fig .corr-o { fill: none; stroke: var(--dbv); stroke-width: 18; stroke-linecap: round; }
+  .fig .corr-i { fill: none; stroke: var(--dbv-bg); stroke-width: 14; stroke-linecap: round; }
+  .fig .corr-s-o { fill: none; stroke: var(--dbv); stroke-width: 12; stroke-linecap: round; }
+  .fig .corr-s-i { fill: none; stroke: var(--dbv-bg); stroke-width: 8; stroke-linecap: round; }
+  .fig .stub-o { stroke: var(--dbv); stroke-width: 18; } .fig .stub-i { stroke: var(--dbv-bg); stroke-width: 14; }
+  .fig .band { fill: var(--dbv-bg); stroke: var(--dbv); stroke-width: 2; }
+  .fig .bad-line { fill: none; stroke: var(--danger); stroke-width: 2; stroke-dasharray: 6 4; }
+  .fig .bad-fill { fill: var(--danger); }
+  .fig .ok-fill { fill: var(--dbv); }
+  .fig .xmark { stroke: var(--danger); stroke-width: 3; stroke-linecap: round; }
+  .fig .ok { stroke: var(--dbv); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .fig .key { stroke: var(--dbv); stroke-width: 2.5; fill: none; stroke-linecap: round; }
+  .fig .ghost { opacity: .45; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 18px 0; }
   .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px; }
@@ -88,6 +126,8 @@
   .card .a strong { color: var(--ink); }
   .card .ico { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; margin-bottom: 10px; background: var(--surface-dim); color: var(--accent); }
   .card .ico svg { width: 20px; height: 20px; }
+  .card > svg { width: 100%; height: auto; display: block; margin-bottom: 10px; }
+  .card.pick { border: 2px solid var(--dbv); }
 
   .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
   .role { border-radius: 14px; padding: 18px 20px; border: 1.5px solid; }
@@ -115,6 +155,7 @@
   ol.steps h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   ol.steps p, ol.steps ul { font-size: 15.5px; }
   ol.steps ul { margin: 6px 0 10px; padding-left: 20px; }
+  ol.steps .figure { margin-top: 10px; }
 
   .codeblock { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 14px 16px; margin: 10px 0 14px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px; line-height: 1.55; }
   .codeblock .cm { color: #8fb3a6; }
@@ -158,6 +199,8 @@
     .form-mock .field { grid-column: 2; }
     .form-mock .note { grid-column: 2; }
     ol.steps > li { padding-left: 56px; }
+    .figure { overflow-x: auto; }
+    .figure svg { min-width: 560px; }
   }
   @media print {
     body { background: #fff; }
@@ -170,11 +213,12 @@
 <main>
 
 <header>
-  <div class="eyebrow">db-viewer × 여러분의 서비스</div>
+  <div class="eyebrow">db-viewer × 여러분의 서비스 · 그림으로 보는 연동 안내</div>
   <h1>옆 건물 DB를 ‘읽기만’ 하러 가는 길</h1>
   <p class="lede">db-viewer는 여러분 서비스 DB의 <strong>구조</strong>(테이블·컬럼·관계)를 읽어 지도(ERD)를 그리는 도구입니다.
-  데이터를 바꾸지 않고, 여러분 서비스의 기존 설정도 건드리지 않습니다.
-  이 문서 한 장으로 <strong>서비스 담당자</strong>와 <strong>db-viewer 담당자</strong>가 각자 할 일을 순서대로 끝낼 수 있습니다.</p>
+  데이터를 바꾸지 않고, 여러분 서비스의 기존 설정도 건드리지 않습니다.</p>
+  <div class="tldr"><strong>한 줄로.</strong> 두 건물 사이에 복도를 하나 내고(도커 네트워크), 읽기 전용 열쇠 하나를 만들면(DB 계정) 끝입니다.
+  복도는 미리 지어 둔 <strong>공유 복도</strong>나 서비스 전용 <strong>새 복도</strong> 중에서 고릅니다.</div>
   <div class="role-filter" role="group" aria-label="내 역할만 강조">
     <button type="button" data-set="all" aria-pressed="true">전체 보기</button>
     <button type="button" class="svc" data-set="svc" aria-pressed="false">🟧 나는 서비스 담당자</button>
@@ -183,64 +227,85 @@
   <p class="sub">버튼을 누르면 내 차례가 아닌 단계는 흐려집니다. 흐름은 그대로 보이니 상대가 무엇을 하는지도 알 수 있습니다.</p>
 </header>
 
+<!-- ───────────────────────── 0. 낱말 ───────────────────────── -->
+<h2>이 안내서의 낱말</h2>
+<p class="sub">그림에 나오는 비유가 실제로 무엇인지. 이 표만 알면 나머지는 그림대로입니다.</p>
+<dl class="words">
+  <div><dt>건물 · 방</dt><dd>컨테이너. 여러분 서비스의 앱 컨테이너와 DB 컨테이너.</dd></div>
+  <div><dt>울타리</dt><dd>default 네트워크. 같은 compose끼리만 통하는 원래 길. 안 건드립니다.</dd></div>
+  <div><dt>복도</dt><dd>db-viewer용 도커 네트워크. 공유 <code>dbv-shared</code> 또는 전용 <code>dbv-&lt;서비스키&gt;</code>.</dd></div>
+  <div><dt>문</dt><dd>compose의 <code>networks:</code> 항목 한 줄. 문을 내야 복도로 나갈 수 있습니다.</dd></div>
+  <div><dt>문패</dt><dd>별칭(alias) <code>&lt;서비스키&gt;-db</code>. 복도에서 여러분 DB를 찾는 이름.</dd></div>
+  <div><dt>열쇠</dt><dd>읽기 전용 계정 <code>dbviewer_ro</code>. <code>SELECT</code>만 됩니다.</dd></div>
+  <div><dt>금고 열쇠</dt><dd><code>SOURCE_SECRET_KEY</code>. db-viewer가 접속 비밀번호를 잠가 두는 키. 처음 한 번.</dd></div>
+  <div><dt>헐고 다시 짓기</dt><dd><code>docker compose down</code> / <code>up -d</code>. <code>down</code>은 복도까지 헐어서 쓰지 않습니다.</dd></div>
+</dl>
+
 <!-- ───────────────────────── 1. 한 장 그림 ───────────────────────── -->
 <h2>한 장으로 보면</h2>
-<div class="figure" aria-label="두 건물 사이에 복도를 하나 내고, 읽기 열쇠 하나로 DB를 들여다보는 그림">
-  <svg viewBox="0 0 960 360" role="img">
-    <defs>
-      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-        <path d="M0 0 L10 5 L0 10 z" fill="#0e7a5f"/>
-      </marker>
-    </defs>
-    <!-- 여러분 서비스 건물 -->
-    <rect x="40" y="70" width="300" height="230" rx="16" fill="#fdf0e1" stroke="#b45309" stroke-width="2"/>
-    <text x="190" y="104" text-anchor="middle" font-size="19" font-weight="700" fill="#b45309">여러분 서비스</text>
-    <!-- 앱 컨테이너 -->
-    <rect x="66" y="126" width="110" height="64" rx="10" fill="#fff" stroke="#d6e2dc"/>
-    <text x="121" y="164" text-anchor="middle" font-size="15" fill="#5c6d67">앱</text>
-    <!-- DB 실린더 -->
-    <g transform="translate(232 120)">
-      <ellipse cx="40" cy="14" rx="40" ry="14" fill="#fff" stroke="#b45309" stroke-width="2"/>
-      <path d="M0 14 v56 c0 8 18 14 40 14 s40 -6 40 -14 V14" fill="#fff" stroke="#b45309" stroke-width="2"/>
-      <path d="M0 42 c0 8 18 14 40 14 s40 -6 40 -14" fill="none" stroke="#b45309" stroke-width="2"/>
-      <text x="40" y="122" text-anchor="middle" font-size="15" font-weight="600" fill="#1d2b26">DB 컨테이너</text>
-    </g>
-    <!-- 기존 문 -->
-    <rect x="66" y="212" width="110" height="60" rx="8" fill="#fff" stroke="#d6e2dc"/>
-    <text x="121" y="236" text-anchor="middle" font-size="13" fill="#5c6d67">기존 문</text>
-    <text x="121" y="256" text-anchor="middle" font-size="13" fill="#5c6d67">default 네트워크</text>
-    <text x="121" y="292" text-anchor="middle" font-size="13" font-weight="700" fill="#b45309">그대로 둡니다</text>
-    <!-- db-viewer 복도 (공유 또는 전용) -->
-    <rect x="340" y="150" width="280" height="60" rx="10" fill="#e3f3ee" stroke="#0e7a5f" stroke-width="2" stroke-dasharray="6 5"/>
-    <text x="480" y="174" text-anchor="middle" font-size="15" font-weight="700" fill="#0e7a5f">db-viewer 복도</text>
-    <text x="480" y="196" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, Menlo, monospace" fill="#0e7a5f">공유 dbv-shared · 전용 dbv-&lt;서비스키&gt;</text>
-    <!-- 읽기 화살표 -->
-    <path d="M616 180 H540" stroke="#0e7a5f" stroke-width="3" fill="none" marker-end="url(#arrow)" transform="translate(0 -46)"/>
-    <text x="572" y="122" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0e7a5f">읽기만 (SELECT)</text>
-    <!-- 열쇠 -->
-    <g transform="translate(455 236)">
-      <circle cx="12" cy="12" r="9" fill="#fff" stroke="#0e7a5f" stroke-width="2.5"/>
-      <path d="M20 14 H50 M42 14 v8 M34 14 v6" stroke="#0e7a5f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-      <text x="26" y="42" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, Menlo, monospace" fill="#1d2b26">dbviewer_ro</text>
-      <text x="26" y="60" text-anchor="middle" font-size="12" fill="#5c6d67">읽기 전용 열쇠</text>
-    </g>
+<div class="figure" aria-label="db-viewer가 공유 복도로 서비스 A·B의 DB에, 전용 복도로 서비스 C의 DB에 읽기 전용 열쇠로 들어가는 그림">
+  <svg class="fig" viewBox="0 0 960 444" role="img">
+    <!-- 전용 복도 (먼저 그려 건물 아래로) -->
+    <path d="M266 272 C 360 272, 430 360, 550 360" class="corr-o"/>
+    <path d="M266 272 C 360 272, 430 360, 550 360" class="corr-i"/>
+    <!-- 공유 복도 + 서비스 A·B의 문 -->
+    <line x1="381" y1="136" x2="381" y2="172" class="stub-o"/>
+    <line x1="577" y1="136" x2="577" y2="172" class="stub-o"/>
+    <rect x="266" y="170" width="420" height="52" rx="10" class="band"/>
+    <line x1="381" y1="136" x2="381" y2="172" class="stub-i"/>
+    <line x1="577" y1="136" x2="577" y2="172" class="stub-i"/>
+    <text x="282" y="202" class="mono t-dbv">공유 복도 · dbv-shared · 미리 지어 둠</text>
+
     <!-- db-viewer 건물 -->
-    <rect x="620" y="70" width="300" height="230" rx="16" fill="#e3f3ee" stroke="#0e7a5f" stroke-width="2"/>
-    <text x="770" y="104" text-anchor="middle" font-size="19" font-weight="700" fill="#0e7a5f">db-viewer</text>
-    <rect x="650" y="126" width="240" height="64" rx="10" fill="#fff" stroke="#d6e2dc"/>
-    <text x="770" y="153" text-anchor="middle" font-size="15" fill="#1d2b26">구조를 읽어 지도(ERD)를 그림</text>
-    <text x="770" y="175" text-anchor="middle" font-size="13" fill="#5c6d67">값은 허용한 스키마만, 최대 20행</text>
-    <rect x="650" y="212" width="240" height="60" rx="8" fill="#fff" stroke="#d6e2dc"/>
-    <text x="770" y="236" text-anchor="middle" font-size="13" fill="#5c6d67">여러분 서비스로 쓰기·변경</text>
-    <text x="770" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="#b30000">없음</text>
-    <!-- 다른 서비스 DB — 전용 복도면 못 들어오고, 공유 복도면 나란히 선다 -->
-    <rect x="380" y="286" width="200" height="50" rx="10" fill="#f6f9f7" stroke="#d6e2dc" stroke-dasharray="4 4"/>
-    <text x="480" y="308" text-anchor="middle" font-size="13" fill="#93939f">다른 서비스의 DB</text>
-    <text x="480" y="326" text-anchor="middle" font-size="12" fill="#93939f">전용 복도면 못 들어옴 · 공유 복도면 나란히</text>
+    <rect x="40" y="150" width="220" height="170" rx="14" class="bld-dbv"/>
+    <text x="150" y="182" text-anchor="middle" class="t th t-dbv">db-viewer</text>
+    <rect x="64" y="204" width="172" height="48" rx="8" class="room"/>
+    <text x="150" y="233" text-anchor="middle" class="t" font-size="13">구조를 읽어 지도(ERD)를 그림</text>
+    <text x="150" y="282" text-anchor="middle" class="t th t-dbv">읽기만 (SELECT)</text>
+    <text x="150" y="304" text-anchor="middle" class="t t-bad" font-size="13">쓰기·변경 없음</text>
+    <rect x="252" y="181" width="14" height="30" rx="2" class="door"/>
+    <rect x="252" y="257" width="14" height="30" rx="2" class="door"/>
+
+    <!-- 서비스 A -->
+    <rect x="290" y="20" width="180" height="130" rx="12" class="fence"/>
+    <text x="300" y="36" class="t t-mute" font-size="11">울타리(default) 그대로</text>
+    <rect x="304" y="42" width="152" height="88" rx="10" class="bld-svc"/>
+    <text x="380" y="66" text-anchor="middle" class="t th t-svc">서비스 A</text>
+    <rect x="344" y="80" width="72" height="40" rx="6" class="room-db"/>
+    <text x="380" y="105" text-anchor="middle" class="t">DB</text>
+    <rect x="366" y="123" width="30" height="14" rx="2" class="door"/>
+
+    <!-- 서비스 B -->
+    <rect x="486" y="20" width="180" height="130" rx="12" class="fence"/>
+    <text x="496" y="36" class="t t-mute" font-size="11">울타리(default) 그대로</text>
+    <rect x="500" y="42" width="152" height="88" rx="10" class="bld-svc"/>
+    <text x="576" y="66" text-anchor="middle" class="t th t-svc">서비스 B</text>
+    <rect x="540" y="80" width="72" height="40" rx="6" class="room-db"/>
+    <text x="576" y="105" text-anchor="middle" class="t">DB</text>
+    <rect x="562" y="123" width="30" height="14" rx="2" class="door"/>
+
+    <!-- 서비스 C (전용) -->
+    <rect x="540" y="280" width="380" height="130" rx="12" class="fence"/>
+    <text x="550" y="296" class="t t-mute" font-size="11">울타리(default) 그대로</text>
+    <rect x="556" y="302" width="348" height="88" rx="10" class="bld-svc"/>
+    <text x="730" y="326" text-anchor="middle" class="t th t-svc">서비스 C — 남과 닿으면 안 됨</text>
+    <rect x="576" y="340" width="72" height="40" rx="6" class="room-db"/>
+    <text x="612" y="365" text-anchor="middle" class="t">DB</text>
+    <rect x="680" y="340" width="64" height="40" rx="6" class="room"/>
+    <text x="712" y="365" text-anchor="middle" class="t">앱</text>
+    <rect x="549" y="345" width="14" height="30" rx="2" class="door"/>
+
+    <!-- 열쇠 -->
+    <g transform="translate(290 234)">
+      <circle cx="12" cy="12" r="9" class="key"/>
+      <path d="M20 14 H50 M42 14 v8 M34 14 v6" class="key"/>
+      <text x="62" y="18" class="mono t-dbv">열쇠 dbviewer_ro · 서비스마다 하나, 읽기 전용</text>
+    </g>
+    <text x="40" y="432" class="mono t-dbv">전용 복도 · dbv-&lt;서비스키&gt; · db-viewer와 서비스 C 둘만</text>
   </svg>
-  <p class="caption"><strong>복도 하나, 열쇠 하나.</strong> 복도(도커 네트워크)는 db-viewer 담당자가 만들고, 열쇠(읽기 전용 계정)는 서비스 담당자가 만듭니다.
-  여러분 서비스가 원래 쓰던 문(default 네트워크)은 한 줄도 바꾸지 않습니다.
-  복도는 두 종류 — 미리 지어 둔 <strong>공유 복도</strong>(<code>dbv-shared</code>, 편하지만 다른 서비스 DB와 나란히 섬)와 서비스마다 새로 내는 <strong>전용 복도</strong>(<code>dbv-&lt;서비스키&gt;</code>, 둘만). 1단계에서 고릅니다.</p>
+  <p class="caption"><strong>복도 하나, 열쇠 하나.</strong> 복도는 db-viewer 담당자가, 열쇠는 서비스 담당자가 만듭니다.
+  복도는 두 종류 — 미리 지어 둔 <strong>공유 복도</strong>(편함, 다른 서비스 DB와 나란히 섬)와 서비스마다 새로 내는 <strong>전용 복도</strong>(둘만).
+  여러분 서비스가 원래 쓰던 문(default 네트워크)은 한 줄도 바꾸지 않습니다.</p>
 </div>
 
 <!-- ───────────────────────── 2. 걱정 ───────────────────────── -->
@@ -249,27 +314,27 @@
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v6c0 4.6-3.2 7.9-7.5 9.5C7.7 19.9 4.5 16.6 4.5 12V6L12 3z"/><path d="M9 12l2 2 4-4"/></svg></div>
     <div class="q">우리 데이터를 바꾸나요?</div>
-    <p class="a"><strong>아니요.</strong> 계정에 <code>SELECT</code>만 줍니다. <code>CREATE</code>·<code>UPDATE</code>는 DB가 거부합니다.</p>
+    <p class="a"><strong>아니요.</strong> 열쇠에 <code>SELECT</code>만 줍니다. <code>CREATE</code>·<code>UPDATE</code>는 DB가 거부합니다.</p>
   </div>
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
     <div class="q">서비스가 느려지나요?</div>
-    <p class="a"><strong>거의 아니요.</strong> 평소엔 카탈로그(구조)만 읽고, 값은 최대 20행 미리보기입니다. 대량 조회 경로가 없습니다.</p>
+    <p class="a"><strong>거의 아니요.</strong> 평소엔 구조만 읽고, 값은 최대 20행 미리보기입니다.</p>
   </div>
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></div>
     <div class="q">네트워크 설정이 깨지나요?</div>
-    <p class="a"><strong>기존 것은 그대로.</strong> 새 네트워크를 <em>추가</em>만 합니다. <code>docker compose down</code>은 쓰지 않습니다.</p>
+    <p class="a"><strong>기존 것은 그대로.</strong> 문을 <em>하나 더</em> 낼 뿐입니다. <code>docker compose down</code>은 쓰지 않습니다.</p>
   </div>
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="7" height="14" rx="2"/><rect x="14" y="5" width="7" height="14" rx="2"/><path d="M10 12h4"/></svg></div>
-    <div class="q">다른 서비스 DB와 같은 네트워크에 놓이나요?</div>
-    <p class="a"><strong>고르기 나름.</strong> 전용 복도면 아니요(db-viewer와 여러분 DB 둘만). 공유 복도면 같은 복도의 다른 DB와 문 앞까지 닿습니다(열쇠는 각자). 닿으면 안 되는 DB라면 전용을 요청하세요.</p>
+    <div class="q">다른 서비스 DB와 같은 복도에 서나요?</div>
+    <p class="a"><strong>고르기 나름.</strong> 전용 복도면 아니요(둘만). 공유 복도면 다른 DB와 문 앞까지 닿습니다(열쇠는 각자). 닿으면 안 되면 전용을 요청하세요.</p>
   </div>
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg></div>
     <div class="q">비밀번호는요?</div>
-    <p class="a"><strong>문서에 안 씁니다.</strong> 별도 보안 채널로 전달하고, db-viewer는 암호화해 저장합니다. 화면에 다시 보이지 않습니다.</p>
+    <p class="a"><strong>문서에 안 씁니다.</strong> 별도 보안 채널로 전달하고, db-viewer는 금고에 잠가 둡니다.</p>
   </div>
 </div>
 
@@ -279,19 +344,19 @@
   <div class="role svc" data-role="svc">
     <h3><span class="badge svc">서비스 담당자</span> 여러분 쪽에서</h3>
     <ul>
-      <li>DB에 볼륨이 붙어 있는지 확인 (30초)</li>
-      <li>compose에 네트워크 한 항목 추가 (Claude Code가 diff를 만들어 줌)</li>
-      <li>읽기 전용 계정 <code>dbviewer_ro</code> 만들기</li>
+      <li>DB 방에 창고(볼륨)가 붙어 있는지 확인 (30초)</li>
+      <li>DB 방에 복도 문 하나 내기 (Claude Code가 diff를 만들어 줌)</li>
+      <li>읽기 전용 열쇠 <code>dbviewer_ro</code> 만들기</li>
       <li>회신 양식 채워 보내기</li>
     </ul>
   </div>
   <div class="role dbv" data-role="dbv">
     <h3><span class="badge dbv">db-viewer 담당자</span> 우리 쪽에서</h3>
     <ul>
-      <li>복도 방식(공유/전용) 정하고 값 채우기 — 전용이면 네트워크 만들기</li>
-      <li><code>SOURCE_SECRET_KEY</code> 준비 (처음 한 번)</li>
-      <li>전용일 때만: db-viewer compose에 네트워크 합류 후 backend 재기동</li>
-      <li>관리 콘솔에 등록 → 연결 테스트 → 카탈로그 수집 → 공개 범위</li>
+      <li>복도 고르기(공유/전용) — 전용이면 복도 짓기</li>
+      <li>금고 열쇠 <code>SOURCE_SECRET_KEY</code> 준비 (처음 한 번)</li>
+      <li>전용일 때만: db-viewer도 그 복도에 문 내고 backend 재기동</li>
+      <li>관리 콘솔에 등록 → 연결 테스트 → 수집 → 공개 범위</li>
     </ul>
   </div>
 </div>
@@ -303,29 +368,59 @@
 
   <li data-role="dbv">
     <h3>복도 고르고 값 정하기 <span class="badge dbv">db-viewer 담당자</span></h3>
-    <p>먼저 이 서비스가 어느 복도로 올지 서비스 담당자와 정합니다. 둘은 같이 쓸 수 있고, 서비스마다 하나를 고릅니다.</p>
+    <p>서비스마다 복도를 하나 고릅니다. 둘은 같이 쓸 수 있습니다.</p>
     <div class="two">
-      <div class="card">
+      <div class="card pick">
+        <svg class="fig" viewBox="0 0 360 150" role="img" aria-label="공유 복도: db-viewer 문이 이미 있는 넓은 복도에 서비스 문 셋이 나란히">
+          <rect x="10" y="50" width="90" height="60" rx="8" class="bld-dbv"/>
+          <text x="55" y="85" text-anchor="middle" class="t th t-dbv" font-size="13">db-viewer</text>
+          <rect x="94" y="66" width="12" height="28" rx="2" class="door"/>
+          <rect x="106" y="64" width="244" height="32" rx="8" class="band"/>
+          <text x="118" y="84" class="mono t-dbv" font-size="11">dbv-shared</text>
+          <rect x="190" y="58" width="26" height="12" rx="2" class="door"/>
+          <rect x="250" y="58" width="26" height="12" rx="2" class="door"/>
+          <rect x="310" y="58" width="26" height="12" rx="2" class="door"/>
+          <text x="203" y="52" text-anchor="middle" class="mono t-dbv" font-size="10.5">svca-db</text>
+          <text x="263" y="52" text-anchor="middle" class="mono t-dbv" font-size="10.5">svcb-db</text>
+          <text x="323" y="52" text-anchor="middle" class="mono t-dbv" font-size="10.5">svcc-db</text>
+          <text x="180" y="130" text-anchor="middle" class="t t-mute" font-size="12">새 서비스는 문만 내면 끝. db-viewer 쪽 일 없음</text>
+        </svg>
         <div class="q">공유 복도 <code>dbv-shared</code> — 기본</div>
-        <p class="a">처음 한 번 지어 두고 db-viewer가 늘 붙어 있는 복도. 새 서비스는 <strong>문만 내면 끝</strong>이고, db-viewer 쪽은 등록만 합니다.
-        대신 같은 복도의 다른 서비스 DB와 문 앞까지 닿습니다(열쇠는 각자).</p>
+        <p class="a">처음 한 번 지어 두고 db-viewer가 늘 붙어 있는 복도. 대신 같은 복도의 다른 서비스 DB와 문 앞까지 닿습니다(열쇠는 각자).</p>
       </div>
       <div class="card">
+        <svg class="fig" viewBox="0 0 360 150" role="img" aria-label="전용 복도: db-viewer에서 서비스마다 따로 난 복도, 서비스끼리는 서로 닿지 않음">
+          <path d="M106 58 C 170 58, 180 32, 240 32" class="corr-s-o"/>
+          <path d="M106 58 C 170 58, 180 32, 240 32" class="corr-s-i"/>
+          <path d="M106 92 C 170 92, 180 110, 240 110" class="corr-s-o"/>
+          <path d="M106 92 C 170 92, 180 110, 240 110" class="corr-s-i"/>
+          <rect x="10" y="36" width="90" height="70" rx="8" class="bld-dbv"/>
+          <text x="55" y="76" text-anchor="middle" class="t th t-dbv" font-size="13">db-viewer</text>
+          <rect x="94" y="46" width="12" height="24" rx="2" class="door"/>
+          <rect x="94" y="80" width="12" height="24" rx="2" class="door"/>
+          <rect x="240" y="18" width="100" height="28" rx="6" class="room-db"/>
+          <text x="290" y="37" text-anchor="middle" class="t" font-size="11">서비스 A의 DB</text>
+          <rect x="240" y="96" width="100" height="28" rx="6" class="room-db"/>
+          <text x="290" y="115" text-anchor="middle" class="t" font-size="11">서비스 B의 DB</text>
+          <line x1="284" y1="54" x2="296" y2="66" class="xmark"/>
+          <line x1="296" y1="54" x2="284" y2="66" class="xmark"/>
+          <text x="290" y="86" text-anchor="middle" class="t t-bad" font-size="11">서로 안 닿음</text>
+          <text x="180" y="143" text-anchor="middle" class="t t-mute" font-size="12">복도마다 db-viewer와 그 DB 둘만. 7단계까지 함</text>
+        </svg>
         <div class="q">전용 복도 <code>dbv-&lt;서비스키&gt;</code> — 따로</div>
-        <p class="a">이 서비스만을 위해 새로 내는 복도. 복도에는 db-viewer와 이 DB <strong>둘만</strong>. 다른 서비스와 네트워크로 닿으면 안 되는 DB라면 이쪽.
-        db-viewer 쪽은 복도를 만들고 7단계까지 합니다.</p>
+        <p class="a">이 서비스만을 위해 새로 내는 복도. 다른 서비스와 네트워크로 닿으면 안 되는 DB라면 이쪽.</p>
       </div>
     </div>
-    <p>이름이 어긋나면 나머지가 전부 어긋납니다. 아래 표를 채워 서비스 담당자에게 보내고, 전용이면 네트워크를 <strong>미리</strong> 만들어 둡니다.</p>
+    <p>고른 뒤 아래 표를 채워 서비스 담당자에게 보냅니다. 이름이 어긋나면 나머지가 전부 어긋납니다. 전용이면 복도를 <strong>미리</strong> 지어 둡니다.</p>
     <table>
       <thead><tr><th>항목</th><th>값</th><th>설명</th></tr></thead>
       <tbody>
         <tr><td>복도 방식</td><td>공유 / 전용</td><td>기본은 공유. 닿으면 안 되는 DB만 전용</td></tr>
         <tr><td>서비스 키</td><td><code>&lt;서비스키&gt;</code></td><td>소문자·영숫자. 예: <code>svca</code></td></tr>
         <tr><td>네트워크 이름</td><td><code>dbv-shared</code> (공유) / <code>dbv-&lt;서비스키&gt;</code> (전용)</td><td>db-viewer 담당자가 만든다 — 공유는 이미 있음</td></tr>
-        <tr><td>서브넷 (전용만)</td><td><code>10.203.&lt;n&gt;.0/24</code></td><td><code>&lt;n&gt;</code>은 1부터 서비스마다 다르게. <strong><code>10.203.0.0/24</code>는 공유 복도, <code>10.203.1.0/24</code>는 첫 연결이 이미 사용</strong> — 다음은 2, 3, …</td></tr>
+        <tr><td>서브넷 (전용만)</td><td><code>10.203.&lt;n&gt;.0/24</code></td><td><code>&lt;n&gt;</code>은 1부터 서비스마다 다르게. <strong><code>0</code>은 공유 복도, <code>1</code>은 첫 연결이 이미 사용</strong> — 다음은 2, 3, …</td></tr>
         <tr><td>DB compose 서비스명</td><td><code>&lt;compose서비스명&gt;</code></td><td>예: <code>postgres</code>, <code>db</code></td></tr>
-        <tr><td>네트워크 별칭</td><td><code>&lt;서비스키&gt;-db</code></td><td>db-viewer가 <em>이 이름</em>으로 접속한다. <strong>공유 복도에서는 이 이름만이 여러분 DB를 구별</strong>합니다 — 생략 불가</td></tr>
+        <tr><td>문패(별칭)</td><td><code>&lt;서비스키&gt;-db</code></td><td>db-viewer가 <em>이 이름</em>으로 접속. <strong>공유 복도에서는 이 이름만이 여러분 DB를 구별</strong> — 생략 불가</td></tr>
         <tr><td>DB 엔진</td><td>PostgreSQL / SQLite</td><td></td></tr>
         <tr><td>읽기 전용 계정명</td><td><code>dbviewer_ro</code></td><td></td></tr>
       </tbody>
@@ -339,31 +434,69 @@ docker network ls --filter name=dbv- --format '{{.Name}}' \
 
 <span class="cm"># [전용] 비어 있는 &lt;n&gt;으로 만들기 (예: 두 번째 서비스 → 10.203.2.0/24)</span>
 docker network create --subnet 10.203.&lt;n&gt;.0/24 dbv-&lt;서비스키&gt;</pre></div>
-    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code>, 개발 스택 <code>172.49/16</code> 어디와도 겹치지 않습니다. 첫 시험 연결이 이 대역으로 문제없이 붙었습니다. <code>0</code>은 공유 복도 몫입니다.</div>
+    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code>, 개발 스택 <code>172.49/16</code> 어디와도 겹치지 않습니다. <code>0</code>은 공유 복도 몫입니다.</div>
   </li>
 
   <li data-role="dbv">
-    <h3>비밀 금고 열쇠 준비 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">처음 한 번만</span></h3>
-    <p>db-viewer는 접속 비밀번호를 암호화해 저장합니다. 그 암호화 키가 <code>SOURCE_SECRET_KEY</code>이고, 없으면 소스 등록이 503으로 막힙니다.</p>
+    <h3>금고 열쇠 준비 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">처음 한 번만</span></h3>
+    <p>db-viewer는 접속 비밀번호를 금고에 잠가 둡니다. 금고 열쇠가 <code>SOURCE_SECRET_KEY</code>. 없으면 소스 등록이 503으로 막힙니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-key">복사</button><pre id="c-key">python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"</pre></div>
     <p>출력값을 db-viewer <code>.env</code>의 <code>SOURCE_SECRET_KEY=</code>에 넣고 backend를 재기동합니다.</p>
-    <div class="warn"><strong>한 번 정하면 바꾸지 마세요.</strong> 키를 바꾸면 이미 등록한 모든 소스의 비밀번호를 다시 입력해야 합니다.</div>
+    <div class="warn"><strong>한 번 정하면 바꾸지 마세요.</strong> 열쇠를 바꾸면 금고 속 비밀번호를 전부 다시 넣어야 합니다.</div>
   </li>
 
   <li data-role="svc">
-    <h3>볼륨 확인 <span class="badge svc">서비스 담당자</span> <span class="badge both">건너뛰면 안 됨</span></h3>
-    <p>4단계에서 DB 컨테이너를 한 번 재생성합니다. 데이터가 볼륨에 있으면 무손실이지만, 볼륨 없이 쓰고 있었다면 그 순간 사라집니다.</p>
+    <h3>창고(볼륨) 확인 <span class="badge svc">서비스 담당자</span> <span class="badge both">건너뛰면 안 됨</span></h3>
+    <div class="figure" aria-label="데이터가 창고(볼륨)에 있으면 DB 방을 다시 지어도 그대로, 방 안에만 있으면 사라진다는 그림">
+      <svg class="fig" viewBox="0 0 820 230" role="img">
+        <rect x="40" y="25" width="120" height="70" rx="8" class="room-db"/>
+        <text x="100" y="56" text-anchor="middle" class="t th">DB 방</text>
+        <text x="100" y="78" text-anchor="middle" class="t t-mute" font-size="12">컨테이너</text>
+        <line x1="160" y1="60" x2="180" y2="60" class="link"/>
+        <rect x="180" y="30" width="120" height="60" rx="8" class="store"/>
+        <text x="240" y="56" text-anchor="middle" class="t th">창고(볼륨)</text>
+        <text x="240" y="76" text-anchor="middle" class="t t-mute" font-size="12">데이터는 여기</text>
+        <polyline points="332,60 344,72 366,44" class="ok"/>
+        <text x="386" y="66" class="t th t-dbv">출력에 볼륨이 보인다 → 다음 단계</text>
+
+        <rect x="40" y="125" width="120" height="70" rx="8" class="room-db"/>
+        <text x="100" y="156" text-anchor="middle" class="t th">DB 방</text>
+        <text x="100" y="178" text-anchor="middle" class="t t-mute" font-size="12">데이터가 방 안에만</text>
+        <line x1="336" y1="146" x2="362" y2="172" class="xmark"/>
+        <line x1="362" y1="146" x2="336" y2="172" class="xmark"/>
+        <text x="386" y="166" class="t th t-bad">출력이 비어 있다 → 여기서 중단, db-viewer 담당자에게</text>
+        <text x="40" y="222" class="t t-mute" font-size="13">4단계에서 DB 방을 한 번 다시 짓습니다. 창고에 있는 데이터만 살아남습니다.</text>
+      </svg>
+    </div>
     <div class="codeblock"><button class="copy-btn" data-target="c-vol">복사</button><pre id="c-vol">docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -&gt; {{.Destination}}{{"\n"}}{{end}}' &lt;DB컨테이너명&gt;</pre></div>
-    <ul>
-      <li>예: <code>volume pgdata -&gt; /var/lib/postgresql/data</code> 처럼 보이면 → 다음 단계</li>
-      <li><strong>출력이 비어 있으면 → 여기서 중단</strong>하고 db-viewer 담당자에게 알려 주세요. 연결보다 볼륨 붙이기가 먼저입니다.</li>
-    </ul>
+    <p>예: <code>volume pgdata -&gt; /var/lib/postgresql/data</code> 처럼 보이면 다음 단계. 비어 있으면 연결보다 창고 붙이기가 먼저입니다.</p>
   </li>
 
   <li data-role="svc">
-    <h3>compose에 복도 문 하나 추가 <span class="badge svc">서비스 담당자</span></h3>
-    <p>바꾸는 파일은 <code>docker-compose.yml</code> 하나, 바꾸는 내용은 DB 서비스에 네트워크 한 항목을 <em>더하는</em> 것뿐입니다.
-    가장 쉬운 길은 저장소 루트에서 <code>claude</code>를 실행하고 <a href="#prompt">아래 프롬프트</a>를 통째로 붙여넣는 것 — Claude가 diff를 먼저 보여주고, 승인하면 적용합니다.</p>
+    <h3>DB 방에 복도 문 하나 <span class="badge svc">서비스 담당자</span></h3>
+    <div class="figure" aria-label="여러분 서비스 건물 안 DB 방의 오른쪽 벽에 새 문을 내고 문패를 달아 db-viewer 복도로 잇는 그림. 앱과 DB 사이의 기존 문은 그대로">
+      <svg class="fig" viewBox="0 0 820 250" role="img">
+        <line x1="428" y1="130" x2="520" y2="130" class="stub-o"/>
+        <rect x="40" y="20" width="460" height="200" rx="12" class="fence"/>
+        <text x="52" y="40" class="t t-mute" font-size="12">울타리(default) — 그대로</text>
+        <rect x="56" y="50" width="428" height="150" rx="10" class="bld-svc"/>
+        <text x="270" y="78" text-anchor="middle" class="t th t-svc">여러분 서비스</text>
+        <rect x="90" y="100" width="100" height="60" rx="8" class="room"/>
+        <text x="140" y="135" text-anchor="middle" class="t">앱</text>
+        <line x1="190" y1="130" x2="300" y2="130" class="link"/>
+        <text x="245" y="122" text-anchor="middle" class="t t-mute" font-size="11">기존 문 · 그대로</text>
+        <rect x="300" y="100" width="120" height="60" rx="8" class="room-db"/>
+        <text x="360" y="135" text-anchor="middle" class="t th">DB 방</text>
+        <rect x="414" y="115" width="14" height="30" rx="2" class="door"/>
+        <text x="421" y="184" text-anchor="middle" class="t th t-dbv" font-size="13">+ 새 문 하나</text>
+        <line x1="428" y1="130" x2="520" y2="130" class="stub-i"/>
+        <rect x="516" y="104" width="284" height="52" rx="10" class="band"/>
+        <text x="532" y="126" class="mono t-dbv">복도: dbv-shared 또는 dbv-&lt;서비스키&gt;</text>
+        <text x="532" y="146" class="mono t-dbv">문패: &lt;서비스키&gt;-db (생략 금지)</text>
+        <text x="270" y="240" text-anchor="middle" class="t t-mute" font-size="13">바꾸는 건 DB 방의 문 하나. 그 컨테이너만 다시 올립니다 (down 금지).</text>
+      </svg>
+    </div>
+    <p>바꾸는 파일은 <code>docker-compose.yml</code> 하나. 가장 쉬운 길은 저장소 루트에서 <code>claude</code>를 실행하고 <a href="#prompt">아래 프롬프트</a>를 통째로 붙여넣는 것 — diff를 먼저 보여주고, 승인하면 적용합니다.</p>
     <p>손으로 한다면 결과는 이 모양입니다:</p>
     <div class="codeblock"><pre>services:
   &lt;compose서비스명&gt;:
@@ -376,18 +509,17 @@ networks:
     <span class="cm">...기존 정의 그대로, 수정 금지...</span>
   &lt;네트워크이름&gt;:
     external: true</pre></div>
-    <div class="warn"><strong>함정 하나.</strong> 원래 <code>networks:</code> 키가 없던 서비스는 default에 자동으로 붙어 있었습니다. 네트워크를 하나라도 적는 순간 자동 연결이 사라지므로 <code>default:</code>를 반드시 같이 적어야 합니다. 빠뜨리면 서비스끼리 서로를 못 찾습니다.</div>
-    <p>반영은 <strong>그 컨테이너만</strong> 재생성합니다. <code>docker compose down</code>은 네트워크까지 지우니 쓰지 않습니다.</p>
+    <div class="warn"><strong>함정 하나.</strong> 원래 <code>networks:</code> 키가 없던 서비스는 default에 자동으로 붙어 있었습니다. 문을 하나라도 적는 순간 자동 연결이 사라지므로 <code>default:</code>를 반드시 같이 적어야 합니다. 빠뜨리면 서비스끼리 서로를 못 찾습니다.</div>
     <div class="codeblock"><button class="copy-btn" data-target="c-up">복사</button><pre id="c-up">docker compose up -d &lt;compose서비스명&gt;
 
 <span class="cm"># 확인: 기존 네트워크 + &lt;네트워크이름&gt; 둘 다 보이고 별칭이 붙었는지</span>
 docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;</pre></div>
-    <p><strong>SQLite</strong>라면 이 단계는 필요 없습니다 — DB 파일이 든 볼륨 이름과 컨테이너 안 파일 경로만 6단계에서 알려 주세요.</p>
+    <p><strong>SQLite</strong>라면 이 단계는 필요 없습니다 — 창고(볼륨) 이름과 컨테이너 안 파일 경로만 6단계에서 알려 주세요.</p>
   </li>
 
   <li data-role="svc">
     <h3>읽기 전용 열쇠 만들기 <span class="badge svc">서비스 담당자</span></h3>
-    <p><strong>PostgreSQL</strong>: <code>dbviewer_ro</code> 계정에 <code>SELECT</code>만 줍니다. 비밀번호는 직접 만듭니다 (예: <code>openssl rand -base64 24</code>).</p>
+    <p><strong>PostgreSQL</strong>: <code>dbviewer_ro</code>에 <code>SELECT</code>만 줍니다. 비밀번호는 직접 만듭니다 (예: <code>openssl rand -base64 24</code>).</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-sql">복사</button><pre id="c-sql">-- &lt;강력한 비밀번호&gt;는 직접 생성한다 (예: openssl rand -base64 24)
 CREATE ROLE dbviewer_ro LOGIN PASSWORD '&lt;강력한 비밀번호&gt;';
 
@@ -397,12 +529,11 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbviewer_ro;
 
 -- 앞으로 만들어질 테이블에도 자동 적용 — 이게 없으면 마이그레이션 때마다 안 보인다
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dbviewer_ro;</pre></div>
-    <p><code>public</code> 외의 스키마도 보여 주려면 스키마마다 <code>GRANT USAGE</code> / <code>GRANT SELECT</code> / <code>ALTER DEFAULT PRIVILEGES</code>를 반복합니다.
-    민감 테이블은 <code>ALL TABLES</code> 대신 테이블을 열거해도 됩니다 — db-viewer 쪽에도 스키마 단위 허용 목록이 따로 있어 이중으로 통제됩니다.</p>
+    <p><code>public</code> 외의 스키마도 보여 주려면 스키마마다 세 줄을 반복합니다. 민감 테이블은 <code>ALL TABLES</code> 대신 테이블을 열거해도 됩니다 — db-viewer 쪽에도 스키마 단위 허용 목록이 따로 있습니다.</p>
     <p>만들고 나서 <strong>꼭 확인</strong>: 다른 세션에서 <code>dbviewer_ro</code>로 접속해</p>
     <div class="codeblock"><pre>SELECT count(*) FROM &lt;아무 테이블&gt;;          -- 성공해야 한다
 CREATE TABLE zzz_probe (id int);            -- 반드시 권한 오류가 나야 한다</pre></div>
-    <p><strong>SQLite</strong>: 계정 개념이 없습니다. db-viewer가 볼륨을 <code>:ro</code>로 마운트하고 파일도 읽기 전용으로 엽니다.</p>
+    <p><strong>SQLite</strong>: 열쇠 개념이 없습니다. db-viewer가 창고를 <code>:ro</code>로 마운트하고 파일도 읽기 전용으로 엽니다.</p>
   </li>
 
   <li data-role="svc">
@@ -413,8 +544,25 @@ CREATE TABLE zzz_probe (id int);            -- 반드시 권한 오류가 나야
 
   <li data-role="dbv">
     <h3>db-viewer도 복도에 합류 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">전용일 때만</span></h3>
-    <p><strong>공유 복도면 이 단계는 없습니다</strong> — backend는 이미 <code>dbv-shared</code>에 있습니다(복도를 처음 지을 때 한 번 넣어 둠). 8단계로 가세요.</p>
-    <p>전용 복도(또는 공유 복도를 방금 처음 지은 경우)면 db-viewer의 <code>docker-compose.yml</code>에서 backend를 그 네트워크에 넣고 backend만 재기동합니다. SQLite 소스면 볼륨도 읽기 전용으로 마운트합니다.</p>
+    <div class="figure" aria-label="db-viewer 건물에 공유 복도 문은 이미 있고, 전용 복도를 향한 새 문을 하나 더 내는 그림">
+      <svg class="fig" viewBox="0 0 820 200" role="img">
+        <path d="M246 140 C 330 140, 380 150, 470 150" class="corr-o"/>
+        <path d="M246 140 C 330 140, 380 150, 470 150" class="corr-i"/>
+        <rect x="246" y="60" width="300" height="50" rx="10" class="band"/>
+        <text x="262" y="90" class="mono t-dbv">dbv-shared — 이미 합류 ✓ (할 일 없음)</text>
+        <rect x="40" y="40" width="200" height="130" rx="10" class="bld-dbv"/>
+        <text x="140" y="70" text-anchor="middle" class="t th t-dbv">db-viewer</text>
+        <rect x="70" y="90" width="140" height="44" rx="6" class="room"/>
+        <text x="140" y="118" text-anchor="middle" class="t">backend</text>
+        <rect x="232" y="70" width="14" height="30" rx="2" class="door"/>
+        <rect x="232" y="125" width="14" height="30" rx="2" class="door"/>
+        <rect x="470" y="130" width="150" height="40" rx="6" class="room-db"/>
+        <text x="545" y="155" text-anchor="middle" class="t">서비스 C의 DB</text>
+        <text x="262" y="184" class="mono t-dbv">dbv-&lt;서비스키&gt; — 새 문 하나 + backend 재기동</text>
+      </svg>
+    </div>
+    <p><strong>공유 복도면 이 단계는 없습니다.</strong> backend는 이미 <code>dbv-shared</code>에 있습니다. 8단계로 가세요.</p>
+    <p>전용 복도(또는 공유 복도를 방금 처음 지은 경우)면 db-viewer의 <code>docker-compose.yml</code>에서 backend에 문을 내고 backend만 재기동합니다. SQLite 소스면 창고도 읽기 전용으로 마운트합니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-dbv">복사</button><pre id="c-dbv">services:
   backend:
     networks: [dbviewer, dbv-shared, dbv-&lt;서비스키&gt;]   <span class="cm"># dbv-shared는 한 번, dbv-&lt;서비스키&gt;는 전용 서비스마다</span>
@@ -426,21 +574,38 @@ networks:
 <span class="cm"># volumes:</span>
 <span class="cm">#   &lt;볼륨명&gt;: { external: true, name: &lt;서비스의_볼륨명&gt; }</span></pre></div>
     <div class="codeblock"><pre>docker compose up -d backend</pre></div>
-    <div class="warn">backend가 <code>network … not found</code>로 안 뜨면 1단계 네트워크가 없는 것입니다. 다시 <code>docker network create</code>.</div>
+    <div class="warn">backend가 <code>network … not found</code>로 안 뜨면 1단계 복도가 없는 것입니다. 다시 <code>docker network create</code>.</div>
   </li>
 
   <li data-role="dbv">
     <h3>관리 콘솔에 등록 <span class="badge dbv">db-viewer 담당자</span></h3>
-    <p><code>/admin</code> → <strong>소스·수집</strong> 탭. 칸마다 무엇을 넣는지, 그 값을 어디서 확인하는지는 <a href="#form">아래 ‘칸마다 무엇을’</a>에 그려 두었습니다.</p>
+    <p><code>/admin</code> → <strong>소스·수집</strong> 탭. 칸마다 무엇을 넣는지는 <a href="#form">아래 ‘칸마다 무엇을’</a>에 그려 두었습니다.</p>
     <p>비밀번호가 <strong>두 종류</strong>라는 점만 먼저: 칸 상단의 <em>관리 비밀번호</em>는 db-viewer 설정값(<code>PREVIEW_ADMIN_PASSWORD</code>)이고, 폼 안의 <em>접속 비밀번호</em>는 6단계에서 회신받은 <code>dbviewer_ro</code>의 것입니다.</p>
   </li>
 
   <li data-role="dbv">
     <h3>연결 테스트 → 수집 → 공개 범위 <span class="badge dbv">db-viewer 담당자</span></h3>
+    <div class="figure" aria-label="연결 테스트, 카탈로그 수집, 공개 범위 세 단계가 화살표로 이어진 그림">
+      <svg class="fig" viewBox="0 0 820 110" role="img">
+        <rect x="20" y="15" width="220" height="80" rx="10" class="box"/>
+        <text x="130" y="46" text-anchor="middle" class="t th t-dbv">① 연결 테스트</text>
+        <text x="130" y="72" text-anchor="middle" class="t t-mute" font-size="12">DB명·버전이 회신값과 같은지 눈으로</text>
+        <line x1="244" y1="55" x2="288" y2="55" class="link"/>
+        <polygon points="300,55 288,49 288,61" class="ok-fill"/>
+        <rect x="300" y="15" width="220" height="80" rx="10" class="box"/>
+        <text x="410" y="46" text-anchor="middle" class="t th t-dbv">② 카탈로그 수집</text>
+        <text x="410" y="72" text-anchor="middle" class="t t-mute" font-size="12">구조(테이블·컬럼)를 읽어 옴</text>
+        <line x1="524" y1="55" x2="568" y2="55" class="link"/>
+        <polygon points="580,55 568,49 568,61" class="ok-fill"/>
+        <rect x="580" y="15" width="220" height="80" rx="10" class="box"/>
+        <text x="690" y="46" text-anchor="middle" class="t th t-dbv">③ 공개 범위</text>
+        <text x="690" y="72" text-anchor="middle" class="t t-mute" font-size="12">허용한 스키마만 값이 열림</text>
+      </svg>
+    </div>
     <ul>
-      <li><strong>[연결 테스트]</strong> — 초록이 떠도 끝이 아닙니다. 응답의 <code>database</code>·<code>version</code>이 회신값과 <strong>정확히 같은지</strong> 눈으로 대조하세요. 여러 서비스가 <code>postgres</code>/<code>db</code> 같은 흔한 이름을 쓰기 때문에, host를 잘못 넣어도 ‘어떤’ postgres에는 붙을 수 있습니다.</li>
+      <li><strong>[연결 테스트]</strong> — 초록이 떠도 끝이 아닙니다. 응답의 <code>database</code>·<code>version</code>이 회신값과 <strong>같은지</strong> 눈으로 대조하세요. 흔한 이름(<code>postgres</code>)이 많아 엉뚱한 DB에 붙어도 초록이 뜰 수 있습니다.</li>
       <li><strong>[카탈로그 수집]</strong> — 구조를 읽어 옵니다. 진행률은 같은 탭 아래 수집 잡에 뜹니다.</li>
-      <li><strong>공개 범위 탭 → 미리보기 허용 스키마</strong> — 등록만으로는 값이 하나도 안 보입니다(기본 전부 차단). 실제 값을 보여 줄 스키마만 골라 허용합니다.</li>
+      <li><strong>공개 범위 탭 → 미리보기 허용 스키마</strong> — 등록만으로는 값이 하나도 안 보입니다(기본 전부 차단). 보여 줄 스키마만 골라 허용합니다.</li>
     </ul>
     <div class="tip">여기까지 오면 끝. 사용자 화면의 소스 선택기에 새 서비스가 나타납니다.</div>
   </li>
@@ -457,7 +622,7 @@ networks:
   <div class="row"><span class="n">2</span><span class="label">엔진</span><span class="field">PostgreSQL ▾</span>
     <span class="note">PostgreSQL / SQLite. 만든 뒤에는 못 바꿉니다(바꾸려면 새로 등록).</span></div>
   <div class="row"><span class="n">3</span><span class="label">호스트</span><span class="field">svca-db</span>
-    <span class="note">= 네트워크 <strong>별칭</strong> <code>&lt;서비스키&gt;-db</code>. IP도, 호스트 이름도 아닙니다.</span></div>
+    <span class="note">= 문패(별칭) <code>&lt;서비스키&gt;-db</code>. IP도, 호스트 이름도 아닙니다.</span></div>
   <div class="row"><span class="n">4</span><span class="label">포트</span><span class="field">5432</span>
     <span class="note">= <strong>컨테이너 안쪽</strong> 포트. compose의 <code>ports: "15432:5432"</code>라면 <strong>뒤쪽</strong> 5432.</span></div>
   <div class="row"><span class="n">5</span><span class="label">database</span><span class="field">billing</span>
@@ -476,7 +641,7 @@ networks:
     <rect x="80" y="76" width="340" height="76" rx="10" fill="#e3f3ee" stroke="#0e7a5f" stroke-width="2"/>
     <text x="250" y="103" text-anchor="middle" font-size="15" font-weight="700" fill="#0e7a5f">DB 컨테이너 안쪽</text>
     <text x="250" y="132" text-anchor="middle" font-size="22" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#1d2b26">5432 ✓</text>
-    <text x="40" y="192" font-size="14" fill="#5c6d67">compose: ports: "15432:5432" → db-viewer는 같은 네트워크 안이라 뒤쪽 번호로 갑니다</text>
+    <text x="40" y="192" font-size="14" fill="#5c6d67">compose: ports: "15432:5432" → db-viewer는 같은 복도 안이라 뒤쪽 번호로 갑니다</text>
     <rect x="520" y="30" width="400" height="140" rx="14" fill="#fdecec" stroke="#f1b3b3" stroke-width="2"/>
     <text x="720" y="60" text-anchor="middle" font-size="15" fill="#b30000">호스트에 매핑한 바깥 번호</text>
     <text x="720" y="118" text-anchor="middle" font-size="22" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#b30000" text-decoration="line-through">15432</text>
@@ -487,7 +652,7 @@ networks:
 <table class="wrap" data-role="dbv">
   <thead><tr><th>칸</th><th>값을 어디서 확인하나</th></tr></thead>
   <tbody>
-    <tr><td>3 호스트(별칭)</td><td>서비스 담당자의 회신 ‘네트워크 별칭’. 직접 보려면 서비스 서버에서
+    <tr><td>3 호스트(문패)</td><td>서비스 담당자의 회신 ‘네트워크 별칭’. 직접 보려면 서비스 서버에서
       <code>docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;</code> → <code>dbv-shared</code>(또는 <code>dbv-&lt;서비스키&gt;</code>) 항목의 <code>Aliases</code></td></tr>
     <tr><td>4 포트</td><td>서비스 compose의 DB <code>ports:</code> 뒤쪽 숫자, 또는 <code>docker inspect -f '{{json .Config.ExposedPorts}}' &lt;DB컨테이너명&gt;</code> → 예: <code>{"5432/tcp":{}}</code></td></tr>
     <tr><td>5 database</td><td>회신 ‘DB명’. 직접 보려면 <code>docker exec &lt;DB컨테이너명&gt; psql -U postgres -c '\l'</code>, 또는 compose의 <code>POSTGRES_DB</code></td></tr>
@@ -506,26 +671,26 @@ networks:
   </div>
   <div class="card" data-role="dbv">
     <h3>완전히 지우기 = <span style="color:var(--danger)">삭제</span></h3>
-    <p class="a">[삭제]를 누르면 <strong>함께 사라지는 것</strong>이 먼저 나열됩니다 — 수집 스냅샷(카탈로그·컬럼·뷰 조인), 미리보기 허용 스키마, 스키마 카테고리, 값 추적 잡.
-    “확인했습니다”에 체크해야 [함께 삭제] 버튼이 열립니다. 되돌릴 수 없습니다.</p>
+    <p class="a">[삭제]를 누르면 <strong>함께 사라지는 것</strong>이 먼저 나열됩니다 — 수집 스냅샷, 미리보기 허용 스키마, 스키마 카테고리, 값 추적 잡.
+    “확인했습니다”에 체크해야 [함께 삭제]가 열립니다. 되돌릴 수 없습니다.</p>
   </div>
 </div>
 <div class="danger" data-role="dbv">“스냅샷 N건이 참조하고 있어 삭제할 수 없습니다”가 떴다면 예전 방식의 차단입니다. 지금은 위 확인 상자에서 체크 뒤 함께 삭제하면 됩니다. API를 직접 부른다면 <code>DELETE /api/sources/{id}?cascade=true</code>.</div>
-<p data-role="svc"><span class="badge svc">서비스 담당자</span> 여러분 쪽에서 할 일은 없습니다. 원하면 compose에서 그 네트워크(<code>dbv-shared</code> 또는 <code>dbv-&lt;서비스키&gt;</code>) 항목을 지우고 그 컨테이너만 다시 올리면 복도가 닫힙니다(역시 <code>down</code>은 쓰지 않습니다).</p>
+<p data-role="svc"><span class="badge svc">서비스 담당자</span> 여러분 쪽에서 할 일은 없습니다. 원하면 compose에서 그 복도(<code>dbv-shared</code> 또는 <code>dbv-&lt;서비스키&gt;</code>) 문을 지우고 그 컨테이너만 다시 올리면 복도가 닫힙니다(역시 <code>down</code>은 쓰지 않습니다).</p>
 
 <!-- ───────────────────────── 7. 문제 ───────────────────────── -->
 <h2>막히면 여기부터</h2>
 <table class="wrap">
   <thead><tr><th>증상</th><th>원인·조치</th></tr></thead>
   <tbody>
-    <tr><td><code>network dbv-shared not found</code> / <code>network dbv-&lt;서비스키&gt; not found</code></td><td>db-viewer 담당자가 아직 네트워크를 안 만들었거나 지워졌다. 1단계 <code>docker network create</code></td></tr>
+    <tr><td><code>network dbv-shared not found</code> / <code>network dbv-&lt;서비스키&gt; not found</code></td><td>db-viewer 담당자가 아직 복도를 안 지었거나 지워졌다. 1단계 <code>docker network create</code></td></tr>
     <tr><td><code>Pool overlaps with other one on this address space</code></td><td>(전용) 서브넷 <code>10.203.&lt;n&gt;.0/24</code>가 이미 쓰이고 있다. 1단계 확인 명령으로 비어 있는 <code>&lt;n&gt;</code>을 골라 다시. <code>0</code>은 공유 복도 몫</td></tr>
     <tr><td>재기동 후 서비스가 서로 못 찾음</td><td><code>networks:</code>를 적으면서 <code>default:</code>를 빠뜨렸다. 4단계 함정</td></tr>
-    <tr><td>연결 테스트가 엉뚱한 DB를 회신</td><td>흔한 컨테이너명(<code>postgres</code>)에 붙었다 — 공유 복도에서는 별칭이 유일한 구별 수단이다. 호스트를 별칭 <code>&lt;서비스키&gt;-db</code>로, 별칭이 실제로 붙었는지 <code>docker inspect</code></td></tr>
-    <tr><td>소스 등록이 503</td><td><code>SOURCE_SECRET_KEY</code> 미설정. 2단계 후 backend 재기동</td></tr>
+    <tr><td>연결 테스트가 엉뚱한 DB를 회신</td><td>흔한 컨테이너명(<code>postgres</code>)에 붙었다 — 공유 복도에서는 문패가 유일한 구별 수단이다. 호스트를 문패 <code>&lt;서비스키&gt;-db</code>로, 문패가 실제로 붙었는지 <code>docker inspect</code></td></tr>
+    <tr><td>소스 등록이 503</td><td>금고 열쇠 <code>SOURCE_SECRET_KEY</code> 미설정. 2단계 후 backend 재기동</td></tr>
     <tr><td>연결 테스트가 502</td><td>호스트·포트(바깥 번호를 넣었나?)·계정·비밀번호 중 하나. backend 로그에 원문이 남는다</td></tr>
-    <tr><td>연결 테스트가 503</td><td>소스 장애가 아니라 db-viewer 설정 — 키 미설정 또는 키가 바뀌어 복호화 실패</td></tr>
-    <tr><td>DB 컨테이너에 볼륨이 없다</td><td><strong>작업 중단.</strong> 볼륨부터 붙이는 게 먼저다(3단계)</td></tr>
+    <tr><td>연결 테스트가 503</td><td>소스 장애가 아니라 db-viewer 설정 — 금고 열쇠 미설정 또는 열쇠가 바뀌어 복호화 실패</td></tr>
+    <tr><td>DB 컨테이너에 볼륨이 없다</td><td><strong>작업 중단.</strong> 창고부터 붙이는 게 먼저다(3단계)</td></tr>
     <tr><td>등록했는데 값이 하나도 안 보임</td><td>정상 — 기본 전부 차단. 공개 범위 탭에서 스키마를 허용해야 열린다(9단계)</td></tr>
   </tbody>
 </table>
