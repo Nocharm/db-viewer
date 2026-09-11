@@ -4,9 +4,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ArrowDownIcon } from "@/components/icons";
+import { ArrowDownIcon, CodeIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
+import { ViewDefinitionPanel } from "@/components/ViewDefinitionPanel";
 import {
   explainViewAi,
   generateAiSummary,
@@ -144,6 +145,8 @@ export function TableDetail({
   const [columnsExpanded, setColumnsExpanded] = useState(false);
   const [columnsHeight, setColumnsHeight] = useState(0);
   const columnsRef = useRef<HTMLDivElement>(null);
+  // 뷰 정의 SQL은 기본 접힘 — 수백 줄짜리 뷰가 아래 섹션을 화면 밖으로 밀어낸다
+  const [showDefinition, setShowDefinition] = useState(false);
 
   // 테이블 전환 시 검증·AI 상태 초기화 / reset per-table state on switch
   useEffect(() => {
@@ -154,6 +157,7 @@ export function TableDetail({
     setAiExplanation(null);
     setAiBusy(false);
     setColumnsExpanded(false);
+    setShowDefinition(false);
   }, [detail?.id]);
 
   // 칩 줄바꿈은 패널 폭에 따라 달라진다 — 실측해야 「더보기」 노출과 펼침 높이가 맞는다
@@ -326,6 +330,20 @@ export function TableDetail({
         >
           {t("detail.openErd")}
         </button>
+        {/* 뷰의 정의 SQL — 숨김 스키마는 정의도 내려오지 않아 미리 잠근다(실제 차단은 서버) */}
+        {detail.type === "view" && (
+          <button
+            className="btn-secondary inline-flex items-center gap-1.5"
+            onClick={() => setShowDefinition((current) => !current)}
+            disabled={detail.hidden}
+            title={detail.hidden ? t("hidden.columns") : undefined}
+            aria-expanded={showDefinition}
+            data-testid="TableDetail-definitionButton"
+          >
+            <CodeIcon size={12} />
+            {t("viewdef.button")}
+          </button>
+        )}
         {/* 잠금 사유는 버튼 그룹 뒤 — 버튼 사이에 끼우면 그룹이 시각적으로 끊긴다
             / the lock reason trails the button group instead of splitting it */}
         {!previewAllowed && (
@@ -335,6 +353,14 @@ export function TableDetail({
           </span>
         )}
       </div>
+
+      {showDefinition && detail.type === "view" && (
+        <div className="mb-7" data-testid="TableDetail-definitionPanel">
+          {/* detail.name은 이미 schema.name 형태다 (상세 API가 qname으로 내려준다) */}
+          <ViewDefinitionPanel objectId={detail.id} qname={detail.name}
+                               onClose={() => setShowDefinition(false)} />
+        </div>
+      )}
 
       <div className="flex max-w-4xl flex-col gap-5">
         <section className="panel-section">

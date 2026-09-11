@@ -415,6 +415,19 @@ export const MESSAGES = {
   "trace.heavy.reason.view_shape": { ko: "집계·DISTINCT 뷰", en: "aggregate / DISTINCT view" },
   "trace.heavy.rows": { ko: "행", en: "rows" },
 
+  "viewdef.button": { ko: "쿼리 보기", en: "View SQL" },
+  "viewdef.title": { ko: "뷰 정의 SQL", en: "View definition" },
+  "viewdef.copy": { ko: "복사", en: "Copy" },
+  "viewdef.copied": { ko: "복사됨", en: "Copied" },
+  "viewdef.copyFailed": { ko: "복사 실패", en: "Copy failed" },
+  "viewdef.missing": {
+    ko: "정의가 수집되지 않았다 — 원본 DB의 VIEW DEFINITION 권한 확인",
+    en: "Definition not collected — check VIEW DEFINITION permission on the source",
+  },
+  "viewdef.loading": { ko: "불러오는 중…", en: "Loading…" },
+  "viewdef.hitColumn": { ko: "히트 컬럼", en: "hit column" },
+  "viewdef.close": { ko: "닫기", en: "Close" },
+
   "collect.title": { ko: "카탈로그 수집", en: "Catalog collection" },
   "collect.hint": {
     ko: "n8n에 수집을 트리거하고 단계 진행을 추적합니다 (로컬은 픽스처 리플레이)",

@@ -724,6 +724,18 @@ export function fetchHiddenSchemas(): Promise<{ items: string[]; render: boolean
   return getJson("/api/objects/hidden-schemas");
 }
 
+export interface ViewDefinition {
+  object_id: number;
+  object: string;
+  /** null = 수집 시 VIEW DEFINITION 권한이 없었다 / permission-blocked at collect time */
+  definition: string | null;
+  parse_status: string | null;
+}
+
+export function fetchViewDefinition(objectId: number): Promise<ViewDefinition> {
+  return getJson(`/api/views/${objectId}/definition`);
+}
+
 export interface AuditEntry {
   id: number;
   action: string;

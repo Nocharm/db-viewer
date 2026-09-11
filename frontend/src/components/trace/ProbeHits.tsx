@@ -4,10 +4,12 @@
  *  Results card: hits as they arrive, preview deep links, folded views, failed targets. */
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { ListIcon, TableIcon, ViewIcon } from "@/components/icons";
+import { CodeIcon, ListIcon, TableIcon, ViewIcon } from "@/components/icons";
 import { StepCardHeader } from "@/components/verify/StepCardHeader";
+import { ViewDefinitionPanel } from "@/components/ViewDefinitionPanel";
 import type { ValueProbeJob } from "@/lib/api";
 import { buildPreviewHref, formatMatchCount, shouldKeepPolling } from "@/lib/value-probe";
 
@@ -21,6 +23,14 @@ interface ProbeHitsProps {
 export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsProps) {
   const { t } = useI18n();
   const finished = !shouldKeepPolling(job.status);
+  // 히트마다 따로 접었다 편다 — 뷰가 여러 개 맞으면 정의를 나란히 놓고 비교한다
+  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
+
+  const togglePanel = (key: string) => setOpenPanels((current) => {
+    const next = new Set(current);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
 
   return (
     <section className="card p-4" data-testid="ProbeHits-root">
@@ -69,6 +79,23 @@ export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsP
                       data-testid={`ProbeHits-preview-${key}`}>
                   {t("trace.hits.openPreview")}
                 </Link>
+                {hit.object_type === "view" && (
+                  <button type="button"
+                          className="btn-secondary inline-flex items-center gap-1.5"
+                          aria-expanded={openPanels.has(key)}
+                          onClick={() => togglePanel(key)}
+                          data-testid={`ProbeHits-definition-${key}`}>
+                    <CodeIcon size={12} />
+                    {t("viewdef.button")}
+                  </button>
+                )}
+                {hit.object_type === "view" && openPanels.has(key) && (
+                  <div className="w-full" data-testid={`ProbeHits-definitionPanel-${key}`}>
+                    <ViewDefinitionPanel objectId={hit.object_id} qname={hit.qname}
+                                         highlightColumn={hit.column}
+                                         onClose={() => togglePanel(key)} />
+                  </div>
+                )}
                 {hit.exposed_by_views.length > 0 && (
                   <details className="collapsible w-full text-xs">
                     <summary>{t("trace.hits.exposedBy")} {hit.exposed_by_views.length}</summary>
