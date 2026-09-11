@@ -16,6 +16,7 @@ export const MESSAGES = {
   "header.langToggle": { ko: "English로 전환", en: "한국어로 전환" },
   "header.logout": { ko: "로그아웃", en: "Sign out" },
   "header.homeTitle": { ko: "처음으로 (필터 초기화)", en: "Home (reset filters)" },
+  "header.userGuide": { ko: "사용 안내", en: "User guide" },
 
   "joinkeys.all": { ko: "전체", en: "All" },
   "joinkeys.fold": { ko: "접기", en: "Fold" },
