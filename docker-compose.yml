@@ -122,14 +122,16 @@ volumes:
   pgdata:
 
 # ── 멀티 소스 직결(PostgreSQL/SQLite) 합류 방법 ── docs/connect-sources.md
-# 조회 대상 서비스마다 전용 브리지 네트워크를 외부에서 만들고(dbv-<서비스>) 여기에 합류한다.
+# 네트워크는 외부에서 만들고(docker network create) 이 compose가 소유하지 않는다 — 서비스마다
+# 공유 dbv-shared(처음 한 번, 10.203.0.0/24) 또는 전용 dbv-<서비스>(10.203.<n>.0/24) 중 하나.
 # 대상 서비스의 기존 default 네트워크·subnet은 건드리지 않는다. 실제 네트워크명·볼륨명은
 # 배포마다 다르므로 아래는 예시일 뿐 — 이 파일에 직접 반영할 때 실값으로 바꾼다.
 #
 #   backend:
-#     networks: [dbviewer, dbv-svca]
+#     networks: [dbviewer, dbv-shared, dbv-svca]   # dbv-shared는 한 번, dbv-<서비스>는 전용 서비스마다
 #     volumes: [svcc_data:/mnt/sources/svcc:ro]   # SQLite 소스는 볼륨을 :ro로 마운트
 # networks:
+#   dbv-shared: { external: true }
 #   dbv-svca: { external: true }
 # volumes:
 #   svcc_data: { external: true, name: <서비스C_볼륨명> }

@@ -17,7 +17,8 @@ Claude Code에 그대로 붙여넣으면 된다.
 
 담당자에게 필요한 작업은 두 가지입니다.
 
-1. DB 컨테이너를 **전용 브리지 네트워크 하나에 추가로 합류**시킨다
+1. DB 컨테이너를 **db-viewer용 브리지 네트워크 하나에 추가로 합류**시킨다 (①에서 정한
+   공유 `dbv-shared` 또는 전용 `dbv-<서비스키>`)
 2. **읽기전용 DB 계정**을 하나 만들어 전달한다
 
 **서비스 코드는 건드리지 않습니다.** 애플리케이션 수정, 라이브러리 추가, API 노출 전부
@@ -31,7 +32,7 @@ Claude Code에 그대로 붙여넣으면 된다.
 | 데이터가 날아가나 | 데이터는 볼륨에 있고 건드리지 않습니다. 단 컨테이너를 1회 재생성하므로 **②에서 볼륨 여부를 반드시 확인**합니다 |
 | 서비스가 오래 멈추나 | `docker compose up -d`로 in-place 재생성 — 해당 컨테이너만 수 초 |
 | DB에 쓰기가 일어나나 | db-viewer는 `SELECT`만 실행합니다. 읽기전용 계정으로 이중으로 막습니다 |
-| 다른 서비스 DB와 서로 보이게 되나 | **아니요.** 네트워크는 서비스마다 따로 만들고, 각 네트워크에는 db-viewer와 그 서비스 DB **둘만** 들어갑니다 |
+| 다른 서비스 DB와 서로 보이게 되나 | ①의 **네트워크 방식**에 따릅니다. *전용*이면 아니요 — 그 네트워크에는 db-viewer와 여러분 DB **둘만**. *공유*(`dbv-shared`)면 같은 네트워크의 다른 서비스 DB 컨테이너와 포트 수준에서 서로 닿습니다(각자 계정으로 보호). 닿으면 안 되는 DB라면 전용을 요청하세요 |
 
 ---
 
@@ -42,15 +43,20 @@ Claude Code에 그대로 붙여넣으면 된다.
 
 | 항목 | 값 | 설명 |
 |---|---|---|
+| 네트워크 방식 | 공유 / 전용 | 기본은 공유. 다른 서비스와 네트워크로 닿으면 안 되는 DB만 전용 (`docs/connect-sources.md` §1) |
 | 서비스 키 | `<서비스키>` | 소문자·영숫자. 예: `svca` |
-| 네트워크 이름 | `dbv-<서비스키>` | db-viewer 운영자가 **미리 만들어 둔다** |
-| 네트워크 서브넷 | `10.203.<n>.0/24` | 서비스마다 다른 `<n>` (1, 2, 3, …) — `10.203.1.0/24`는 첫 연결이 이미 사용 |
+| 네트워크 이름 | `dbv-shared` (공유) / `dbv-<서비스키>` (전용) | db-viewer 운영자가 **미리 만들어 둔다** — 공유는 이미 있음 |
+| 네트워크 서브넷 (전용만) | `10.203.<n>.0/24` | 서비스마다 다른 `<n>` (1, 2, 3, …) — `10.203.0.0/24`는 공유, `10.203.1.0/24`는 첫 연결이 이미 사용 |
 | DB 컨테이너의 compose 서비스명 | `<compose서비스명>` | 예: `postgres`, `db` |
-| 네트워크 별칭 | `<서비스키>-db` | db-viewer가 이 이름으로 접속한다 |
+| 네트워크 별칭 | `<서비스키>-db` | db-viewer가 이 이름으로 접속한다. **공유 네트워크에서는 이 이름만이 여러분 DB를 구별한다** — 생략 불가 |
 | DB 엔진 | PostgreSQL / SQLite | |
 | 읽기전용 계정명 | `dbviewer_ro` | |
 
 **db-viewer 운영자가 먼저 할 일** (담당자에게 보내기 전):
+
+- **공유**: 할 일 없음 — `dbv-shared`는 처음 한 번 만들어 backend가 이미 합류해 있다
+  (`docs/connect-sources.md` §1.1). 아직이라면 그 절차부터.
+- **전용**: 네트워크를 만든다.
 
 ```bash
 docker network create --subnet 10.203.<n>.0/24 dbv-<서비스키>
@@ -96,18 +102,18 @@ docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n
 
 ```text
 우리 서비스의 docker-compose.yml을 수정해서, DB 컨테이너를 외부에서 이미 만들어 둔
-전용 브리지 네트워크에 "추가로" 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
+db-viewer용 브리지 네트워크에 "추가로" 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
 우리 DB를 읽기 전용으로 조회할 예정이야.
 
 ## 값
-- 합류시킬 네트워크 이름: dbv-<서비스키>   (이미 `docker network create`로 만들어져 있음)
+- 합류시킬 네트워크 이름: <네트워크이름>   (dbv-shared 또는 dbv-<서비스키> — 이미 `docker network create`로 만들어져 있음)
 - DB 컨테이너의 compose 서비스명: <compose서비스명>
-- 그 네트워크에서 쓸 별칭: <서비스키>-db
+- 그 네트워크에서 쓸 별칭: <서비스키>-db   (생략 불가 — 공유 네트워크에서는 이 이름으로만 우리 DB를 찾는다)
 
 ## 반드시 지킬 것
 1. 기존 `networks:` 블록의 `default` 정의(driver, ipam, subnet, gateway)를 절대 수정하지 마.
    subnet을 바꾸면 다른 서비스와 충돌한다. 새 네트워크를 항목으로 "추가"만 해.
-2. DB 컨테이너 외의 다른 서비스는 이 네트워크에 넣지 마. db-viewer와 DB 둘만 있어야 한다.
+2. 이 네트워크에는 우리 DB 컨테이너만 넣어. 앱 등 다른 컨테이너는 넣지 마.
 3. `docker compose down`은 절대 실행하지 마. 네트워크까지 삭제되어 같은 compose의 다른
    서비스에 영향이 간다. 반영은 `docker compose up -d <compose서비스명>` 으로만 해.
 4. 애플리케이션 코드, Dockerfile, 의존성은 건드리지 마. 변경은 docker-compose.yml 하나뿐이어야 한다.
@@ -122,12 +128,12 @@ docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n
      <compose서비스명>:
        networks:
          default:                  # 기존 그대로 (원래 networks 키가 없었다면 default를 명시적으로 추가)
-         dbv-<서비스키>:
+         <네트워크이름>:
            aliases: [<서비스키>-db]
    networks:
      default:
        ...기존 정의 그대로, 절대 수정 금지...
-     dbv-<서비스키>:
+     <네트워크이름>:
        external: true
 
    주의: 원래 서비스에 `networks:` 키가 없었다면 compose는 default에 자동 연결한다.
@@ -137,7 +143,7 @@ docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n
 3. 적용 후 `docker compose up -d <compose서비스명>` 으로 해당 컨테이너만 재생성해.
 4. 검증하고 결과를 보고해:
    - `docker inspect -f '{{json .NetworkSettings.Networks}}' <DB컨테이너명>` — 기존 네트워크와
-     dbv-<서비스키> 둘 다 있는지, 별칭이 붙었는지
+     <네트워크이름> 둘 다 있는지, 별칭이 붙었는지
    - 우리 서비스가 정상인지 (헬스체크 또는 앱 로그)
    - 기존 default 네트워크의 subnet이 그대로인지: `docker network inspect <프로젝트>_default`
 
@@ -196,6 +202,7 @@ db-viewer가 그 볼륨을 `:ro`(읽기 전용)로 마운트하고, 파일도 `m
 ```
 서비스 키:            <서비스키>
 엔진:                 PostgreSQL / SQLite
+네트워크 방식:         공유(dbv-shared) / 전용(dbv-<서비스키>)
 
 [PostgreSQL인 경우]
 네트워크 별칭(host):  <서비스키>-db
@@ -210,7 +217,7 @@ DB명:                 <DB명>
 컨테이너 내부 파일 경로: /.../app.db
 
 검증 결과:
-- docker inspect 네트워크: 기존 + dbv-<서비스키> 확인  [ ]
+- docker inspect 네트워크: 기존 + <네트워크이름> 확인  [ ]
 - 기존 default subnet 무변경 확인                    [ ]
 - 서비스 정상 동작 확인                              [ ]
 - dbviewer_ro로 SELECT 성공 / CREATE 실패 확인       [ ]
@@ -240,8 +247,8 @@ DB명:                 <DB명>
 
 | 증상 | 원인·조치 |
 |---|---|
-| `network dbv-<서비스키> not found` | db-viewer 운영자가 아직 네트워크를 안 만들었다. ①의 `docker network create`부터 |
+| `network <네트워크이름> not found` | db-viewer 운영자가 아직 네트워크를 안 만들었다(전용) 또는 공유 네트워크가 아직 없다. ①의 "먼저 할 일"부터 |
 | 재기동 후 서비스가 서로 못 찾음 | `networks:`를 명시하면서 `default:`를 빠뜨렸다. ③의 2번 주의사항 참조 |
-| `Pool overlaps with other one on this address space` | 서브넷 `10.203.<n>.0/24`가 이미 쓰이고 있다. db-viewer 운영자에게 다른 `<n>`을 요청 |
-| db-viewer 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 `postgres` 같은 흔한 컨테이너명을 쓴다. 별칭(`<서비스키>-db`)이 제대로 붙었는지 확인 |
+| `Pool overlaps with other one on this address space` | (전용) 서브넷 `10.203.<n>.0/24`가 이미 쓰이고 있다. db-viewer 운영자에게 다른 `<n>`을 요청 |
+| db-viewer 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 `postgres` 같은 흔한 컨테이너명을 쓴다 — 공유 네트워크에서는 별칭이 유일한 구별 수단이다. 별칭(`<서비스키>-db`)이 제대로 붙었는지 확인 |
 | DB 컨테이너에 볼륨이 없다 | **작업 중단.** 볼륨부터 붙이는 게 먼저다 (②) |
