@@ -8,25 +8,53 @@
 담당자에게 보낼 요청서 `docs/handoff/service-owner-prompt.md` / 기존 MSSQL 연결 런북
 `docs/connect.md`(이 문서와 별개 — 그쪽은 정찰→수집→live 전환).
 
-서비스 하나를 새로 연결할 때마다 1~7을 반복한다. 8부터는 db-viewer 쪽 1회 작업.
+서비스 하나를 새로 연결할 때마다 1~7을 반복한다(공유 방식이면 1.1과 6.2는 처음 한 번만).
+8부터는 db-viewer 쪽 1회 작업.
 
 ---
 
-## 1. 네트워크 B′ — 서비스당 전용 브리지 네트워크
+## 1. 네트워크 — 서비스마다 공유·전용 중 하나를 고른다
 
-**결정: 조회 대상 서비스마다 전용 브리지 네트워크를 외부에서 만들고, db-viewer와 그 서비스
-DB 컨테이너 둘만 그 네트워크에 넣는다.** 대상 서비스의 기존 `default` 네트워크 정의
-(subnet 172.36~46 부근, 서비스마다 제각각)는 한 줄도 건드리지 않는다.
+db-viewer backend가 대상 DB 컨테이너에 닿으려면 둘이 같은 브리지 네트워크에 있어야 한다.
+네트워크는 어느 방식이든 **외부에서(`docker network create`) 만들고 어느 compose에도
+소유시키지 않는다** — 대상이 `docker compose down` 되어도, db-viewer가 재배포되어도
+네트워크와 상대 쪽 합류가 남아 있어야 하기 때문이다. 대상 서비스의 기존 `default` 네트워크
+정의(subnet 172.36~46 부근, 서비스마다 제각각)는 한 줄도 건드리지 않는다.
+
+| | 공유 `dbv-shared` | 전용 `dbv-<서비스키>` |
+|---|---|---|
+| 네트워크 | 처음 한 번만 만든다 (`10.203.0.0/24`) | 서비스마다 새로 만든다 (`10.203.<n>.0/24`, n ≥ 1) |
+| 새 서비스 붙일 때 db-viewer 쪽 | compose 변경·backend 재기동 없음 — 7의 등록만 | backend `networks`에 추가 + 재기동 (6.2) |
+| 서비스 간 격리 | **깨진다** — 같은 네트워크의 다른 서비스 DB 포트에 닿는다(계정으로만 보호) | 유지 — 네트워크에 db-viewer와 그 DB 둘만 |
+| 별칭 `<서비스키>-db` | **필수** — `postgres` 같은 흔한 컨테이너명이 한 네트워크에 여럿 | 필수 (7-2의 오연결 방지) |
+
+**고르는 기준.** 기본은 공유 — 서비스가 늘 때마다 db-viewer compose를 고치고 재기동하는
+비용이 사라진다. 다른 서비스와 네트워크로 닿으면 안 되는 DB(민감 데이터, 별도 보안 요구)는
+전용으로. 첫 시험 연결(`10.203.1.0/24`)은 전용으로 붙어 있고 그대로 둔다. 두 방식은
+공존한다 — backend는 `dbviewer` + `dbv-shared` + 전용 네트워크들에 동시에 합류한다.
+
+### 1.1 공유 네트워크 — 처음 한 번만
+
+```bash
+docker network create --subnet 10.203.0.0/24 dbv-shared
+```
+
+만든 뒤 `docker-compose.yml`의 backend `networks`에 `dbv-shared`를 넣고 재기동한다(6.2).
+**이후 공유 방식 서비스는 이 단계를 건너뛴다** — 서비스 쪽이 3~4로 문을 내면 db-viewer는
+이미 그 네트워크에 있다.
+
+### 1.2 전용 네트워크 — 서비스마다
 
 ```bash
 docker network create --subnet 10.203.<n>.0/24 dbv-<서비스키>
 # 예: docker network create --subnet 10.203.2.0/24 dbv-svca
 ```
 
-`<n>`은 1부터 서비스마다 다른 정수(1, 2, 3, …)로 겹치지 않게 관리한다 — **첫 연결이
-`10.203.1.0/24`를 이미 쓰고 있으므로** 다음 서비스는 `10.203.2.0/24`부터. `10.203.x.0/24`는
-RFC1918 사설 대역이고, 기존 서비스 대역(172.36~172.46)·db-viewer 자신의 대역(`172.48.0.0/16`,
-`docker-compose.yml` `networks.dbviewer` 참고)·개발 스택(`172.49.0.0/16`)과 겹치지 않는다.
+`<n>`은 1부터 서비스마다 다른 정수(1, 2, 3, …)로 겹치지 않게 관리한다 — **`10.203.0.0/24`는
+공유 네트워크, `10.203.1.0/24`는 첫 연결이 이미 쓰고 있으므로** 다음 서비스는
+`10.203.2.0/24`부터. `10.203.x.0/24`는 RFC1918 사설 대역이고, 기존 서비스
+대역(172.36~172.46)·db-viewer 자신의 대역(`172.48.0.0/16`, `docker-compose.yml`
+`networks.dbviewer` 참고)·개발 스택(`172.49.0.0/16`)과 겹치지 않는다.
 이미 쓰인 `<n>`은 아래로 확인한다:
 
 ```bash
@@ -34,9 +62,9 @@ docker network ls --filter name=dbv- --format '{{.Name}}' \
   | xargs -I{} docker network inspect -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}}{{end}}' {}
 ```
 
-### 왜 이 방식인가 (검토했던 대안)
+### 왜 이 두 방식인가 (검토했던 대안)
 
-설계 문서 §7에서 검토·기각한 두 대안:
+설계 문서 §7에서 검토한 세 안:
 
 - **A안 — db-viewer가 대상의 기존 `default` 네트워크에 합류.** 대상을 전혀 안 건드려
   가장 가볍지만 두 가지 문제로 탈락했다. (1) 여러 서비스가 DB 컨테이너를 `postgres`/`db`
@@ -44,20 +72,24 @@ docker network ls --filter name=dbv- --format '{{.Name}}' \
   이름 해석이 어느 쪽을 가리킬지 보장되지 않는다. (2) 대상 `default`는 대상 compose
   소유라, 대상이 `docker compose down` 되면 네트워크째 사라져 **db-viewer가 기동조차
   못 한다** — db-viewer의 가용성이 남의 compose 운영에 종속된다.
-- **B안 — 공용 네트워크 하나에 모든 대상 DB.** (2)는 풀리지만, 서비스A DB와 서비스B DB가
-  서로 네트워크로 닿게 된다. 조회 편의 하나 때문에 원래 있던 서비스 간 격리를 깨는 건
-  맞바꿀 가치가 없다.
-- **B′(채택) — 서비스당 전용 네트워크.** 대상 수정량은 B안과 같지만, 각 네트워크에
+- **B안 — 공용 네트워크 하나에 모든 대상 DB (→ 공유 방식).** (2)는 풀리지만, 서비스A DB와
+  서비스B DB가 서로 네트워크로 닿게 된다. 2026-08-25 설계에서는 이 이유로 기각했다가
+  **2026-09-11에 서비스별 선택지로 되살렸다** — 서비스가 늘 때마다 db-viewer compose
+  수정·재기동이 반복되는 비용이, 격리가 굳이 필요 없는 대부분의 서비스에는 더 크다고
+  봤다. 격리가 필요한 서비스는 B′를 고르면 되므로 "전부 공용"이 아니라 "서비스마다 선택"이다.
+  별칭은 이 방식에서 유일한 구별 수단이라 필수로 격상했다.
+- **B′ — 서비스당 전용 네트워크 (→ 전용 방식).** 대상 수정량은 B안과 같지만, 각 네트워크에
   db-viewer와 그 서비스 DB **둘만** 있어 서비스 간 격리가 유지된다. 별칭이 서비스마다
   고유하니 이름 충돌도 없고, 네트워크가 어느 compose에도 종속되지 않아 대상이
-  `down` 되어도 db-viewer는 영향받지 않는다. 비용은 네트워크 개수뿐.
+  `down` 되어도 db-viewer는 영향받지 않는다. 비용은 네트워크 개수와 서비스마다 반복되는
+  6.2.
 
 ---
 
 ## 2. 대상 DB 컨테이너 볼륨 사전 확인 — 유일한 데이터 손실 위험 지점
 
-B′는 대상 DB 컨테이너를 **1회 재생성**한다(`docker compose up -d`로 네트워크 항목만
-추가). 데이터가 named volume에 있으면 재생성해도 무손실이지만, 볼륨 없이 컨테이너
+어느 방식이든 대상 DB 컨테이너를 **1회 재생성**한다(`docker compose up -d`로 네트워크
+항목만 추가). 데이터가 named volume에 있으면 재생성해도 무손실이지만, 볼륨 없이 컨테이너
 레이어(rootfs)에만 쓰고 있으면 재생성 순간 데이터가 사라진다.
 
 ```bash
@@ -66,7 +98,7 @@ docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n
 
 - **출력에 DB 데이터 경로가 보이면** (예: `volume pgdata -> /var/lib/postgresql/data`)
   → 3으로 진행.
-- **출력이 비어 있으면 → 그 서비스는 B′ 적용 금지.** 볼륨을 먼저 붙이거나(그 자체가
+- **출력이 비어 있으면 → 그 서비스는 네트워크 합류 금지.** 볼륨을 먼저 붙이거나(그 자체가
   별도 작업이고 이 문서의 범위 밖), 그 서비스만 예외적으로 다른 방식을 검토한다.
   **이 확인을 건너뛰고 진행하지 않는다.**
 
@@ -82,12 +114,12 @@ services:
   postgres:                    # 대상의 DB 컨테이너 서비스명 (예시)
     networks:
       default:                 # 기존 그대로 — 반드시 함께 적는다 (아래 함정 참고)
-      dbv-svca:
-        aliases: [svca-db]     # 서비스마다 고유해야 한다
+      dbv-shared:              # 전용이면 dbv-<서비스키>
+        aliases: [svca-db]     # 서비스마다 고유 — 공유 네트워크에서는 이 이름만이 구별 수단
 networks:
   default:
     ...기존 정의 그대로, 절대 수정 금지...
-  dbv-svca:
+  dbv-shared:                  # 전용이면 dbv-<서비스키>
     external: true
 ```
 
@@ -113,7 +145,8 @@ in-place로 재생성한다.
 ```bash
 docker inspect -f '{{json .NetworkSettings.Networks}}' <DB컨테이너명>
 ```
-기존 네트워크와 `dbv-<서비스키>` 둘 다 보이고, 별칭이 붙어 있으면 통과. 대상 서비스 자체가
+기존 네트워크와 `dbv-shared`(전용이면 `dbv-<서비스키>`) 둘 다 보이고, 별칭이 붙어 있으면
+통과. 대상 서비스 자체가
 정상 동작하는지(헬스체크·앱 로그)도 확인한다.
 
 ---
@@ -187,19 +220,21 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 `SOURCE_CONNECT_TIMEOUT`(기본 5초)·`SOURCE_QUERY_TIMEOUT`(기본 15초)은 튜닝값이라
 보통 기본값으로 둔다 — 소스 DB가 유난히 느리면 늘린다.
 
-### 6.2 compose에 네트워크 추가
+### 6.2 compose에 네트워크 추가 — 전용 서비스마다, 공유는 처음 한 번
 
-`docker-compose.yml`의 `backend` 서비스에 대상 네트워크를 추가한다(SQLite면 볼륨
-마운트도). `docker-compose.yml` 하단의 안내 주석을 참고해 실제 네트워크명·볼륨명으로
-채운다:
+**공유 방식 서비스는 이 단계가 없다** — `dbv-shared`는 1.1에서 이미 backend에 붙어 있다.
+전용 방식 서비스(또는 공유 네트워크를 방금 처음 만든 경우)만 `docker-compose.yml`의
+`backend` 서비스에 네트워크를 추가한다(SQLite면 볼륨 마운트도). `docker-compose.yml`
+하단의 안내 주석을 참고해 실제 네트워크명·볼륨명으로 채운다:
 
 ```yaml
 services:
   backend:
-    networks: [dbviewer, dbv-svca]
+    networks: [dbviewer, dbv-shared, dbv-svca]   # dbv-shared는 한 번, dbv-<서비스키>는 전용 서비스마다
     # SQLite 소스라면:
     # volumes: [svcc_data:/mnt/sources/svcc:ro]
 networks:
+  dbv-shared: { external: true }
   dbv-svca: { external: true }
 # volumes:
 #   svcc_data: { external: true, name: <서비스C_볼륨명> }
@@ -299,10 +334,10 @@ disabled — enable it before connecting"). 의도적 설계다 — 정상 운�
 | 증상 | 확인 |
 |---|---|
 | 소스 등록이 503 | `SOURCE_SECRET_KEY` 미설정 — `.env` 채우고 backend 재기동 (6.1) |
-| 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 같은 컨테이너명(`postgres`)을 씀 — host를 네트워크 alias나 컨테이너 풀네임으로 (7-2) |
-| backend가 `network ... not found`로 기동 실패 | `dbv-<서비스>` 네트워크가 지워졌다 — `docker network create`로 다시 만든다 (1) |
+| 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 같은 컨테이너명(`postgres`)을 씀 — 공유 네트워크에서는 별칭이 유일한 구별 수단. host를 네트워크 alias로 (7-2) |
+| backend가 `network ... not found`로 기동 실패 | `dbv-shared`·`dbv-<서비스>` 네트워크가 지워졌다 — `docker network create`로 다시 만든다 (1) |
 | 대상 서비스 재기동 후 자기들끼리 못 찾음 | compose에 `networks:`를 명시하면서 `default:`를 빠뜨렸다 (3의 함정) |
-| `Pool overlaps with other one on this address space` | 서브넷 `10.203.<n>.0/24`가 이미 쓰이는 중 — 다른 `<n>` 사용 (1의 확인 명령으로 사용 중인 값 조회) |
+| `Pool overlaps with other one on this address space` | (전용) 서브넷 `10.203.<n>.0/24`가 이미 쓰이는 중 — 다른 `<n>` 사용 (1.2의 확인 명령으로 사용 중인 값 조회). `0`은 공유 네트워크 몫 |
 | 연결 테스트가 502 | 소스 DB 자체 접속 실패(호스트·포트·자격증명) — 응답의 `error_type`과 backend 로그(`exc_info=True`로 전문 기록) 확인 |
 | 연결 테스트가 503 | 소스 장애가 아니라 이쪽 설정 문제 — `SOURCE_SECRET_KEY` 미설정 또는 키 불일치(비밀번호 복호화 실패) |
 | 연결 테스트가 400 | 그 소스가 n8n 경유(access_mode≠direct)이거나, engine이 postgres/sqlite가 아닌 행 — 둘 다 접속을 시도하지도 않고 거부한다(`sources.py` `/test`) |

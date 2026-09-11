@@ -73,7 +73,7 @@ docker compose up -d --build
   `$env` 있으면 그 값, 없으면 리터럴 폴백 — 절차: `n8n/workflows/README.md`)
   - `w0_recon_queries.json` — 정찰 6종 (정지점 16). **[3] blocked > 0 이면 VIEW DEFINITION 권한부터 해결**
 - Docker 네트워크: `172.48.0.0/16` (사내 대역 충돌 회피 요청값 — RFC1918 사설 대역 아님에 유의).
-  다른 서비스 DB를 붙이는 전용 네트워크는 `10.203.<n>.0/24` (`n`은 1부터, 첫 연결이 1 사용 — `docs/connect-sources.md` §1)
+  다른 서비스 DB를 붙이는 네트워크는 서비스마다 둘 중 하나 — 공유 `dbv-shared` `10.203.0.0/24`(기본, 처음 한 번 생성) 또는 전용 `dbv-<서비스키>` `10.203.<n>.0/24`(`n`은 1부터, 첫 연결이 1 사용 — `docs/connect-sources.md` §1)
 
 ## 인증 (Keycloak + LDAP + 화이트리스트)
 

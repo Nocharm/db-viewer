@@ -185,7 +185,7 @@
 
 <!-- ───────────────────────── 1. 한 장 그림 ───────────────────────── -->
 <h2>한 장으로 보면</h2>
-<div class="figure" aria-label="두 건물 사이에 전용 복도를 하나 내고, 읽기 열쇠 하나로 DB를 들여다보는 그림">
+<div class="figure" aria-label="두 건물 사이에 복도를 하나 내고, 읽기 열쇠 하나로 DB를 들여다보는 그림">
   <svg viewBox="0 0 960 360" role="img">
     <defs>
       <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
@@ -210,10 +210,10 @@
     <text x="121" y="236" text-anchor="middle" font-size="13" fill="#5c6d67">기존 문</text>
     <text x="121" y="256" text-anchor="middle" font-size="13" fill="#5c6d67">default 네트워크</text>
     <text x="121" y="292" text-anchor="middle" font-size="13" font-weight="700" fill="#b45309">그대로 둡니다</text>
-    <!-- 전용 복도 -->
+    <!-- db-viewer 복도 (공유 또는 전용) -->
     <rect x="340" y="150" width="280" height="60" rx="10" fill="#e3f3ee" stroke="#0e7a5f" stroke-width="2" stroke-dasharray="6 5"/>
-    <text x="480" y="174" text-anchor="middle" font-size="15" font-weight="700" fill="#0e7a5f">새 전용 복도</text>
-    <text x="480" y="196" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, Menlo, monospace" fill="#0e7a5f">dbv-&lt;서비스키&gt; · 10.203.&lt;n&gt;.0/24</text>
+    <text x="480" y="174" text-anchor="middle" font-size="15" font-weight="700" fill="#0e7a5f">db-viewer 복도</text>
+    <text x="480" y="196" text-anchor="middle" font-size="13" font-family="IBM Plex Mono, Menlo, monospace" fill="#0e7a5f">공유 dbv-shared · 전용 dbv-&lt;서비스키&gt;</text>
     <!-- 읽기 화살표 -->
     <path d="M616 180 H540" stroke="#0e7a5f" stroke-width="3" fill="none" marker-end="url(#arrow)" transform="translate(0 -46)"/>
     <text x="572" y="122" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0e7a5f">읽기만 (SELECT)</text>
@@ -233,13 +233,14 @@
     <rect x="650" y="212" width="240" height="60" rx="8" fill="#fff" stroke="#d6e2dc"/>
     <text x="770" y="236" text-anchor="middle" font-size="13" fill="#5c6d67">여러분 서비스로 쓰기·변경</text>
     <text x="770" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="#b30000">없음</text>
-    <!-- 다른 서비스들 (복도에 못 들어옴) -->
+    <!-- 다른 서비스 DB — 전용 복도면 못 들어오고, 공유 복도면 나란히 선다 -->
     <rect x="380" y="286" width="200" height="50" rx="10" fill="#f6f9f7" stroke="#d6e2dc" stroke-dasharray="4 4"/>
-    <text x="480" y="308" text-anchor="middle" font-size="13" fill="#93939f">다른 서비스·컨테이너</text>
-    <text x="480" y="326" text-anchor="middle" font-size="12" fill="#93939f">이 복도에 들어오지 못함 (둘만)</text>
+    <text x="480" y="308" text-anchor="middle" font-size="13" fill="#93939f">다른 서비스의 DB</text>
+    <text x="480" y="326" text-anchor="middle" font-size="12" fill="#93939f">전용 복도면 못 들어옴 · 공유 복도면 나란히</text>
   </svg>
   <p class="caption"><strong>복도 하나, 열쇠 하나.</strong> 복도(도커 네트워크)는 db-viewer 담당자가 만들고, 열쇠(읽기 전용 계정)는 서비스 담당자가 만듭니다.
-  여러분 서비스가 원래 쓰던 문(default 네트워크)은 한 줄도 바꾸지 않습니다.</p>
+  여러분 서비스가 원래 쓰던 문(default 네트워크)은 한 줄도 바꾸지 않습니다.
+  복도는 두 종류 — 미리 지어 둔 <strong>공유 복도</strong>(<code>dbv-shared</code>, 편하지만 다른 서비스 DB와 나란히 섬)와 서비스마다 새로 내는 <strong>전용 복도</strong>(<code>dbv-&lt;서비스키&gt;</code>, 둘만). 1단계에서 고릅니다.</p>
 </div>
 
 <!-- ───────────────────────── 2. 걱정 ───────────────────────── -->
@@ -259,6 +260,11 @@
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></div>
     <div class="q">네트워크 설정이 깨지나요?</div>
     <p class="a"><strong>기존 것은 그대로.</strong> 새 네트워크를 <em>추가</em>만 합니다. <code>docker compose down</code>은 쓰지 않습니다.</p>
+  </div>
+  <div class="card">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="7" height="14" rx="2"/><rect x="14" y="5" width="7" height="14" rx="2"/><path d="M10 12h4"/></svg></div>
+    <div class="q">다른 서비스 DB와 같은 네트워크에 놓이나요?</div>
+    <p class="a"><strong>고르기 나름.</strong> 전용 복도면 아니요(db-viewer와 여러분 DB 둘만). 공유 복도면 같은 복도의 다른 DB와 문 앞까지 닿습니다(열쇠는 각자). 닿으면 안 되는 DB라면 전용을 요청하세요.</p>
   </div>
   <div class="card">
     <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg></div>
@@ -282,9 +288,9 @@
   <div class="role dbv" data-role="dbv">
     <h3><span class="badge dbv">db-viewer 담당자</span> 우리 쪽에서</h3>
     <ul>
-      <li>서비스 키·네트워크·서브넷 정해서 네트워크 만들기</li>
+      <li>복도 방식(공유/전용) 정하고 값 채우기 — 전용이면 네트워크 만들기</li>
       <li><code>SOURCE_SECRET_KEY</code> 준비 (처음 한 번)</li>
-      <li>db-viewer compose에 네트워크 합류 후 backend 재기동</li>
+      <li>전용일 때만: db-viewer compose에 네트워크 합류 후 backend 재기동</li>
       <li>관리 콘솔에 등록 → 연결 테스트 → 카탈로그 수집 → 공개 범위</li>
     </ul>
   </div>
@@ -296,27 +302,44 @@
 <ol class="steps">
 
   <li data-role="dbv">
-    <h3>값 정하고 복도 만들기 <span class="badge dbv">db-viewer 담당자</span></h3>
-    <p>이름이 어긋나면 나머지가 전부 어긋납니다. 아래 표를 채워 서비스 담당자에게 보내고, 네트워크는 <strong>미리</strong> 만들어 둡니다.</p>
+    <h3>복도 고르고 값 정하기 <span class="badge dbv">db-viewer 담당자</span></h3>
+    <p>먼저 이 서비스가 어느 복도로 올지 서비스 담당자와 정합니다. 둘은 같이 쓸 수 있고, 서비스마다 하나를 고릅니다.</p>
+    <div class="two">
+      <div class="card">
+        <div class="q">공유 복도 <code>dbv-shared</code> — 기본</div>
+        <p class="a">처음 한 번 지어 두고 db-viewer가 늘 붙어 있는 복도. 새 서비스는 <strong>문만 내면 끝</strong>이고, db-viewer 쪽은 등록만 합니다.
+        대신 같은 복도의 다른 서비스 DB와 문 앞까지 닿습니다(열쇠는 각자).</p>
+      </div>
+      <div class="card">
+        <div class="q">전용 복도 <code>dbv-&lt;서비스키&gt;</code> — 따로</div>
+        <p class="a">이 서비스만을 위해 새로 내는 복도. 복도에는 db-viewer와 이 DB <strong>둘만</strong>. 다른 서비스와 네트워크로 닿으면 안 되는 DB라면 이쪽.
+        db-viewer 쪽은 복도를 만들고 7단계까지 합니다.</p>
+      </div>
+    </div>
+    <p>이름이 어긋나면 나머지가 전부 어긋납니다. 아래 표를 채워 서비스 담당자에게 보내고, 전용이면 네트워크를 <strong>미리</strong> 만들어 둡니다.</p>
     <table>
       <thead><tr><th>항목</th><th>값</th><th>설명</th></tr></thead>
       <tbody>
+        <tr><td>복도 방식</td><td>공유 / 전용</td><td>기본은 공유. 닿으면 안 되는 DB만 전용</td></tr>
         <tr><td>서비스 키</td><td><code>&lt;서비스키&gt;</code></td><td>소문자·영숫자. 예: <code>svca</code></td></tr>
-        <tr><td>네트워크 이름</td><td><code>dbv-&lt;서비스키&gt;</code></td><td>db-viewer 담당자가 만든다</td></tr>
-        <tr><td>서브넷 (권장)</td><td><code>10.203.&lt;n&gt;.0/24</code></td><td><code>&lt;n&gt;</code>은 1부터 서비스마다 다르게. <strong><code>10.203.1.0/24</code>는 첫 연결이 이미 사용</strong> — 다음은 2, 3, …</td></tr>
+        <tr><td>네트워크 이름</td><td><code>dbv-shared</code> (공유) / <code>dbv-&lt;서비스키&gt;</code> (전용)</td><td>db-viewer 담당자가 만든다 — 공유는 이미 있음</td></tr>
+        <tr><td>서브넷 (전용만)</td><td><code>10.203.&lt;n&gt;.0/24</code></td><td><code>&lt;n&gt;</code>은 1부터 서비스마다 다르게. <strong><code>10.203.0.0/24</code>는 공유 복도, <code>10.203.1.0/24</code>는 첫 연결이 이미 사용</strong> — 다음은 2, 3, …</td></tr>
         <tr><td>DB compose 서비스명</td><td><code>&lt;compose서비스명&gt;</code></td><td>예: <code>postgres</code>, <code>db</code></td></tr>
-        <tr><td>네트워크 별칭</td><td><code>&lt;서비스키&gt;-db</code></td><td>db-viewer가 <em>이 이름</em>으로 접속한다</td></tr>
+        <tr><td>네트워크 별칭</td><td><code>&lt;서비스키&gt;-db</code></td><td>db-viewer가 <em>이 이름</em>으로 접속한다. <strong>공유 복도에서는 이 이름만이 여러분 DB를 구별</strong>합니다 — 생략 불가</td></tr>
         <tr><td>DB 엔진</td><td>PostgreSQL / SQLite</td><td></td></tr>
         <tr><td>읽기 전용 계정명</td><td><code>dbviewer_ro</code></td><td></td></tr>
       </tbody>
     </table>
-    <div class="codeblock"><button class="copy-btn" data-target="c-net">복사</button><pre id="c-net"><span class="cm"># 이미 쓰인 &lt;n&gt; 확인</span>
+    <div class="codeblock"><button class="copy-btn" data-target="c-net">복사</button><pre id="c-net"><span class="cm"># [공유] 처음 한 번만 — 이미 있으면 건너뜀. 만든 직후 7단계처럼 backend를 한 번 합류시켜 둔다</span>
+docker network create --subnet 10.203.0.0/24 dbv-shared
+
+<span class="cm"># [전용] 서비스마다 — 이미 쓰인 &lt;n&gt; 확인</span>
 docker network ls --filter name=dbv- --format '{{.Name}}' \
   | xargs -I{} docker network inspect -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}}{{end}}' {}
 
-<span class="cm"># 비어 있는 &lt;n&gt;으로 만들기 (예: 두 번째 서비스 → 10.203.2.0/24)</span>
+<span class="cm"># [전용] 비어 있는 &lt;n&gt;으로 만들기 (예: 두 번째 서비스 → 10.203.2.0/24)</span>
 docker network create --subnet 10.203.&lt;n&gt;.0/24 dbv-&lt;서비스키&gt;</pre></div>
-    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code>, 개발 스택 <code>172.49/16</code> 어디와도 겹치지 않습니다. 첫 시험 연결이 이 대역으로 문제없이 붙었습니다.</div>
+    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code>, 개발 스택 <code>172.49/16</code> 어디와도 겹치지 않습니다. 첫 시험 연결이 이 대역으로 문제없이 붙었습니다. <code>0</code>은 공유 복도 몫입니다.</div>
   </li>
 
   <li data-role="dbv">
@@ -346,18 +369,18 @@ docker network create --subnet 10.203.&lt;n&gt;.0/24 dbv-&lt;서비스키&gt;</p
   &lt;compose서비스명&gt;:
     networks:
       <span class="hl">default:</span>                  <span class="cm"># ← 원래 networks 키가 없었다면 반드시 함께 적는다</span>
-      dbv-&lt;서비스키&gt;:
-        aliases: [&lt;서비스키&gt;-db]
+      &lt;네트워크이름&gt;:            <span class="cm"># dbv-shared 또는 dbv-&lt;서비스키&gt; (1단계 값)</span>
+        aliases: [&lt;서비스키&gt;-db]  <span class="cm"># 생략 금지 — 공유 복도에서는 이 이름으로만 구별</span>
 networks:
   default:
     <span class="cm">...기존 정의 그대로, 수정 금지...</span>
-  dbv-&lt;서비스키&gt;:
+  &lt;네트워크이름&gt;:
     external: true</pre></div>
     <div class="warn"><strong>함정 하나.</strong> 원래 <code>networks:</code> 키가 없던 서비스는 default에 자동으로 붙어 있었습니다. 네트워크를 하나라도 적는 순간 자동 연결이 사라지므로 <code>default:</code>를 반드시 같이 적어야 합니다. 빠뜨리면 서비스끼리 서로를 못 찾습니다.</div>
     <p>반영은 <strong>그 컨테이너만</strong> 재생성합니다. <code>docker compose down</code>은 네트워크까지 지우니 쓰지 않습니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-up">복사</button><pre id="c-up">docker compose up -d &lt;compose서비스명&gt;
 
-<span class="cm"># 확인: 기존 네트워크 + dbv-&lt;서비스키&gt; 둘 다 보이고 별칭이 붙었는지</span>
+<span class="cm"># 확인: 기존 네트워크 + &lt;네트워크이름&gt; 둘 다 보이고 별칭이 붙었는지</span>
 docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;</pre></div>
     <p><strong>SQLite</strong>라면 이 단계는 필요 없습니다 — DB 파일이 든 볼륨 이름과 컨테이너 안 파일 경로만 6단계에서 알려 주세요.</p>
   </li>
@@ -389,19 +412,21 @@ CREATE TABLE zzz_probe (id int);            -- 반드시 권한 오류가 나야
   </li>
 
   <li data-role="dbv">
-    <h3>db-viewer도 복도에 합류 <span class="badge dbv">db-viewer 담당자</span></h3>
-    <p>db-viewer의 <code>docker-compose.yml</code>에서 backend를 그 네트워크에 넣고 backend만 재기동합니다. SQLite 소스면 볼륨도 읽기 전용으로 마운트합니다.</p>
+    <h3>db-viewer도 복도에 합류 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">전용일 때만</span></h3>
+    <p><strong>공유 복도면 이 단계는 없습니다</strong> — backend는 이미 <code>dbv-shared</code>에 있습니다(복도를 처음 지을 때 한 번 넣어 둠). 8단계로 가세요.</p>
+    <p>전용 복도(또는 공유 복도를 방금 처음 지은 경우)면 db-viewer의 <code>docker-compose.yml</code>에서 backend를 그 네트워크에 넣고 backend만 재기동합니다. SQLite 소스면 볼륨도 읽기 전용으로 마운트합니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-dbv">복사</button><pre id="c-dbv">services:
   backend:
-    networks: [dbviewer, dbv-&lt;서비스키&gt;]
+    networks: [dbviewer, dbv-shared, dbv-&lt;서비스키&gt;]   <span class="cm"># dbv-shared는 한 번, dbv-&lt;서비스키&gt;는 전용 서비스마다</span>
     <span class="cm"># SQLite 소스라면:</span>
     <span class="cm"># volumes: [&lt;볼륨명&gt;:/mnt/sources/&lt;서비스키&gt;:ro]</span>
 networks:
+  dbv-shared: { external: true }
   dbv-&lt;서비스키&gt;: { external: true }
 <span class="cm"># volumes:</span>
 <span class="cm">#   &lt;볼륨명&gt;: { external: true, name: &lt;서비스의_볼륨명&gt; }</span></pre></div>
     <div class="codeblock"><pre>docker compose up -d backend</pre></div>
-    <div class="warn">backend가 <code>network dbv-&lt;서비스키&gt; not found</code>로 안 뜨면 1단계 네트워크가 없는 것입니다. 다시 <code>docker network create</code>.</div>
+    <div class="warn">backend가 <code>network … not found</code>로 안 뜨면 1단계 네트워크가 없는 것입니다. 다시 <code>docker network create</code>.</div>
   </li>
 
   <li data-role="dbv">
@@ -463,7 +488,7 @@ networks:
   <thead><tr><th>칸</th><th>값을 어디서 확인하나</th></tr></thead>
   <tbody>
     <tr><td>3 호스트(별칭)</td><td>서비스 담당자의 회신 ‘네트워크 별칭’. 직접 보려면 서비스 서버에서
-      <code>docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;</code> → <code>dbv-&lt;서비스키&gt;</code> 항목의 <code>Aliases</code></td></tr>
+      <code>docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;</code> → <code>dbv-shared</code>(또는 <code>dbv-&lt;서비스키&gt;</code>) 항목의 <code>Aliases</code></td></tr>
     <tr><td>4 포트</td><td>서비스 compose의 DB <code>ports:</code> 뒤쪽 숫자, 또는 <code>docker inspect -f '{{json .Config.ExposedPorts}}' &lt;DB컨테이너명&gt;</code> → 예: <code>{"5432/tcp":{}}</code></td></tr>
     <tr><td>5 database</td><td>회신 ‘DB명’. 직접 보려면 <code>docker exec &lt;DB컨테이너명&gt; psql -U postgres -c '\l'</code>, 또는 compose의 <code>POSTGRES_DB</code></td></tr>
     <tr><td>6 계정 / 7 비밀번호</td><td>5단계에서 만든 <code>dbviewer_ro</code>. 비밀번호는 보안 채널로 받은 값</td></tr>
@@ -486,17 +511,17 @@ networks:
   </div>
 </div>
 <div class="danger" data-role="dbv">“스냅샷 N건이 참조하고 있어 삭제할 수 없습니다”가 떴다면 예전 방식의 차단입니다. 지금은 위 확인 상자에서 체크 뒤 함께 삭제하면 됩니다. API를 직접 부른다면 <code>DELETE /api/sources/{id}?cascade=true</code>.</div>
-<p data-role="svc"><span class="badge svc">서비스 담당자</span> 여러분 쪽에서 할 일은 없습니다. 원하면 compose에서 <code>dbv-&lt;서비스키&gt;</code> 항목을 지우고 그 컨테이너만 다시 올리면 복도가 닫힙니다(역시 <code>down</code>은 쓰지 않습니다).</p>
+<p data-role="svc"><span class="badge svc">서비스 담당자</span> 여러분 쪽에서 할 일은 없습니다. 원하면 compose에서 그 네트워크(<code>dbv-shared</code> 또는 <code>dbv-&lt;서비스키&gt;</code>) 항목을 지우고 그 컨테이너만 다시 올리면 복도가 닫힙니다(역시 <code>down</code>은 쓰지 않습니다).</p>
 
 <!-- ───────────────────────── 7. 문제 ───────────────────────── -->
 <h2>막히면 여기부터</h2>
 <table class="wrap">
   <thead><tr><th>증상</th><th>원인·조치</th></tr></thead>
   <tbody>
-    <tr><td><code>network dbv-&lt;서비스키&gt; not found</code></td><td>db-viewer 담당자가 아직 네트워크를 안 만들었거나 지워졌다. 1단계 <code>docker network create</code></td></tr>
-    <tr><td><code>Pool overlaps with other one on this address space</code></td><td>서브넷 <code>10.203.&lt;n&gt;.0/24</code>가 이미 쓰이고 있다. 1단계 확인 명령으로 비어 있는 <code>&lt;n&gt;</code>을 골라 다시</td></tr>
+    <tr><td><code>network dbv-shared not found</code> / <code>network dbv-&lt;서비스키&gt; not found</code></td><td>db-viewer 담당자가 아직 네트워크를 안 만들었거나 지워졌다. 1단계 <code>docker network create</code></td></tr>
+    <tr><td><code>Pool overlaps with other one on this address space</code></td><td>(전용) 서브넷 <code>10.203.&lt;n&gt;.0/24</code>가 이미 쓰이고 있다. 1단계 확인 명령으로 비어 있는 <code>&lt;n&gt;</code>을 골라 다시. <code>0</code>은 공유 복도 몫</td></tr>
     <tr><td>재기동 후 서비스가 서로 못 찾음</td><td><code>networks:</code>를 적으면서 <code>default:</code>를 빠뜨렸다. 4단계 함정</td></tr>
-    <tr><td>연결 테스트가 엉뚱한 DB를 회신</td><td>흔한 컨테이너명(<code>postgres</code>)에 붙었다. 호스트를 별칭 <code>&lt;서비스키&gt;-db</code>로, 별칭이 실제로 붙었는지 <code>docker inspect</code></td></tr>
+    <tr><td>연결 테스트가 엉뚱한 DB를 회신</td><td>흔한 컨테이너명(<code>postgres</code>)에 붙었다 — 공유 복도에서는 별칭이 유일한 구별 수단이다. 호스트를 별칭 <code>&lt;서비스키&gt;-db</code>로, 별칭이 실제로 붙었는지 <code>docker inspect</code></td></tr>
     <tr><td>소스 등록이 503</td><td><code>SOURCE_SECRET_KEY</code> 미설정. 2단계 후 backend 재기동</td></tr>
     <tr><td>연결 테스트가 502</td><td>호스트·포트(바깥 번호를 넣었나?)·계정·비밀번호 중 하나. backend 로그에 원문이 남는다</td></tr>
     <tr><td>연결 테스트가 503</td><td>소스 장애가 아니라 db-viewer 설정 — 키 미설정 또는 키가 바뀌어 복호화 실패</td></tr>
@@ -511,18 +536,18 @@ networks:
 <div class="codeblock scroll-tall" data-role="svc">
   <button class="copy-btn" data-target="prompt-text">프롬프트 복사</button>
   <pre id="prompt-text">우리 서비스의 docker-compose.yml을 수정해서, DB 컨테이너를 외부에서 이미 만들어 둔
-전용 브리지 네트워크에 "추가로" 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
+db-viewer용 브리지 네트워크에 "추가로" 합류시켜 줘. 사내 db-viewer가 이 네트워크를 통해
 우리 DB를 읽기 전용으로 조회할 예정이야.
 
 ## 값
-- 합류시킬 네트워크 이름: dbv-&lt;서비스키&gt;   (이미 `docker network create`로 만들어져 있음)
+- 합류시킬 네트워크 이름: &lt;네트워크이름&gt;   (dbv-shared 또는 dbv-&lt;서비스키&gt; — 이미 `docker network create`로 만들어져 있음)
 - DB 컨테이너의 compose 서비스명: &lt;compose서비스명&gt;
-- 그 네트워크에서 쓸 별칭: &lt;서비스키&gt;-db
+- 그 네트워크에서 쓸 별칭: &lt;서비스키&gt;-db   (생략 불가 — 공유 네트워크에서는 이 이름으로만 우리 DB를 찾는다)
 
 ## 반드시 지킬 것
 1. 기존 `networks:` 블록의 `default` 정의(driver, ipam, subnet, gateway)를 절대 수정하지 마.
    subnet을 바꾸면 다른 서비스와 충돌한다. 새 네트워크를 항목으로 "추가"만 해.
-2. DB 컨테이너 외의 다른 서비스는 이 네트워크에 넣지 마. db-viewer와 DB 둘만 있어야 한다.
+2. 이 네트워크에는 우리 DB 컨테이너만 넣어. 앱 등 다른 컨테이너는 넣지 마.
 3. `docker compose down`은 절대 실행하지 마. 네트워크까지 삭제되어 같은 compose의 다른
    서비스에 영향이 간다. 반영은 `docker compose up -d &lt;compose서비스명&gt;` 으로만 해.
 4. 애플리케이션 코드, Dockerfile, 의존성은 건드리지 마. 변경은 docker-compose.yml 하나뿐이어야 한다.
@@ -537,12 +562,12 @@ networks:
      &lt;compose서비스명&gt;:
        networks:
          default:                  # 기존 그대로 (원래 networks 키가 없었다면 default를 명시적으로 추가)
-         dbv-&lt;서비스키&gt;:
+         &lt;네트워크이름&gt;:
            aliases: [&lt;서비스키&gt;-db]
    networks:
      default:
        ...기존 정의 그대로, 절대 수정 금지...
-     dbv-&lt;서비스키&gt;:
+     &lt;네트워크이름&gt;:
        external: true
 
    주의: 원래 서비스에 `networks:` 키가 없었다면 compose는 default에 자동 연결한다.
@@ -552,7 +577,7 @@ networks:
 3. 적용 후 `docker compose up -d &lt;compose서비스명&gt;` 으로 해당 컨테이너만 재생성해.
 4. 검증하고 결과를 보고해:
    - `docker inspect -f '{{json .NetworkSettings.Networks}}' &lt;DB컨테이너명&gt;` — 기존 네트워크와
-     dbv-&lt;서비스키&gt; 둘 다 있는지, 별칭이 붙었는지
+     &lt;네트워크이름&gt; 둘 다 있는지, 별칭이 붙었는지
    - 우리 서비스가 정상인지 (헬스체크 또는 앱 로그)
    - 기존 default 네트워크의 subnet이 그대로인지: `docker network inspect &lt;프로젝트&gt;_default`
 
@@ -566,6 +591,7 @@ networks:
   <button class="copy-btn" data-target="reply-text">양식 복사</button>
   <pre id="reply-text">서비스 키:            &lt;서비스키&gt;
 엔진:                 PostgreSQL / SQLite
+복도 방식:            공유(dbv-shared) / 전용(dbv-&lt;서비스키&gt;)
 
 [PostgreSQL인 경우]
 네트워크 별칭(host):  &lt;서비스키&gt;-db
@@ -580,7 +606,7 @@ DB명:                 &lt;DB명&gt;
 컨테이너 내부 파일 경로: /.../app.db
 
 검증 결과:
-- docker inspect 네트워크: 기존 + dbv-&lt;서비스키&gt; 확인  [ ]
+- docker inspect 네트워크: 기존 + &lt;네트워크이름&gt; 확인  [ ]
 - 기존 default subnet 무변경 확인                    [ ]
 - 서비스 정상 동작 확인                              [ ]
 - dbviewer_ro로 SELECT 성공 / CREATE 실패 확인       [ ]</pre>
