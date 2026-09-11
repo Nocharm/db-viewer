@@ -5,9 +5,17 @@
 import { useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+interface InfoTipProps {
+  text: string;
+  align?: "left" | "right";
+  /** 목록(제외 뷰)은 여러 줄이라 children으로 받는다 — text는 그때도 aria-label로 남는다
+   *  / rich bubble content; `text` still carries the accessible label */
+  children?: React.ReactNode;
+}
+
 /** 말풍선은 body로 포털한다 — 스크롤 컨테이너(overflow)의 경계에 잘리지 않게.
  * The bubble is portaled to body so a scrolling ancestor cannot clip it. */
-export function InfoTip({ text, align }: { text: string; align?: "left" | "right" }) {
+export function InfoTip({ text, align, children }: InfoTipProps) {
   const iconRef = useRef<HTMLSpanElement>(null);
   const [bubbleStyle, setBubbleStyle] = useState<CSSProperties | null>(null);
 
@@ -43,8 +51,13 @@ export function InfoTip({ text, align }: { text: string; align?: "left" | "right
       i
       {bubbleStyle &&
         createPortal(
-          <span className="info-tip__bubble" role="tooltip" style={bubbleStyle}>
-            {text}
+          // children이 있으면(제외 목록 등 긴 리스트) 스크롤 가능한 말풍선으로 바꾼다
+          <span
+            className={`info-tip__bubble${children ? " info-tip__bubble--rich" : ""}`}
+            role="tooltip"
+            style={bubbleStyle}
+          >
+            {children ?? text}
           </span>,
           document.body,
         )}

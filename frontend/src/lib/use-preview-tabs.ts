@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { PreviewTabState, RefetchOptions } from "@/components/browser/PreviewSection";
 import { fetchObjectPreview } from "@/lib/api";
+import type { PreviewFilterCond } from "@/lib/preview-utils";
 
 export interface PreviewTabsController {
   tabs: PreviewTabState[];
@@ -21,8 +22,10 @@ export interface PreviewTabsController {
   setActiveId: (id: number) => void;
   setSplitId: (id: number | null) => void;
   /** 이미 열린 테이블이면 활성화만 — 중복 탭을 만들지 않는다.
-   * highlight를 주면 그 컬럼을 계속 강조한다(조인 검증의 "지금 보는 컬럼") */
-  open: (objectId: number, qname: string, highlight?: string | null) => void;
+   * highlight를 주면 그 컬럼을 계속 강조한다(조인 검증의 "지금 보는 컬럼").
+   * filters는 새 탭의 첫 조회에만 실린다 — 값 추적 딥링크가 `컬럼 = 값`으로 연다 */
+  open: (objectId: number, qname: string, highlight?: string | null,
+         filters?: PreviewFilterCond[] | null) => void;
   /** 강조 컬럼만 교체 — 페어를 바꿔도 이미 받아온 행은 다시 조회하지 않는다 */
   setHighlight: (id: number, column: string | null) => void;
   close: (id: number) => void;
@@ -67,6 +70,7 @@ export function usePreviewTabs(): PreviewTabsController {
 
   const open = useCallback((
     objectId: number, qname: string, highlight: string | null = null,
+    filters: PreviewFilterCond[] | null = null,
   ) => {
     setError(null);
     // 이미 열린 탭이면 활성화만 — 재조회하지 않는다(사용자가 걸어둔 필터·정렬이 날아간다).
@@ -78,7 +82,8 @@ export function usePreviewTabs(): PreviewTabsController {
         id: objectId, qname, data: null, loading: true,
         hidden: [], sort: null, order: [], highlight,
       }]);
-      refetch(objectId, {});
+      // 첫 조회에 필터를 실어 보낸다 — 무필터로 받은 뒤 다시 거르면 왕복이 두 번이다
+      refetch(objectId, filters && filters.length > 0 ? { filters } : {});
     }
     setActiveIdState(objectId);
   }, [tabs, refetch, setHighlight]);

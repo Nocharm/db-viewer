@@ -170,6 +170,50 @@ FROM ${src} a LEFT JOIN ${tgt} b ON a.${sc} = b.${tc}`;
     return `${col} LIKE N'%${v}%'`;
   });
   if (clauses.length > 0) query += ' WHERE ' + clauses.join(' AND ');
+} else if (b.kind === 'value_probe' || b.kind === 'value_count') {
+  // 값 추적 — 리터럴은 컬럼 타입을 따른다: varchar '…', nvarchar N'…', 숫자는 검증된
+  // 숫자만 그대로. 컬럼 쪽엔 함수를 씌우지 않는다(인덱스 보존). 값은 절대 SQL 조각이 아니다.
+  // value probe: literal kind follows the column type; numbers are interpolated only after
+  // Number.isFinite; the column side never gets a function so indexes stay usable.
+  const tbl = esc(b.schema) + '.' + esc(b.table);
+  const num = (v) => {
+    // 백엔드가 16자리 이상 bigint 정밀도를 지키려고 이미 검증된 숫자 문자열로 보낸 값 —
+    // Number()를 거치면 2^53을 넘는 값이 깨지므로 그대로 통과시킨다
+    // already-validated numeric literal sent as a string to preserve bigint precision;
+    // routing it through Number() would lose precision above 2^53
+    if (typeof v === 'string' && /^-?\\d+(\\.\\d+)?$/.test(v.trim())) return v.trim();
+    const n = (typeof v === 'number' || typeof v === 'string') ? Number(v) : NaN;
+    if (String(v).trim() === '' || !Number.isFinite(n)) {
+      throw new Error('value_probe: non-numeric value for a number column');
+    }
+    return String(n);
+  };
+  const likeEsc = (s) => lit(s).replace(/\\[/g, '[[]').replace(/%/g, '[%]').replace(/_/g, '[_]');
+  const render = (literal, v) => {
+    if (literal === 'number') return num(v);
+    if (literal === 'text-wide') return "N'" + lit(v) + "'";
+    return "'" + lit(v) + "'";  // text-narrow · date · guid — MSSQL이 컬럼 타입으로 변환한다
+  };
+  const clause = (c) => {
+    const col = esc(c.name);
+    const values = Array.isArray(c.values) ? c.values : [];
+    if (values.length === 0 || values.length > 8) throw new Error('value_probe: 1..8 values per column');
+    if (c.op === 'contains') {
+      const prefix = c.literal === 'text-wide' ? "N'" : "'";
+      return col + ' LIKE ' + prefix + '%' + likeEsc(values[0]) + "%'";
+    }
+    return col + ' IN (' + values.map((v) => render(c.literal, v)).join(', ') + ')';
+  };
+  if (b.kind === 'value_probe') {
+    const cols = Array.isArray(b.columns) ? b.columns : [];
+    if (cols.length === 0 || cols.length > 40) throw new Error('value_probe: 1..40 columns');
+    query = 'SELECT TOP 1 ' + cols.map((c) => esc(c.name)).join(', ') + ' FROM ' + tbl +
+      ' WHERE ' + cols.map(clause).join(' OR ');
+  } else {
+    const cap = Math.min(Math.max(parseInt(b.cap, 10) || 1000, 1), 5000);
+    query = 'SELECT COUNT(*) AS n FROM (SELECT TOP ' + (cap + 1) + ' 1 AS x FROM ' + tbl +
+      ' WHERE ' + clause(b.column || {}) + ') q';
+  }
 } else {
   throw new Error('unknown kind: ' + b.kind);
 }

@@ -163,6 +163,14 @@ class Settings(BaseSettings):
     gate_sample_top: int = 200
     gate_distinct_ratio: float = 0.9
 
+    # Tuning: 값 추적(value probe) — 이 행 수를 넘거나 행 수를 모르는 객체는 자동 실행에서
+    # 빠지고 사용자가 골라서 실행한다 / objects above this (or unknown) are deferred as heavy
+    value_probe_heavy_rows: int = 2_000_000
+    # Tuning: 동시에 실행할 값 추적 잡 수 — 소스 DB 부하 상한 / concurrent probe jobs
+    value_probe_max_concurrent: int = 1
+    # Tuning: 부분 일치(contains)를 허용하는 후보 객체 수 상한 — LIKE '%v%'는 전부 풀스캔이다
+    value_probe_contains_max_tables: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:

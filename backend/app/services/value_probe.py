@@ -1,0 +1,330 @@
+# backend/app/services/value_probe.py
+"""Value probe — catalog plan + background execution. / 값 추적 계획·실행.
+
+계획은 카탈로그만 읽고(쿼리 0), 실행은 대상마다 프로브 1개 + 히트 컬럼당 건수 1개다.
+대상 하나의 실패는 그 대상에만 기록하고 잡은 계속한다 — 스캔 러너와 같은 골격.
+"""
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy import or_, select
+from sqlalchemy.exc import DBAPIError, DisconnectionError
+from sqlalchemy.exc import TimeoutError as SATimeoutError
+from sqlalchemy.orm import Session, aliased, sessionmaker
+
+from app.adapters import create_value_prober
+from app.adapters.n8n_query import N8nQueryError
+from app.config import Settings
+from app.domain import value_probe as domain
+from app.models import CatalogColumn, CatalogObject, DataSource, ViewLineageFlat
+from app.models.value_probe import ValueProbeHit, ValueProbeJob, ValueProbeTarget
+from app.services.preview_policy import is_preview_allowed
+from app.services.schema_visibility import get_hidden_schemas, is_schema_hidden
+
+logger = logging.getLogger(__name__)
+
+# 대상 단위로 격리하는 소스 오류 — 조립 버그(CompileError 등)는 잡 전체를 failed로 드러낸다
+SOURCE_ERRORS = (DBAPIError, SATimeoutError, DisconnectionError, N8nQueryError)
+
+
+@dataclass(frozen=True)
+class RelatedViews:
+    """선택 스키마 밖에서 찾은 연관 뷰 — 포함할 객체 id, 그 스키마, 정책으로 제외한 목록."""
+
+    object_ids: tuple[int, ...]
+    schemas: tuple[str, ...]
+    skipped: tuple[dict, ...]
+
+
+def find_related_views(
+    db: Session, snapshot_id: int, schemas: list[str], source_id: int,
+) -> RelatedViews:
+    """선택 스키마의 객체를 lineage로 읽는 다른 스키마의 뷰.
+
+    값을 실제로 읽는 대상이므로 그 뷰의 스키마도 숨김이 아니고 허용 목록에 있어야 한다.
+    조건에 안 맞는 뷰는 조용히 빼지 않고 사유와 함께 돌려준다 — 화면이 ⓘ로 보여준다.
+    """
+    base_obj = aliased(CatalogObject)
+    view_obj = aliased(CatalogObject)
+    rows = db.execute(
+        select(view_obj.id, view_obj.schema, view_obj.name).distinct()
+        .join(ViewLineageFlat, ViewLineageFlat.view_object_id == view_obj.id)
+        .join(base_obj, base_obj.id == ViewLineageFlat.base_object_id)
+        .where(ViewLineageFlat.snapshot_id == snapshot_id, view_obj.type == "view",
+               base_obj.schema.in_(schemas), view_obj.schema.notin_(schemas))
+        .order_by(view_obj.schema, view_obj.name)
+    ).all()
+    object_ids: list[int] = []
+    included: list[str] = []
+    skipped: list[dict] = []
+    for view_id, schema, name in rows:
+        qname = f"{schema}.{name}"
+        if is_schema_hidden(schema):
+            skipped.append({"qname": qname, "schema": schema, "reason": "hidden"})
+        elif not is_preview_allowed(db, source_id, schema):
+            skipped.append({"qname": qname, "schema": schema, "reason": "not_allowed"})
+        else:
+            object_ids.append(view_id)
+            if schema not in included:
+                included.append(schema)
+    return RelatedViews(tuple(object_ids), tuple(included), tuple(skipped))
+
+
+# n8n 오류 메시지에서 kind·status만 뽑아낸다 — url=·body=(드라이버 원문)는 절대 통과시키지 않는다
+_N8N_KIND_RE = re.compile(r"kind=(\w+)")
+_N8N_STATUS_RE = re.compile(r"status=(\d+)")
+
+
+def load_probe_catalog(
+    db: Session, snapshot_id: int, schemas: list[str],
+    extra_object_ids: tuple[int, ...] | list[int] = (),
+) -> tuple[list[domain.ProbeCatalogColumn], dict[int, domain.ProbeCatalogObject]]:
+    """선택 스키마의 객체·컬럼 + 뷰 lineage(direct 컬럼 집합, 베이스 행 수).
+
+    extra_object_ids: 연관 뷰 옵션으로 선택 스키마 밖에서 추가된 객체 id — scope에 or로 합친다.
+    """
+    hidden = get_hidden_schemas()
+    wanted = [schema for schema in schemas if schema.lower() not in hidden]
+    if not wanted and not extra_object_ids:
+        return [], {}
+    scope = CatalogObject.schema.in_(wanted)
+    if extra_object_ids:
+        scope = or_(scope, CatalogObject.id.in_(list(extra_object_ids)))
+    objects = db.execute(
+        select(CatalogObject)
+        .where(CatalogObject.snapshot_id == snapshot_id, scope)
+        .order_by(CatalogObject.schema, CatalogObject.name)
+    ).scalars().all()
+    if not objects:
+        return [], {}
+
+    view_obj = aliased(CatalogObject)
+    direct: set[tuple[int, str]] = set()
+    base_counts: dict[int, list[int | None]] = {}
+    view_scope = (or_(view_obj.schema.in_(wanted), view_obj.id.in_(list(extra_object_ids)))
+                  if extra_object_ids else view_obj.schema.in_(wanted))
+    lineage_rows = db.execute(
+        select(ViewLineageFlat.view_object_id, ViewLineageFlat.view_column,
+               ViewLineageFlat.mapping_kind, CatalogObject.row_count)
+        .join(view_obj, view_obj.id == ViewLineageFlat.view_object_id)
+        .join(CatalogObject, CatalogObject.id == ViewLineageFlat.base_object_id, isouter=True)
+        .where(ViewLineageFlat.snapshot_id == snapshot_id, view_scope)
+    ).all()
+    for view_id, view_column, kind, row_count in lineage_rows:
+        if kind == "direct":
+            direct.add((view_id, view_column))
+        base_counts.setdefault(view_id, []).append(row_count)
+
+    column_rows = db.execute(
+        select(CatalogColumn)
+        .join(CatalogObject, CatalogColumn.object_id == CatalogObject.id)
+        .where(CatalogObject.snapshot_id == snapshot_id, scope)
+        .order_by(CatalogColumn.object_id, CatalogColumn.ordinal)
+    ).scalars().all()
+    columns = [
+        domain.ProbeCatalogColumn(
+            object_id=col.object_id, name=col.name, data_type=col.data_type,
+            max_length=col.max_length, distinct_count=col.distinct_count,
+            masking_policy=col.masking_policy,
+            has_direct_lineage=(col.object_id, col.name) in direct,
+        )
+        for col in column_rows
+    ]
+    catalog = {
+        obj.id: domain.ProbeCatalogObject(
+            object_id=obj.id, qname=f"{obj.schema}.{obj.name}", object_type=obj.type,
+            row_count=obj.row_count, definition=obj.definition,
+            base_row_counts=tuple(base_counts.get(obj.id, ())),
+        )
+        for obj in objects
+    }
+    return columns, catalog
+
+
+def build_plan(
+    db: Session, snapshot_id: int, schemas: list[str], engine: str,
+    value: str, mode: str, hint: str | None, settings: Settings,
+    extra_object_ids: tuple[int, ...] | list[int] = (),
+) -> list[domain.PlannedTarget]:
+    """요청 하나의 대상 목록 — 쿼리 없이 카탈로그만으로 만든다."""
+    interp = domain.interpret_value(value, mode)
+    columns, catalog = load_probe_catalog(db, snapshot_id, schemas, extra_object_ids)
+    blacklist = {name.upper() for name in settings.low_cardinality_blacklist}
+    candidates = domain.select_candidate_columns(
+        columns, interp, engine, mode, settings.low_cardinality_min_distinct, blacklist,
+    )
+    return domain.plan_targets(candidates, catalog, hint, settings.value_probe_heavy_rows)
+
+
+def run_startable_probe_jobs(session_factory: sessionmaker, settings: Settings) -> None:
+    """큐에서 기동 가능한 잡을 순차 실행 — 동시 실행 수 제한 (scan 러너와 동일 골격)."""
+    while True:
+        now = datetime.now(UTC)
+        with session_factory() as db:
+            running = len(db.execute(
+                select(ValueProbeJob.id).where(ValueProbeJob.status == "running")
+            ).all())
+            if running >= settings.value_probe_max_concurrent:
+                return
+            job = db.execute(
+                select(ValueProbeJob).where(ValueProbeJob.status == "queued")
+                .order_by(ValueProbeJob.id)
+            ).scalars().first()
+            if job is None:
+                return
+            job.status = "running"
+            job.started_at = job.started_at or now
+            db.commit()
+            job_id = job.id
+        try:
+            _execute_probe(job_id, session_factory, settings)
+        except Exception as e:  # 백그라운드 격리 — 잡에 기록하고 계속 / isolate, record, continue
+            logger.exception("value probe job %s failed", job_id)
+            with session_factory() as db:
+                job = db.get(ValueProbeJob, job_id)
+                job.status = "failed"
+                # 드라이버 원문(접속 계정·값)이 섞일 수 있어 예외 클래스명만 남긴다
+                job.error = type(e).__name__
+                job.current_qname = None
+                job.finished_at = datetime.now(UTC)
+                db.commit()
+
+
+def _classify_error(error: Exception) -> tuple[str, str]:
+    """(대상 상태, 기록 문자열) — n8n 오류는 kind·status만 요약하고, SQLAlchemy 오류는 클래스명만.
+
+    n8n 메시지 원문에는 webhook url·드라이버 응답 본문(계정명 등)이 들어있어 그대로
+    저장하면 안 된다(스펙 §6.3) — 정규식으로 kind=/status=만 뽑아 재조립한다.
+    """
+    message = str(error)
+    is_timeout = (
+        isinstance(error, SATimeoutError)
+        or "timeout" in message.lower()
+        or "timed out" in message.lower()
+    )
+    status = "timeout" if is_timeout else "error"
+    if isinstance(error, N8nQueryError):
+        kind_match = _N8N_KIND_RE.search(message)
+        status_match = _N8N_STATUS_RE.search(message)
+        if kind_match is None and status_match is None:
+            return status, "n8n query failed"
+        parts = [f"kind={kind_match.group(1)}"] if kind_match else []
+        if status_match is not None:
+            parts.append(f"status={status_match.group(1)}")
+        return status, "n8n query failed: " + " ".join(parts)
+    return status, type(error).__name__[:200]
+
+
+def _probe_target(prober, schema: str, name: str, columns: list[domain.ProbeColumn],
+                  skip_count: bool) -> tuple[str, str | None, list[tuple[str, str, int | None, bool]]]:
+    """대상 하나 실행 — (상태, 오류, [(컬럼, 변형값, 건수, 상한여부)])."""
+    try:
+        rows = prober.probe(schema, name, columns)
+    except SOURCE_ERRORS as e:
+        status, text = _classify_error(e)
+        # 드라이버 원문(url·body)은 여기 로그에만 남는다 — API·DB엔 _classify_error의 요약만
+        logger.warning("value probe target failed",
+                       extra={"object": f"{schema}.{name}", "error_type": type(e).__name__},
+                       exc_info=True)
+        return status, text, []
+    if not rows:
+        return "done", None, []
+    hits: list[tuple[str, str, int | None, bool]] = []
+    for matched in domain.match_columns(rows[0], columns):
+        column = next(c for c in columns if c.name == matched.name)
+        count: int | None = None
+        if not skip_count:
+            try:
+                count = prober.count(schema, name, column, domain.PROBE_COUNT_CAP)
+            except SOURCE_ERRORS:
+                logger.warning("value probe count failed", extra={"object": f"{schema}.{name}",
+                                                                   "column": column.name})
+            if count == 0:
+                continue  # 행은 다른 컬럼 때문에 왔고 이 컬럼은 SQL상 불일치 / SQL disagrees
+        capped = count is not None and count > domain.PROBE_COUNT_CAP
+        hits.append((matched.name, matched.matched_variant,
+                     domain.PROBE_COUNT_CAP if capped else count, capped))
+    return "done", None, hits
+
+
+def _mark_cancelled(job: ValueProbeJob) -> None:
+    """취소 표시 — 루프 진입 전(대상 0건 포함)·도중 두 지점이 공유 / shared by both cancel sites."""
+    job.status = "cancelled"
+    job.current_qname = None
+    job.finished_at = datetime.now(UTC)
+
+
+def _execute_probe(job_id: int, session_factory: sessionmaker, settings: Settings) -> None:
+    with session_factory() as db:
+        job = db.get(ValueProbeJob, job_id)
+        if job.cancel_requested:
+            # 대상 목록이 비어(전부 heavy·후보 없음) 루프에 진입하지 못해도 취소가 이겨야 한다
+            # / must win even when the loop never runs (all-heavy or no candidates)
+            _mark_cancelled(job)
+            db.commit()
+            return
+        # 허용 목록은 관리자가 언제든 바꿀 수 있는 상태고, 큐에서 다른 잡 뒤에 기다리는 동안
+        # 철회될 수 있다 — 기동 직전에 다시 확인해야 철회 후 값 쿼리가 나가는 창을 막는다
+        # (연관 뷰 스키마도 같은 값 쿼리 경로를 타므로 게이트에 포함한다)
+        gate_schemas = json.loads(job.schemas) + json.loads(job.related_schemas or "[]")
+        for schema in gate_schemas:
+            if is_schema_hidden(schema) or not is_preview_allowed(db, job.data_source_id, schema):
+                job.status = "failed"
+                job.error = "schema gate revoked"
+                job.current_qname = None
+                job.finished_at = datetime.now(UTC)
+                db.commit()
+                return
+        source = db.get(DataSource, job.data_source_id)
+        if source is None or not source.is_enabled:
+            raise RuntimeError("data source unavailable")
+        target_ids = list(db.execute(
+            select(ValueProbeTarget.id)
+            .where(ValueProbeTarget.job_id == job_id, ValueProbeTarget.tier == "auto",
+                   ValueProbeTarget.status == "pending")
+            .order_by(ValueProbeTarget.rank)
+        ).scalars())
+        # 소스 준비 실패(합성 거부·키 미설정·미지원 엔진)는 잡 전체의 failed로 드러난다
+        prober = create_value_prober(settings, source)
+
+    for target_id in target_ids:
+        with session_factory() as db:
+            job = db.get(ValueProbeJob, job_id)
+            if job.cancel_requested:
+                _mark_cancelled(job)
+                db.commit()
+                return
+            target = db.get(ValueProbeTarget, target_id)
+            job.current_qname = target.qname
+            db.commit()
+            schema, name = target.qname.split(".", 1)
+            columns = [domain.ProbeColumn.from_dict(d) for d in json.loads(target.columns)]
+            skip_count = target.heavy_reason is not None
+            object_id, object_type, qname = target.object_id, target.object_type, target.qname
+
+        status, error, hits = _probe_target(prober, schema, name, columns, skip_count)
+
+        with session_factory() as db:
+            job = db.get(ValueProbeJob, job_id)
+            target = db.get(ValueProbeTarget, target_id)
+            target.status = status
+            target.error = error
+            for column_name, variant, count, capped in hits:
+                db.add(ValueProbeHit(
+                    job_id=job_id, target_id=target_id, object_id=object_id,
+                    object_type=object_type, qname=qname, column_name=column_name,
+                    match_count=count, count_capped=capped, matched_variant=variant[:100],
+                ))
+            job.progress_done += 1
+            db.commit()
+
+    with session_factory() as db:
+        job = db.get(ValueProbeJob, job_id)
+        job.status = "done"
+        job.current_qname = None
+        job.finished_at = datetime.now(UTC)
+        db.commit()

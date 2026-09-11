@@ -6,6 +6,10 @@
 
 프로젝트 진행 현황 로그. 커밋 직전 갱신한다 (`rules/common/git.md` 규칙).
 
+## 2026-09-10
+
+- **값 추적(value probe) — feature/value-probe 머지** (09-10~11). 화면에 보인 값 하나로 어느 `스키마.객체.컬럼`에 저장돼 있는지 찾되 소스 DB 쿼리를 **객체당 1개**로 묶는 기능. 핵심 결정: 스키마(=시스템)를 명시적으로 고르고 자동 확장 없음, 카탈로그(타입·길이·마스킹·저카디널리티·뷰 direct lineage)만으로 후보를 자른 뒤 `TOP 1 … WHERE c1 IN (…) OR c2 IN (…)` 한 방, row_count 초과·미상·집계 뷰는 heavy로 미뤄 선택 실행, 일치 모드는 표기 변형(기본)·정확·부분(후보 20개 이하). 구성: 순수 플래너 → 테이블 3개(0018·0019) → 직결 SQL 빌더·DirectValueProber / W2 `value_probe`·`value_count` + N8nValueProber(재시도 0)·FakeValueProber → 러너(순차, 대상마다 커밋, 취소, 실행 직전 게이트 재검사) → `/api/value-probe` 202+폴링(숨김→허용 목록 게이트, 요청자 본인만 조회, 감사) → `/trace` 화면(토큰 컨트롤, 찾기 버튼 스피너·진척·호버 시 중단, 히트 즉시 표시, 미리보기 `?filters=` 딥링크, heavy 선택 실행) + 연관 뷰 옵션(다른 스키마의 뷰도 그 스키마가 게이트를 통과할 때만, 제외는 ⓘ 목록) + 뷰 「쿼리 보기」(정의 SQL 패널, 히트 컬럼 강조, 상세·히트 두 곳). 검증: 백엔드 565·프론트 178, 헤드리스 Playwright 실측 18/13/6 전부 통과. 리뷰·실측이 잡아 고친 것: heavy 승격의 게이트 누락(Critical), 실행 중 승격 유실(409), n8n 오류 문구의 URL·드라이버 본문, 16자리 bigint 정밀도, 보이지 않던 미리보기 링크, 딥링크 필터 칩 누락, 키보드 중단 도달. 정책 기록: 뷰 정의는 구조 정보(숨김 스키마만 403), 보이는 뷰 정의의 숨김 스키마 이름 노출은 기존 lineage·AI 설명과 같은 수준으로 수용(스펙 §8). 후속: AI 뷰 설명 숨김 게이트, 정의 내 자격증명 리터럴 점검, n8n 자격증명 `requestTimeout` 확인, 사소한 지적 40여 건(계획 문서·리뷰 참조). 스펙 `docs/superpowers/specs/2026-09-10-value-probe-design.md`, 계획 `docs/superpowers/plans/2026-09-10-value-probe.md`·`2026-09-11-value-probe-polish.md`·`2026-09-11-view-definition.md`.
+
 ## 2026-09-02
 
 - **관리자 화면 연동 안내서 다운로드 버튼** — `데이터 소스` 섹션에 [연동 안내서 내려받기] 버튼 추가(`DataSourcePanel-guideDownload`). integration-guide.html은 이미 MD에서 주입된 배포 파생물이라 `docs/handoff/`에서 `frontend/public/handoff/`로 옮겨 웹 서빙(단일 위치, drift 없음). DownloadIcon 신설, README 참조 갱신.

@@ -152,7 +152,7 @@ def test_query_executor_contract():
     wf = _load(W2_PATH)
     js = next(n for n in wf["nodes"]
               if n["type"] == "n8n-nodes-base.code")["parameters"]["jsCode"]
-    for kind in ("containment", "join_preview", "table_preview"):
+    for kind in ("containment", "join_preview", "table_preview", "value_probe", "value_count"):
         assert kind in js
     assert "']]'" in js or "]]" in js      # 식별자 브래킷 이스케이프
     assert "''" in js                       # 리터럴 이스케이프
@@ -352,3 +352,88 @@ def test_code_nodes_reference_existing_nodes():
             if node["type"] == "n8n-nodes-base.code":
                 for ref in re.findall(r"\$\('([^']+)'\)", node["parameters"]["jsCode"]):
                     assert ref in names, f"{path.name}: unknown node ref {ref}"
+
+
+def _w2_build_query_js() -> str:
+    wf = _load(W2_PATH)
+    return next(n for n in wf["nodes"] if n["name"] == "Build query")["parameters"]["jsCode"]
+
+
+def _require_node() -> None:
+    if NODE_BIN is None:
+        pytest.fail("node runtime is required to execute the generated Build query JS")
+
+
+def test_w2_value_probe_renders_typed_literals_per_column() -> None:
+    """리터럴은 컬럼 타입을 따른다 — varchar는 '…', nvarchar는 N'…', 숫자는 숫자 그대로."""
+    _require_node()
+    query = _run_build_query_js(_w2_build_query_js(), {
+        "kind": "value_probe", "schema": "SAP", "table": "T_ORD",
+        "columns": [
+            {"name": "ORD_NO", "literal": "text-narrow", "values": ["O'Neil", "o'neil"], "op": "eq"},
+            {"name": "CUST_NM", "literal": "text-wide", "values": ["김철수"], "op": "eq"},
+            {"name": "AMT", "literal": "number", "values": [1000, "250.5"], "op": "eq"},
+            {"name": "ORD_DT", "literal": "date", "values": ["2026-09-10"], "op": "eq"},
+        ],
+    })
+    assert query == (
+        "SELECT TOP 1 [ORD_NO], [CUST_NM], [AMT], [ORD_DT] FROM [SAP].[T_ORD] WHERE "
+        "[ORD_NO] IN ('O''Neil', 'o''neil') OR [CUST_NM] IN (N'김철수') OR "
+        "[AMT] IN (1000, 250.5) OR [ORD_DT] IN ('2026-09-10')"
+    )
+
+
+def test_w2_value_probe_rejects_non_numeric_values_for_number_columns() -> None:
+    _require_node()
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_build_query_js(_w2_build_query_js(), {
+            "kind": "value_probe", "schema": "S", "table": "T",
+            "columns": [{"name": "AMT", "literal": "number", "values": ["1; DROP TABLE x"], "op": "eq"}],
+        })
+
+
+def test_w2_value_probe_escapes_identifiers_and_like_metacharacters() -> None:
+    _require_node()
+    query = _run_build_query_js(_w2_build_query_js(), {
+        "kind": "value_probe", "schema": "S]x", "table": "T",
+        "columns": [{"name": "A]B", "literal": "text-wide", "values": ["50%_[x]"], "op": "contains"}],
+    })
+    assert query == "SELECT TOP 1 [A]]B] FROM [S]]x].[T] WHERE [A]]B] LIKE N'%50[%][_][[]x]%'"
+
+
+def test_w2_value_probe_keeps_big_integers_verbatim() -> None:
+    """16자리 이상 bigint는 JSON number를 거치면 2^53에서 정밀도가 깨진다 — 백엔드가
+    문자열로 보낸 검증된 숫자 리터럴을 W2가 Number()에 넣지 않고 그대로 꽂는지 확인."""
+    _require_node()
+    query = _run_build_query_js(_w2_build_query_js(), {
+        "kind": "value_probe", "schema": "S", "table": "T",
+        "columns": [{"name": "ID", "literal": "number", "values": ["123456789012345678901", "-42", "250.50"], "op": "eq"}],
+    })
+    assert query.endswith("WHERE [ID] IN (123456789012345678901, -42, 250.50)")
+
+
+def test_w2_value_probe_limits_columns_and_values() -> None:
+    _require_node()
+    js = _w2_build_query_js()
+    too_many = [{"name": f"C{i}", "literal": "text-narrow", "values": ["v"], "op": "eq"} for i in range(41)]
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_build_query_js(js, {"kind": "value_probe", "schema": "S", "table": "T", "columns": too_many})
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_build_query_js(js, {"kind": "value_probe", "schema": "S", "table": "T",
+                                 "columns": [{"name": "C", "literal": "text-narrow", "values": [], "op": "eq"}]})
+
+
+def test_w2_value_count_caps_via_inner_top() -> None:
+    _require_node()
+    js = _w2_build_query_js()
+    query = _run_build_query_js(js, {
+        "kind": "value_count", "schema": "SAP", "table": "T_ORD", "cap": 1000,
+        "column": {"name": "ORD_NO", "literal": "text-narrow", "values": ["A"], "op": "eq"},
+    })
+    assert query == ("SELECT COUNT(*) AS n FROM (SELECT TOP 1001 1 AS x FROM [SAP].[T_ORD] "
+                     "WHERE [ORD_NO] IN ('A')) q")
+    clamped = _run_build_query_js(js, {
+        "kind": "value_count", "schema": "S", "table": "T", "cap": 99999,
+        "column": {"name": "C", "literal": "text-narrow", "values": ["A"], "op": "eq"},
+    })
+    assert "TOP 5001" in clamped

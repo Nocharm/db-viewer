@@ -596,6 +596,97 @@ export function fetchScanJob(jobId: number): Promise<ScanJobStatus> {
   return getJson(`/api/jobs/${jobId}`);
 }
 
+// ---------- 값 추적 (value probe) — 202 + 폴링, ScanJobStatus와 같은 형태 ----------
+
+export type ValueProbeMode = "normalized" | "exact" | "contains";
+
+export interface ValueProbeHit {
+  object_id: number;
+  qname: string;
+  object_type: "table" | "view";
+  column: string;
+  /** null = 건수 생략(heavy 객체) / null when the count query was skipped */
+  match_count: number | null;
+  count_capped: boolean;
+  /** 실제로 맞은 저장 형태 — 미리보기 필터에 이 값을 넣는다 / the variant that matched */
+  matched_variant: string;
+  /** 이 컬럼을 direct로 노출하는 뷰들 (MSSQL lineage) / views exposing this column */
+  exposed_by_views: string[];
+  /** 뷰 파생 컬럼 히트의 원본 / source of a derived view column */
+  derived_from: { qname: string; column: string } | null;
+}
+
+export interface ValueProbeHeavy {
+  target_id: number;
+  qname: string;
+  est_rows: number | null;
+  reason: "rows" | "unknown_rows" | "view_shape";
+}
+
+/** 연관 뷰 중 정책(숨김·미리보기 비허용)으로 검색하지 않은 뷰 / a related view left unsearched. */
+export interface SkippedRelatedView {
+  qname: string;
+  schema: string;
+  reason: "hidden" | "not_allowed";
+}
+
+export interface ValueProbeJob {
+  job_id: number;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  progress: { done: number; total: number };
+  error: string | null;
+  current_qname: string | null;
+  value: string;
+  mode: ValueProbeMode;
+  schemas: string[];
+  source_id: number;
+  include_related_views: boolean;
+  /** 연관 뷰로 추가된 스키마 — 선택 스키마 밖이다 / extra schemas pulled in by related views */
+  related_schemas: string[];
+  related_view_skipped: SkippedRelatedView[];
+  hits: ValueProbeHit[];
+  heavy: ValueProbeHeavy[];
+  failed_targets: { qname: string; status: string; error: string | null }[];
+}
+
+export interface ValueProbeStart {
+  job_id: number;
+  status: string;
+  plan: {
+    auto: number;
+    heavy: number;
+    columns: number;
+    related_views: { included: number; skipped: SkippedRelatedView[] };
+  };
+}
+
+export interface ValueProbeRequest {
+  source_id: number;
+  schemas: string[];
+  value: string;
+  mode: ValueProbeMode;
+  hint?: string;
+  include_related_views?: boolean;
+}
+
+export function startValueProbe(req: ValueProbeRequest): Promise<ValueProbeStart> {
+  return postJson("/api/value-probe", req);
+}
+
+export function fetchValueProbeJob(jobId: number): Promise<ValueProbeJob> {
+  return getJson(`/api/value-probe/${jobId}`);
+}
+
+export function runValueProbeHeavy(
+  jobId: number, targetIds: number[],
+): Promise<{ job_id: number; status: string; promoted: number }> {
+  return postJson(`/api/value-probe/${jobId}/heavy`, { target_ids: targetIds });
+}
+
+export function cancelValueProbe(jobId: number): Promise<{ job_id: number; status: string }> {
+  return postJson(`/api/value-probe/${jobId}/cancel`, {});
+}
+
 /** AI 요약 생성·갱신 (캐시 무시) / regenerate the cached AI summary. */
 export function generateAiSummary(
   objectId: number,
@@ -631,6 +722,18 @@ export function fetchPreviewAllowlist(
 /** 컬럼을 감춘 스키마(HIDDEN_SCHEMAS, 소문자) + 좌측 목록 렌더 토글. */
 export function fetchHiddenSchemas(): Promise<{ items: string[]; render: boolean }> {
   return getJson("/api/objects/hidden-schemas");
+}
+
+export interface ViewDefinition {
+  object_id: number;
+  object: string;
+  /** null = 수집 시 VIEW DEFINITION 권한이 없었다 / permission-blocked at collect time */
+  definition: string | null;
+  parse_status: string | null;
+}
+
+export function fetchViewDefinition(objectId: number): Promise<ViewDefinition> {
+  return getJson(`/api/views/${objectId}/definition`);
 }
 
 export interface AuditEntry {

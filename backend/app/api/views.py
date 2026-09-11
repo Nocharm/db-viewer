@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.db import get_db
 from app.models import CatalogObject, ViewDep, ViewLineageFlat
+from app.services.schema_visibility import is_schema_hidden
 
 router = APIRouter(prefix="/api/views", tags=["views"])
 
@@ -48,4 +49,28 @@ def get_view_lineage(object_id: int, db: Session = Depends(get_db)) -> dict:
                  "has_definition": view.definition is not None},
         "lineage": lineage,
         "unresolved_deps": unresolved,
+    }
+
+
+@router.get("/{object_id}/definition")
+def get_view_definition(object_id: int, db: Session = Depends(get_db)) -> dict:
+    """뷰 정의 SQL — 구조 정보라 미리보기 허용 목록·감사와 무관하지만, 숨김 스키마는 컬럼처럼 감춘다.
+
+    definition이 NULL이면 수집 시 VIEW DEFINITION 권한이 없었던 것 — 오류가 아니라 상태다.
+    / structure, not values: hidden-schema gate only; NULL means permission-blocked at collect time.
+    """
+    view = db.get(CatalogObject, object_id)
+    if view is None or view.type != "view":
+        raise HTTPException(404, {"message": "view not found", "context": {"object_id": object_id}})
+    if is_schema_hidden(view.schema):
+        raise HTTPException(403, {
+            "message": "this schema is hidden — its columns and definitions are not served "
+                       "(HIDDEN_SCHEMAS)",
+            "context": {"object": f"{view.schema}.{view.name}", "schema": view.schema},
+        })
+    return {
+        "object_id": view.id,
+        "object": f"{view.schema}.{view.name}",
+        "definition": view.definition,
+        "parse_status": view.parse_status,
     }

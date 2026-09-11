@@ -1,5 +1,7 @@
 """FastAPI app factory. / FastAPI 앱 팩토리."""
 
+from datetime import UTC, datetime
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -29,6 +31,7 @@ from app.api import (
     snapshots,
     sources,
     validate,
+    value_probe,
     views,
 )
 from app.auth import require_ingest_access, require_whitelisted
@@ -70,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, dependencies=user_gate)
     app.include_router(keys.router, dependencies=user_gate)
     app.include_router(categories.router, dependencies=user_gate)
+    app.include_router(value_probe.router, dependencies=user_gate)
     # 소스 선택기가 읽는 최소 목록 — 조회 API와 같은 게이트. 관리용 전체 목록(sources.router,
     # sysadmin)과 경로 접두사를 공유하지만 겹치는 라우트가 없다
     app.include_router(sources.browse_router, dependencies=user_gate)
@@ -139,6 +143,16 @@ def create_app() -> FastAPI:
             ).scalars():
                 job.status = "failed"
                 job.error = "interrupted by restart"
+
+            from app.models import ValueProbeJob
+
+            # 값 추적 실행 중 잡도 재기동과 함께 죽는다 — queued는 다음 폴링이 다시 집는다
+            for job in db.execute(
+                select(ValueProbeJob).where(ValueProbeJob.status == "running")
+            ).scalars():
+                job.status = "failed"
+                job.error = "interrupted by restart"
+                job.finished_at = datetime.now(UTC)
             db.commit()
 
     return app

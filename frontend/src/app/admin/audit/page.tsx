@@ -21,6 +21,8 @@ const ACTION_LABELS: Record<string, string> = {
   hidden_schema_render_set: "감춘 스키마 표시 토글",
   table_preview: "테이블 미리보기 (실값 반출)",
   join_preview: "조인 미리보기 (실값 반출)",
+  value_probe: "값 추적 (실값 조회)",
+  value_probe_heavy: "값 추적 — 무거운 객체 실행",
   // 백엔드 action 코드가 짧다 — relations.py는 "confirm", validate.py는 "preview"
   confirm: "관계 확정",
   preview: "조인 검증 미리보기 (실값 반출)",

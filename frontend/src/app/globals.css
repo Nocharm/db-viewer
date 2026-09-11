@@ -694,6 +694,12 @@ mark.hl {
   white-space: normal;
   pointer-events: none;
 }
+/* 목록형(children) 말풍선 — 길어질 수 있어 스크롤·호버 조작을 허용한다 */
+.info-tip__bubble--rich {
+  max-height: 40vh;
+  overflow-y: auto;
+  pointer-events: auto;
+}
 
 /* ── 브랜드 마크 — 옐로 사각 앵커 ── */
 /* ── 일치율 게이지 — 스탯은 옐로 ── */
@@ -933,4 +939,171 @@ input::placeholder {
 }
 .chip-pending {
   animation: chip-pending-blink 2.4s ease-in-out infinite;
+}
+
+/* ── 값 추적 폼 컨트롤 — 브라우저 기본 체크박스·라디오·토글 대신 토큰으로 그린다
+   / token-drawn form controls: same ink, hairline and primary as the rest of the UI ── */
+.ctl-check,
+.ctl-radio {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  border: 1.5px solid var(--hairline-strong);
+  background: var(--surface-card);
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.12s ease-in-out, border-color 0.12s ease-in-out;
+}
+.ctl-check {
+  border-radius: 4px;
+}
+.ctl-radio {
+  border-radius: 999px;
+}
+.ctl-check:checked,
+.ctl-radio:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+.ctl-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--on-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ctl-radio:checked::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: var(--on-primary);
+}
+.ctl-check:focus-visible,
+.ctl-radio:focus-visible,
+.ctl-switch:focus-visible {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 2px;
+}
+.ctl-check:disabled,
+.ctl-radio:disabled,
+.ctl-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ctl-switch {
+  appearance: none;
+  width: 34px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  border-radius: 999px;
+  border: 1.5px solid var(--hairline-strong);
+  background: var(--surface-elevated);
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+.ctl-switch::before {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--slate);
+  transition: transform 0.15s ease-in-out, background-color 0.15s ease-in-out;
+}
+.ctl-switch:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.ctl-switch:checked::before {
+  transform: translateX(16px);
+  background: var(--on-primary);
+}
+
+/* 선택형 필 — 체크박스/라디오를 감싸는 라벨. 선택되면 필 자체가 밝아진다
+   / the pill itself lights up when the control inside is checked */
+.choice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.12s ease-in-out, border-color 0.12s ease-in-out;
+}
+.choice-pill:has(input:checked) {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface-card));
+}
+.choice-pill:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 숫자 필 — 아이콘 + 라벨 + 숫자 / stat pill for plan counts */
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-elevated);
+  color: var(--body-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-pill b {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* 찾기 버튼 안의 진척 바 — 버튼만 보고도 얼마나 남았는지 읽힌다
+   / the find button carries its own progress so the eye never leaves it */
+.btn-progress {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.btn-progress__fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--on-primary);
+  opacity: 0.55;
+  transition: width 0.3s ease-in-out;
+}
+/* :hover까지 같이 지정한다 — 중단 버튼은 호버 중에만 보이는데
+   .btn-secondary:hover가 같은 특이도로 색을 되돌려 버린다 */
+.btn-stop,
+.btn-stop:hover {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: color-mix(in srgb, var(--error) 16%, var(--surface-card));
+  color: var(--error);
+  border-color: var(--error);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.9s linear infinite; /* 전역 reduced-motion 가드가 멈춘다 */
 }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
+import type { PreviewFilterCond } from "@/lib/preview-utils";
 import { matchTable } from "@/lib/search";
 import { readSourceId, withSourceQuery } from "@/lib/source-param";
 import type { ObjectSummary } from "@/lib/types";
@@ -33,6 +34,7 @@ import { useDataSources } from "@/lib/use-data-sources";
 import { useHiddenSchemaPolicy } from "@/lib/use-hidden-schemas";
 import { usePreviewAllowlist } from "@/lib/use-preview-allowlist";
 import { usePreviewTabs } from "@/lib/use-preview-tabs";
+import { parseFiltersParam } from "@/lib/value-probe";
 
 export default function Home() {
   return (
@@ -248,25 +250,28 @@ function HomeInner() {
     return items;
   }, [typedObjects, category, categoryBySchema, selectedKey, query, columnsIndex]);
 
+  // 값 추적 딥링크의 필터 — 파싱 결과를 고정해 두지 않으면 effect deps가 렌더마다 바뀐다
+  // (?preview=1 무한 리렌더 이력) / memoized: a fresh array each render re-fires the effect
+  const filtersParam = params.get("filters");
+  const deepFilters = useMemo(() => parseFiltersParam(filtersParam), [filtersParam]);
+
   // 미리보기 열기 — 탭 생성·중복 차단은 훅이 맡고, 화면은 스크롤만 담당한다
-  const openPreview = useCallback(() => {
+  const openPreview = useCallback((filters: PreviewFilterCond[] | null = null) => {
     if (!selected) return;
-    preview.open(selected.id, `${selected.schema}.${selected.name}`);
+    preview.open(selected.id, `${selected.schema}.${selected.name}`, null, filters);
     setTimeout(() => previewRef.current?.scrollIntoView(
       { behavior: "smooth", block: "start" }), 60);
   }, [selected, preview]);
 
-  // ERD 우클릭 메뉴의 「미리보기」 딥링크(?table=&preview=1) — 선택이 잡히면 한 번 열고
-  // 파라미터를 소진한다(남기면 새로고침·뒤로가기마다 재발동). 미허용 스키마면 열지 않고
-  // 소진만 — 상세의 잠긴 버튼과 사유 문구가 상태를 설명한다
-  // / one-shot auto-preview for the ERD context-menu deep link; the param is consumed
-  //   either way so refresh/back never re-triggers it
+  // ERD 우클릭 메뉴·값 추적의 「미리보기」 딥링크(?table=&preview=1[&filters=]) — 선택이
+  // 잡히면 한 번 열고 파라미터를 소진한다(남기면 새로고침·뒤로가기마다 재발동). 미허용
+  // 스키마면 열지 않고 소진만 — 상세의 잠긴 버튼과 사유 문구가 상태를 설명한다
   const previewParam = params.get("preview");
   useEffect(() => {
     if (previewParam !== "1" || !selected) return;
-    if (previewAllowed.has(selected.schema)) openPreview();
+    if (previewAllowed.has(selected.schema)) openPreview(deepFilters);
     router.replace(withSourceQuery(`/?table=${selected.id}`, sourceId), { scroll: false });
-  }, [previewParam, selected, previewAllowed, openPreview, router, sourceId]);
+  }, [previewParam, deepFilters, selected, previewAllowed, openPreview, router, sourceId]);
 
   const handleOpenErd = useCallback(() => {
     if (!selected) return;
@@ -385,7 +390,7 @@ function HomeInner() {
                   selected !== null && previewAllowed.has(selected.schema)
                 }
                 isMssqlSource={isMssqlSource}
-                onPreview={openPreview}
+                onPreview={() => openPreview()}
                 onOpenErd={handleOpenErd}
                 canJumpToPreview={preview.tabs.length > 0}
                 onJumpToPreview={jumpToPreview}

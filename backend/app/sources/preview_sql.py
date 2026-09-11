@@ -7,6 +7,10 @@ PostgreSQL과 SQLite는 이 용도에서 문법이 같다("인용, LIMIT, CAST A
 SQLAlchemy text()의 named 파라미터를 쓰면 paramstyle 차이도 없어 빌더가 하나로 족하다.
 """
 
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+
 # 대소문자 무시 비교 — MSSQL 기본 collation이 CI라 화면 의미를 그쪽에 맞춘다
 _CI = 'UPPER(CAST({col} AS TEXT))'
 _LIKE_ESCAPE = "\\"
@@ -79,3 +83,71 @@ def build_preview_sql(
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     return f"{sql} LIMIT {int(limit)}", params
+
+
+def _bind_probe_value(family: str, value: str | int, dialect: str) -> object:
+    """패밀리에 맞는 파이썬 타입으로 — PG는 date=text·uuid=text 비교를 거부하고,
+    sqlite3는 Decimal을 바인드하지 못한다."""
+    if family == "int":
+        return int(value)
+    if family == "decimal":
+        return float(value) if dialect == "sqlite" else Decimal(str(value))
+    if family == "date":
+        text = str(value)
+        return datetime.fromisoformat(text) if len(text) > 10 else date.fromisoformat(text)
+    if family == "guid":
+        return uuid.UUID(str(value))
+    return str(value)
+
+
+def _build_probe_clause(column: dict, index: int, dialect: str) -> tuple[str, dict[str, object]]:
+    """컬럼 하나의 조건 — 컬럼 쪽엔 함수를 씌우지 않는다(인덱스 보존)."""
+    col = quote_ident(column["name"])
+    values = list(column.get("values") or [])
+    if not values:
+        raise UnknownIdentifier(f"probe column without values: {column['name']}")
+    if column.get("op") == "contains":
+        key = f"p{index}_0"
+        return (f"{col} LIKE :{key} ESCAPE '{_LIKE_ESCAPE}'",
+                {key: f"%{escape_like(str(values[0]))}%"})
+    params: dict[str, object] = {}
+    holders: list[str] = []
+    for position, value in enumerate(values):
+        key = f"p{index}_{position}"
+        params[key] = _bind_probe_value(column["family"], value, dialect)
+        holders.append(f":{key}")
+    return f"{col} IN ({', '.join(holders)})", params
+
+
+def build_probe_sql(
+    schema: str, table: str, columns: list[dict], allowed_columns: set[str], dialect: str,
+) -> tuple[str, dict[str, object]]:
+    """객체 하나의 프로브 — 후보 컬럼 전부를 OR로 묶은 SELECT … LIMIT 1."""
+    if not columns:
+        raise UnknownIdentifier("probe needs at least one column")
+    for column in columns:
+        if column["name"] not in allowed_columns:
+            raise UnknownIdentifier(f"column not in the catalog: {column['name']}")
+    select_list = ", ".join(quote_ident(column["name"]) for column in columns)
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+    for index, column in enumerate(columns):
+        clause, bound = _build_probe_clause(column, index, dialect)
+        clauses.append(clause)
+        params.update(bound)
+    sql = (f"SELECT {select_list} FROM {quote_ident(schema)}.{quote_ident(table)} "
+           f"WHERE {' OR '.join(clauses)} LIMIT 1")
+    return sql, params
+
+
+def build_count_sql(
+    schema: str, table: str, column: dict, allowed_columns: set[str], cap: int, dialect: str,
+) -> tuple[str, dict[str, object]]:
+    """맞은 컬럼의 건수 — 내부 LIMIT cap+1로 상한을 건다(cap+1이면 '1000+')."""
+    if column["name"] not in allowed_columns:
+        raise UnknownIdentifier(f"column not in the catalog: {column['name']}")
+    clause, params = _build_probe_clause(column, 0, dialect)
+    table_ref = f"{quote_ident(schema)}.{quote_ident(table)}"
+    sql = (f"SELECT COUNT(*) AS n FROM (SELECT 1 AS x FROM {table_ref} "
+           f"WHERE {clause} LIMIT {int(cap) + 1}) q")
+    return sql, params
