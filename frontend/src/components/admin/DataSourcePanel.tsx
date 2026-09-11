@@ -613,7 +613,7 @@ export function DataSourcePanel({ password, passwordConfigured, onLoaded }: Data
       </ul>
 
       {keyConfigured && (
-        <details className="collapse" data-testid="DataSourcePanel-newSource">
+        <details className="disclosure" data-testid="DataSourcePanel-newSource">
           <summary>
             <PlusIcon size={14} />새 소스 등록
             <span className="badge badge--muted badge--plain">PostgreSQL · SQLite</span>
