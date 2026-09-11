@@ -11,7 +11,7 @@ import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import type { ValueProbeJob, ValueProbeStart } from "@/lib/api";
 import type { MessageKey } from "@/lib/i18n";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
-import { describeSkippedView, shouldKeepPolling } from "@/lib/value-probe";
+import { describeSkippedView, shouldKeepPolling, takeSkippedForDisplay } from "@/lib/value-probe";
 
 interface ProbeProgressProps {
   job: ValueProbeJob;
@@ -24,7 +24,7 @@ const STATUS_KEYS: Record<ValueProbeJob["status"], MessageKey> = {
 };
 
 export function ProbeProgress({ job, plan }: ProbeProgressProps) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const active = shouldKeepPolling(job.status);
   const seconds = useElapsedSeconds(active);
   const percent = job.progress.total === 0
@@ -34,6 +34,8 @@ export function ProbeProgress({ job, plan }: ProbeProgressProps) {
   // 새로고침으로 plan(시작 응답)을 잃어도 잡이 들고 있는 값으로 같은 필을 그린다
   const skipped = plan?.related_views.skipped ?? job.related_view_skipped;
   const included = plan?.related_views.included ?? job.related_schemas.length;
+  // ⓘ 말풍선이 끝없이 길어지지 않게 — 앞 10개만 보여주고 나머지는 "외 N개"로 접는다
+  const { shown: shownSkipped, rest: restSkipped } = takeSkippedForDisplay(skipped);
 
   return (
     <section className="card p-4" data-testid="ProbeProgress-root">
@@ -69,9 +71,12 @@ export function ProbeProgress({ job, plan }: ProbeProgressProps) {
                   <span data-testid="ProbeProgress-relatedSkippedTip">
                     <InfoTip text={t("trace.progress.relatedSkippedTip")}>
                       <ul style={{ margin: 0, paddingLeft: 14 }}>
-                        {skipped.map((item) => (
-                          <li key={item.qname}>{describeSkippedView(item, lang)}</li>
+                        {shownSkipped.map((item) => (
+                          <li key={item.qname}>{describeSkippedView(item, t)}</li>
                         ))}
+                        {restSkipped > 0 && (
+                          <li>{t("trace.progress.relatedMore").replace("{n}", String(restSkipped))}</li>
+                        )}
                       </ul>
                     </InfoTip>
                   </span>

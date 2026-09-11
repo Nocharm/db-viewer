@@ -4,7 +4,7 @@
 import type {
   SchemaCategoryItem, SkippedRelatedView, ValueProbeHit, ValueProbeJob, ValueProbeMode,
 } from "@/lib/api";
-import type { Lang } from "@/lib/i18n";
+import type { MessageKey } from "@/lib/i18n";
 import type { PreviewFilterCond, PreviewFilterOp } from "@/lib/preview-utils";
 import { withSourceQuery } from "@/lib/source-param";
 
@@ -69,21 +69,34 @@ export function formatMatchCount(hit: ValueProbeHit): string | null {
   return hit.count_capped ? `${hit.match_count}+` : String(hit.match_count);
 }
 
-const SKIP_REASON: Record<SkippedRelatedView["reason"], { ko: string; en: string }> = {
-  hidden: { ko: "숨김 스키마", en: "hidden schema" },
-  not_allowed: { ko: "허용 목록 밖", en: "not on the preview allowlist" },
+const REASON_KEYS: Record<SkippedRelatedView["reason"], MessageKey> = {
+  hidden: "trace.skip.hidden",
+  not_allowed: "trace.skip.not_allowed",
 };
 
 /** ⓘ 말풍선 한 줄 — 뷰 이름과 정책 사유 / one tooltip line: view + policy reason. */
-export function describeSkippedView(item: SkippedRelatedView, lang: Lang): string {
-  return `${item.qname} — ${SKIP_REASON[item.reason][lang]}`;
+export function describeSkippedView(item: SkippedRelatedView, t: (key: MessageKey) => string): string {
+  return `${item.qname} — ${t(REASON_KEYS[item.reason])}`;
+}
+
+// ⓘ 말풍선이 끝없이 늘어나지 않게 — 이 이상은 "외 N개"로 접는다
+export const SKIPPED_PREVIEW_LIMIT = 10;
+
+/** 제외 목록을 앞 SKIPPED_PREVIEW_LIMIT개 + 나머지 개수로 나눈다 / cap the tooltip list. */
+export function takeSkippedForDisplay(
+  items: SkippedRelatedView[],
+): { shown: SkippedRelatedView[]; rest: number } {
+  return {
+    shown: items.slice(0, SKIPPED_PREVIEW_LIMIT),
+    rest: Math.max(0, items.length - SKIPPED_PREVIEW_LIMIT),
+  };
 }
 
 export type FindButtonMode = "find" | "progress" | "stop";
 
-/** 찾기 버튼의 세 얼굴 — 대기·진행·중단(호버) / the find button's three states. */
+/** 찾기 버튼의 세 얼굴 — 대기·진행·중단(호버/키포커스) / the find button's three states. */
 export function findButtonLabel(
-  state: { running: boolean; hovering: boolean; done: number; total: number },
+  state: { running: boolean; hovering: boolean },
 ): FindButtonMode {
   if (!state.running) return "find";
   return state.hovering ? "stop" : "progress";

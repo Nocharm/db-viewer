@@ -47,11 +47,14 @@ export function ProbeForm({
   form, schemas, running, progress, onChange, onSubmit, onStop,
 }: ProbeFormProps) {
   const { t } = useI18n();
-  const [hovering, setHovering] = useState(false);
-  // 실행 상태가 바뀌면 호버를 지운다 — 커서가 버튼 위에 남아 있어도 「찾기」를 누른 직후
-  // 바로 「중단」으로 뒤집혀 두 번째 클릭이 잡을 죽이는 사고를 막는다
+  const [pointerOver, setPointerOver] = useState(false);
+  const [keyFocus, setKeyFocus] = useState(false);
+  // 실행 상태가 바뀌면 두 신호를 모두 지운다 — 커서가 버튼 위에 남아 있거나 Enter로 막
+  // 제출한 포커스가 남아 있어도 「찾기」를 누른 직후 바로 「중단」으로 뒤집혀
+  // 그 클릭/Enter가 자기 자신을 취소하는 사고를 막는다
   useEffect(() => {
-    setHovering(false);
+    setPointerOver(false);
+    setKeyFocus(false);
   }, [running]);
 
   const allSelected = schemas.length > 0 && form.schemas.length === schemas.length;
@@ -78,7 +81,9 @@ export function ProbeForm({
   // 한 버튼이 세 얼굴 — 자리를 옮기지 않아야 눈이 따라간다. 같은 <button>을 유지해
   // 호버·포커스가 끊기지 않게 하고 class/type/testid만 바꾼다
   const { done, total } = progress ?? { done: 0, total: 0 };
-  const mode = findButtonLabel({ running, hovering, done, total });
+  // 마우스는 움직임으로, 키보드는 키를 뗀 순간으로 "의도된 두 번째 조작"을 구분한다
+  const hovering = pointerOver || keyFocus;
+  const mode = findButtonLabel({ running, hovering });
   const percent = total === 0 ? 0 : Math.round((done / total) * 100);
 
   return (
@@ -177,13 +182,15 @@ export function ProbeForm({
         <div>
           <button type={mode === "find" ? "submit" : "button"} className={BUTTON_CLASS[mode]}
                   onClick={mode === "stop" ? onStop : undefined}
-                  onMouseEnter={() => setHovering(true)}
-                  // 실행 시작 직후의 호버 초기화 때문에 mouseenter가 다시 오지 않는다 —
+                  onMouseEnter={() => setPointerOver(true)}
+                  // 실행 시작 직후의 초기화 때문에 mouseenter가 다시 오지 않는다 —
                   // 커서를 조금만 움직여도 「중단」이 드러나게 mousemove도 함께 본다
-                  onMouseMove={() => setHovering(true)}
-                  onMouseLeave={() => setHovering(false)}
-                  onFocus={() => setHovering(true)}
-                  onBlur={() => setHovering(false)}
+                  onMouseMove={() => setPointerOver(true)}
+                  onMouseLeave={() => setPointerOver(false)}
+                  onBlur={() => setKeyFocus(false)}
+                  // Enter로 「찾기」를 제출한 그 키의 keyup이 실행 중에 도착해 재무장한다 —
+                  // 여기서 다시 Enter를 누르면(=키업) 그때는 「중단」이 뜬 뒤이므로 취소로 이어진다
+                  onKeyUp={() => { if (running) setKeyFocus(true); }}
                   data-testid={mode === "stop" ? "ProbeForm-stopButton" : "ProbeForm-findButton"}>
             {mode === "find" && t("trace.form.find")}
             {mode === "progress" && (

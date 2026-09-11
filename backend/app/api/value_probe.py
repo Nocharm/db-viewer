@@ -156,7 +156,8 @@ def start_value_probe(
     detail = (f"source={source.id} schemas={_format_schemas(schemas)} mode={req.mode} "
               f"value='{value}' targets auto={len(auto)} heavy={heavy_count}")
     if req.include_related_views:
-        detail += f" related_views=+{len(related.object_ids)}/-{len(related.skipped)}"
+        detail += (f" related_views=+{len(related.object_ids)}/-{len(related.skipped)}"
+                   f" related_schemas={_format_schemas(list(related.schemas))}")
     db.add(AuditLog(
         action="value_probe", detail=detail[:600],
         requested_by=login_id, requested_at=now,

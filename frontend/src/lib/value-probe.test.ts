@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { SchemaCategoryItem, ValueProbeHit } from "./api";
+import type { SchemaCategoryItem, SkippedRelatedView, ValueProbeHit } from "./api";
+import type { MessageKey } from "./i18n";
 import {
   buildPreviewHref, describeSkippedView, findButtonLabel, formatMatchCount, parseFiltersParam,
-  remainingSchemas, selectableSchemas, shouldKeepPolling, validateProbeRequest,
+  remainingSchemas, selectableSchemas, shouldKeepPolling, takeSkippedForDisplay, validateProbeRequest,
 } from "./value-probe";
 
 const hit: ValueProbeHit = {
@@ -103,18 +104,44 @@ describe("formatMatchCount", () => {
 });
 
 describe("describeSkippedView", () => {
+  // MESSAGES 사전을 갖고 오지 않게 고정 맵을 돌려주는 스텁 / stub t — a fixed map, not the real dictionary
+  const stubT = (key: MessageKey): string => {
+    const fixed: Partial<Record<MessageKey, string>> = {
+      "trace.skip.not_allowed": "허용 목록 밖",
+      "trace.skip.hidden": "hidden schema",
+    };
+    return fixed[key] ?? key;
+  };
+
   it("names the view and the policy reason", () => {
-    expect(describeSkippedView({ qname: "SAP.V_X", schema: "SAP", reason: "not_allowed" }, "ko"))
+    expect(describeSkippedView({ qname: "SAP.V_X", schema: "SAP", reason: "not_allowed" }, stubT))
       .toBe("SAP.V_X — 허용 목록 밖");
-    expect(describeSkippedView({ qname: "HR.V_Y", schema: "HR", reason: "hidden" }, "en"))
+    expect(describeSkippedView({ qname: "HR.V_Y", schema: "HR", reason: "hidden" }, stubT))
       .toBe("HR.V_Y — hidden schema");
+  });
+});
+
+describe("takeSkippedForDisplay", () => {
+  const makeItems = (n: number): SkippedRelatedView[] =>
+    Array.from({ length: n }, (_, i) => ({ qname: `SAP.V_${i}`, schema: "SAP", reason: "not_allowed" as const }));
+
+  it("caps at 10 and reports the rest", () => {
+    const { shown, rest } = takeSkippedForDisplay(makeItems(12));
+    expect(shown).toHaveLength(10);
+    expect(rest).toBe(2);
+  });
+
+  it("shows everything with no remainder when under the cap", () => {
+    const { shown, rest } = takeSkippedForDisplay(makeItems(3));
+    expect(shown).toHaveLength(3);
+    expect(rest).toBe(0);
   });
 });
 
 describe("findButtonLabel", () => {
   it("shows progress while running and stop on hover", () => {
-    expect(findButtonLabel({ running: false, hovering: false, done: 0, total: 0 })).toBe("find");
-    expect(findButtonLabel({ running: true, hovering: false, done: 12, total: 422 })).toBe("progress");
-    expect(findButtonLabel({ running: true, hovering: true, done: 12, total: 422 })).toBe("stop");
+    expect(findButtonLabel({ running: false, hovering: false })).toBe("find");
+    expect(findButtonLabel({ running: true, hovering: false })).toBe("progress");
+    expect(findButtonLabel({ running: true, hovering: true })).toBe("stop");
   });
 });

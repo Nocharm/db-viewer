@@ -51,7 +51,12 @@ export function InfoTip({ text, align, children }: InfoTipProps) {
       i
       {bubbleStyle &&
         createPortal(
-          <span className="info-tip__bubble" role="tooltip" style={bubbleStyle}>
+          // children이 있으면(제외 목록 등 긴 리스트) 스크롤 가능한 말풍선으로 바꾼다
+          <span
+            className={`info-tip__bubble${children ? " info-tip__bubble--rich" : ""}`}
+            role="tooltip"
+            style={bubbleStyle}
+          >
             {children ?? text}
           </span>,
           document.body,

@@ -694,6 +694,12 @@ mark.hl {
   white-space: normal;
   pointer-events: none;
 }
+/* 목록형(children) 말풍선 — 길어질 수 있어 스크롤·호버 조작을 허용한다 */
+.info-tip__bubble--rich {
+  max-height: 40vh;
+  overflow-y: auto;
+  pointer-events: auto;
+}
 
 /* ── 브랜드 마크 — 옐로 사각 앵커 ── */
 /* ── 일치율 게이지 — 스탯은 옐로 ── */

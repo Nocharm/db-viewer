@@ -337,6 +337,7 @@ def test_allowed_related_view_joins_the_plan_and_the_gates(pclient, load_fixture
             "SELECT detail FROM audit_logs WHERE action = 'value_probe' ORDER BY id DESC LIMIT 1"
         )).scalar_one()
     assert "related_views=+1/-0" in detail
+    assert "related_schemas=OTHER" in detail
 
 
 def test_runner_gate_covers_related_schemas(pclient, load_fixture, allow_preview, migrated_engine, monkeypatch):
