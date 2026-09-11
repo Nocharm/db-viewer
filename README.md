@@ -65,6 +65,7 @@ docker compose up -d --build
 실DB 연결(정찰 → 수집 → live 전환) 순서와 체크리스트: **`docs/connect.md`**
 사내 다른 도커 서비스 DB(PostgreSQL/SQLite)를 추가로 붙이는 절차: **`docs/connect-sources.md`**
 (서비스 담당자에게 보낼 요청서: `docs/handoff/service-owner-prompt.md`, 담당자용 안내 페이지: `frontend/public/handoff/integration-guide.html`, 관리자 화면 `데이터 소스` 섹션의 [연동 안내서] 버튼 또는 웹에서 `/handoff/integration-guide.html`로 접근)
+사용자용 서비스 사용 안내(화면별 조작·값 추적·FAQ): `frontend/public/handoff/user-guide.html` — 헤더 우측 [사용 안내] 버튼 또는 `/handoff/user-guide.html`
 운영과 완전히 분리된 별도 포트·별도 DB의 개발 스택(LDAP 로그인 등 신규 기능 시험용): **`docs/dev-deploy.md`**
 
 - **앱**: http://182.199.63.71:6678 — 단일 포트 (UI + `/api` 프록시, n8n도 이 주소로 POST)

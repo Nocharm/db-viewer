@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>db-viewer 사용 안내</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #f6f9f7;
+    --surface: #ffffff;
+    --surface-dim: #eef4f1;
+    --ink: #1d2b26;
+    --muted: #5c6d67;
+    --accent: #0e7a5f;
+    --accent-ink: #ffffff;
+    --hairline: #d9e3de;
+    --warn-bg: #fdf3e4;
+    --warn-border: #e8bb7d;
+    --warn-ink: #8a5010;
+    --tip-bg: #e8f4ef;
+    --tip-border: #9fd3bf;
+    --code-bg: #f0f5f2;
+    --key-bg: #e6eeea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101c17; --surface: #16241e; --surface-dim: #1c2d26; --ink: #e3ece7; --muted: #96a8a1;
+      --accent: #3ecfa4; --accent-ink: #08211a; --hairline: #273a33;
+      --warn-bg: #2b2113; --warn-border: #7a5a24; --warn-ink: #eec482;
+      --tip-bg: #14302a; --tip-border: #2c6a58; --code-bg: #142019; --key-bg: #22352d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101c17; --surface: #16241e; --surface-dim: #1c2d26; --ink: #e3ece7; --muted: #96a8a1;
+    --accent: #3ecfa4; --accent-ink: #08211a; --hairline: #273a33;
+    --warn-bg: #2b2113; --warn-border: #7a5a24; --warn-ink: #eec482;
+    --tip-bg: #14302a; --tip-border: #2c6a58; --code-bg: #142019; --key-bg: #22352d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.75; font-size: 16px; padding: 0 20px 80px;
+  }
+  main { max-width: 880px; margin: 0 auto; }
+  header.hero { padding: 48px 0 24px; border-bottom: 1px solid var(--hairline); margin-bottom: 28px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: 34px; line-height: 1.2; margin: 6px 0 10px; text-wrap: balance; }
+  .lede { color: var(--muted); font-size: 17px; max-width: 64ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  h2 { font-size: 24px; margin: 52px 0 12px; padding-top: 12px; border-top: 1px solid var(--hairline); scroll-margin-top: 16px; }
+  h2 .num { display: inline-block; min-width: 34px; color: var(--accent); font-family: "IBM Plex Mono", monospace; font-size: 14px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; scroll-margin-top: 16px; }
+  h4 { font-size: 15.5px; margin: 20px 0 6px; color: var(--ink); }
+  p { margin: 0 0 12px; max-width: 72ch; }
+  ul, ol { margin: 0 0 14px 22px; max-width: 72ch; }
+  li { margin: 4px 0; }
+  li > ul, li > ol { margin-top: 4px; margin-bottom: 4px; }
+  code, kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 13.5px; }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+  kbd { background: var(--key-bg); border: 1px solid var(--hairline); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; font-size: 12.5px; }
+  .btn { display: inline-block; padding: 0 8px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); font-weight: 600; font-size: 14px; white-space: nowrap; }
+  .toc { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 22px; margin: 22px 0 8px; }
+  .toc ol { columns: 2; column-gap: 28px; margin: 8px 0 0 18px; }
+  .toc a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--hairline); }
+  .toc a:hover { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14.5px; background: var(--surface); }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+  th { background: var(--surface-dim); font-size: 13px; letter-spacing: .02em; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 10px; margin: 10px 0 18px; }
+  .table-wrap table { margin: 0; }
+  .note, .tip, .warn { border-radius: 12px; padding: 12px 16px; margin: 12px 0 16px; max-width: 72ch; }
+  .note { background: var(--surface-dim); border: 1px solid var(--hairline); }
+  .tip { background: var(--tip-bg); border: 1px solid var(--tip-border); }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-ink); }
+  .note b:first-child, .tip b:first-child, .warn b:first-child { display: inline-block; margin-right: 6px; }
+  .steps { counter-reset: step; list-style: none; margin-left: 0; }
+  .steps > li { position: relative; padding-left: 40px; margin: 10px 0; }
+  .steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 2px; width: 26px; height: 26px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 18px; }
+  .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 14px; font-size: 14.5px; }
+  .card b { display: block; margin-bottom: 4px; }
+  .top { font-size: 12px; color: var(--muted); text-decoration: none; float: right; margin-top: 16px; }
+  .term dt { font-weight: 700; margin-top: 12px; }
+  .term dd { margin: 2px 0 0 0; color: var(--ink); max-width: 72ch; }
+  .term dd .as { color: var(--muted); }
+  @media (max-width: 640px) { .toc ol { columns: 1; } .grid { grid-template-columns: 1fr; } h1 { font-size: 28px; } }
+  @media print { body { background: #fff; color: #000; padding: 0; } .toc, .card, table { break-inside: avoid; } .top { display: none; } }
+</style>
+</head>
+<body>
+<main>
+
+<header class="hero">
+  <div class="eyebrow">DB-viewer · User Guide</div>
+  <h1>db-viewer 사용 안내</h1>
+  <p class="lede">사내 데이터베이스의 테이블·뷰가 무엇이 있고 서로 어떻게 이어지는지 찾아보고, 실제 값을 미리 보고, 화면에서 본 값이 어느 컬럼에 저장돼 있는지 역추적하는 도구입니다. 이 문서는 처음 쓰는 사람도 따라 할 수 있게 화면별로 하나씩 설명합니다.</p>
+  <div class="meta">
+    <span>대상: db-viewer에 로그인해 데이터를 찾아보는 모든 사용자 (관리자 절은 9장)</span>
+    <span>기준 버전: 2026-09-11 (값 추적·뷰 쿼리 보기 포함)</span>
+    <span>이 파일은 화면 우측 상단 「사용 안내」 버튼으로 언제든 다시 받을 수 있습니다</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="목차">
+  <b>목차</b>
+  <ol start="0">
+    <li><a href="#s0">한눈에 보기</a></li>
+    <li><a href="#s1">시작하기 — 로그인과 공통 화면</a></li>
+    <li><a href="#s2">알아두면 좋은 말들</a></li>
+    <li><a href="#s3">테이블 브라우저</a></li>
+    <li><a href="#s4">미리보기 (값 보기)</a></li>
+    <li><a href="#s5">조인 검증</a></li>
+    <li><a href="#s6">ERD</a></li>
+    <li><a href="#s7">값 추적</a></li>
+    <li><a href="#s8">파싱 지표 · 스키마 Q&amp;A</a></li>
+    <li><a href="#s9">관리 콘솔 (관리자)</a></li>
+    <li><a href="#s10">자주 묻는 질문 · 문제 해결</a></li>
+    <li><a href="#s11">숫자·한계·주소 모음</a></li>
+  </ol>
+</nav>
+
+<!-- ───────────────────────────── 0 ───────────────────────────── -->
+<h2 id="s0"><span class="num">0</span>한눈에 보기</h2>
+<p>상단 메뉴의 화면 다섯 개와 관리 콘솔 하나가 전부입니다. "무엇을 하고 싶은가"로 고르면 됩니다.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:130px">화면</th><th>이럴 때</th><th>할 수 있는 일</th></tr></thead>
+  <tbody>
+    <tr><td><b>테이블</b><br><code>/</code></td><td>"이 테이블에 뭐가 들어 있지?"</td><td>테이블·뷰 검색, 컬럼·관계·계보 보기, 실제 값 미리보기(필터·정렬·CSV), 뷰의 SQL 보기</td></tr>
+    <tr><td><b>조인 검증</b><br><code>/verify</code></td><td>"이 두 테이블, 진짜 이 컬럼으로 이어지나?"</td><td>FK가 없는 두 테이블을 4단계로 확인하고 맞으면 관계로 확정</td></tr>
+    <tr><td><b>ERD</b><br><code>/erd</code></td><td>"전체 그림이 보고 싶다"</td><td>확정된 관계와 FK를 한 장의 그림으로, 테이블로 바로 이동</td></tr>
+    <tr><td><b>값 추적</b><br><code>/trace</code></td><td>"화면에 보이는 이 값, DB 어디에 있지?"</td><td>값 하나로 저장 테이블·컬럼을 찾고, 그 값으로 필터된 미리보기·뷰 SQL까지</td></tr>
+    <tr><td><b>파싱 지표</b><br><code>/parsing</code></td><td>"뷰 계보가 얼마나 풀렸나?"</td><td>뷰 정의 해석 성공률과 실패한 뷰 목록</td></tr>
+    <tr><td><b>관리</b><br><code>/admin</code></td><td>관리자만</td><td>누가 들어오고, 어느 스키마의 값을 볼 수 있는지, 어떤 DB를 읽을지</td></tr>
+  </tbody>
+</table></div>
+<div class="tip"><b>가장 흔한 흐름</b> ① 테이블 화면에서 검색 → ② 상세에서 컬럼·관계 확인 → ③ <span class="btn">미리보기 TOP 20</span>으로 값 확인 → ④ 값이 어디서 왔는지 궁금하면 값 추적.</div>
+
+<!-- ───────────────────────────── 1 ───────────────────────────── -->
+<h2 id="s1"><span class="num">1</span>시작하기 — 로그인과 공통 화면</h2>
+
+<h3>1-1. 로그인</h3>
+<p>브라우저로 db-viewer 주소에 접속하면 로그인 화면이 나옵니다. 회사 설정에 따라 두 가지 중 하나 또는 둘 다 보입니다.</p>
+<ul>
+  <li><b>Keycloak(SSO)</b> — 들어가자마자 자동 로그인을 한 번 시도합니다(<code>로그인 확인 중…</code>). 안 되면 <span class="btn">Keycloak으로 로그인</span> 버튼을 누릅니다. 로그인 후 원래 가려던 주소로 돌아갑니다.</li>
+  <li><b>LDAP(사번)</b> — <code>사번</code>과 <code>비밀번호</code>를 넣고 <span class="btn">로그인</span>. 틀리면 빨간 한 줄이 뜨고 비밀번호 칸은 비워집니다.</li>
+</ul>
+<div class="warn"><b>"접근 권한이 없습니다"가 뜨면</b> 로그인은 됐지만 아직 <b>화이트리스트</b>에 등록되지 않은 계정입니다. 화면의 안내대로 관리자에게 등록을 요청하세요. 관리자는 관리 콘솔의 「로그인 화이트리스트」 또는 「AD 사용자」 목록에서 추가합니다.</div>
+
+<h3>1-2. 화면 상단(헤더)에 늘 있는 것</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:190px">요소</th><th>설명</th></tr></thead>
+  <tbody>
+    <tr><td><b>DB-viewer</b> 로고</td><td>누르면 처음 화면으로 돌아가며 검색어·필터·선택이 모두 초기화됩니다.</td></tr>
+    <tr><td>메뉴 <code>테이블 · 조인 검증 · ERD · 값 추적 · 파싱 지표</code></td><td>화면 이동. <b>사내 MSSQL이 아닌 소스</b>(PostgreSQL·SQLite)를 보고 있으면 <code>조인 검증</code>과 <code>파싱 지표</code>는 숨겨집니다. 그 두 기능은 MSSQL 전용입니다.</td></tr>
+    <tr><td>메뉴 <code>관리</code></td><td>시스템 관리자에게만 보입니다.</td></tr>
+    <tr><td>소스 선택(드롭다운)</td><td>여러 DB가 등록된 경우에만 나타납니다. 바꾸면 그 DB 기준으로 목록·미리보기가 전부 새로 시작되고, 주소에 <code>?source=</code>가 붙어 새로고침해도 유지됩니다.</td></tr>
+    <tr><td>말풍선 아이콘 (스키마 Q&amp;A)</td><td>MSSQL 소스에서만. 자연어로 "수주와 출하를 잇는 테이블은?" 같은 질문을 할 수 있습니다(8장).</td></tr>
+    <tr><td><span class="btn">사용 안내</span></td><td>이 문서를 HTML 파일로 내려받습니다.</td></tr>
+    <tr><td><code>EN</code> / <code>한</code></td><td>한국어 ↔ 영어 전환. 브라우저에 기억됩니다.</td></tr>
+    <tr><td>해/달 아이콘</td><td>다크 ↔ 라이트 테마. 기본은 다크이며 브라우저에 기억됩니다.</td></tr>
+    <tr><td>이름 ▾</td><td>사용자 메뉴. 이름·ID 확인, <code>로그아웃</code>.</td></tr>
+  </tbody>
+</table></div>
+
+<!-- ───────────────────────────── 2 ───────────────────────────── -->
+<h2 id="s2"><span class="num">2</span>알아두면 좋은 말들</h2>
+<p>화면 곳곳에 나오는 낱말입니다. 비유로 먼저 잡아두면 나머지가 쉬워집니다.</p>
+<dl class="term">
+  <dt>카탈로그 · 스냅샷</dt><dd>DB의 "재고표"입니다. 어떤 테이블에 어떤 컬럼이 있고 행이 몇 개인지 미리 수집해 둔 것이고, 수집 1회분을 스냅샷이라고 부릅니다. <span class="as">db-viewer는 대부분의 화면을 이 재고표만으로 그립니다. 실제 값을 읽는 건 "미리보기"와 "값 추적"뿐입니다.</span></dd>
+  <dt>스키마</dt><dd>테이블을 묶는 상자입니다. 이 회사에서는 스키마가 곧 <b>시스템</b>(예: SAP, ATM, BCMS)이라, "어느 시스템의 데이터인가"를 고르는 단위로 생각하면 됩니다.</dd>
+  <dt>테이블 · 뷰</dt><dd>테이블은 값이 실제로 저장되는 서랍, 뷰는 여러 서랍을 골라 보여주는 "창문"입니다. 화면에는 <code>T</code>/<code>V</code> 배지로 구분됩니다. 뷰는 SQL로 정의되며 「쿼리 보기」로 그 SQL을 읽을 수 있습니다.</dd>
+  <dt>계보(lineage)</dt><dd>뷰가 어느 테이블을 읽는지 거슬러 올라간 것입니다. "이 뷰의 이 컬럼은 저 테이블의 저 컬럼에서 왔다"까지 풀려 있으면 <code>direct</code>, 계산식이면 <code>derived</code>입니다.</dd>
+  <dt>FK · 관계 · 조인 키</dt><dd>두 테이블을 잇는 열쇠입니다. DB에 선언된 FK는 13개뿐이라, 나머지는 db-viewer가 <b>조인 검증</b>으로 찾아 "관계"로 기록합니다. 여러 테이블에서 반복되는 열쇠 컬럼을 <b>조인 키</b>라고 부릅니다.</dd>
+  <dt>containment(포함률)</dt><dd>"출발 테이블의 값이 대상 테이블에 몇 % 있나"입니다. 100%에 가까울수록 진짜 이어진 관계입니다.</dd>
+  <dt>미리보기 허용 스키마</dt><dd>실제 값을 볼 수 있게 관리자가 열어 둔 스키마 목록입니다. 목록에 없는 스키마는 구조는 보이지만 값은 볼 수 없고, 버튼이 잠깁니다.</dd>
+  <dt>컬럼 비공개 스키마</dt><dd>서버 설정으로 컬럼조차 감춘 스키마입니다. 이름만 목록에 보이거나 아예 안 보이고, 그 테이블로는 이동할 수 없습니다.</dd>
+  <dt>마스킹</dt><dd>미리보기에서 <code>●●●</code>로 가려지는 컬럼입니다. 값 추적에서도 검색 대상에서 빠집니다.</dd>
+  <dt>감사 로그</dt><dd>누가 언제 어느 테이블의 실제 값을 봤는지 남는 장부입니다. 미리보기·조인 샘플·값 추적이 전부 기록됩니다.</dd>
+</dl>
+
+<!-- ───────────────────────────── 3 ───────────────────────────── -->
+<h2 id="s3"><span class="num">3</span>테이블 브라우저 <code>/</code></h2>
+<p>기본 화면입니다. 위에서 아래로 <b>JOIN KEYS 바</b> → 세 칸(<b>왼쪽 레일 · 테이블 목록 · 테이블 상세</b>) → (열었을 때) <b>미리보기</b> 순서로 놓여 있습니다.</p>
+
+<h3>3-1. JOIN KEYS 바 (맨 위 칩 줄)</h3>
+<ul>
+  <li>FK·뷰 JOIN·확정된 관계에서 모은 <b>조인 키</b>가 칩으로 늘어섭니다. 칩의 숫자는 그 키를 가진 테이블 수입니다.</li>
+  <li>칩을 누르면 <b>그 키로 조인되는 테이블만</b> 목록에 남습니다. 다시 누르면 해제. <code>전체</code>가 기본입니다.</li>
+  <li>많으면 12개까지만 보이고 <code>+N</code>으로 펼칩니다.</li>
+</ul>
+
+<h3>3-2. 왼쪽 레일 — 카테고리 / DB</h3>
+<ul>
+  <li><b>카테고리 탭</b>: 업무 분류(테이블명 접두어 기준)로 목록을 좁힙니다. 이름 옆 자물쇠는 미리보기 허용 여부입니다(열림 = 허용 스키마 포함, 잠김 = 미허용).</li>
+  <li><b>DB 탭</b>: 스키마(=시스템)마다 체크박스가 있어 <b>보고 싶은 DB만 체크</b>해 둘 수 있습니다. 이 체크는 내 브라우저에만 저장됩니다. <span class="btn">필터 해제</span> / <span class="btn">전체 선택</span>으로 한 번에 바꿉니다.</li>
+  <li>DB 탭에서 스키마 옆 카테고리 칩을 누르면 그 자리에서 카테고리 이름을 바꿀 수 있습니다(<kbd>Enter</kbd> 저장, <kbd>Esc</kbd> 취소). <b>이 변경은 모든 사용자에게 공통</b>이니 이름은 신중히.</li>
+  <li>레일과 목록 사이 경계를 드래그하면 폭이 바뀝니다.</li>
+</ul>
+
+<h3>3-3. 테이블 목록</h3>
+<ul>
+  <li>검색창에 <b>테이블명·컬럼명·카테고리</b> 어느 것이든 입력하면 됩니다. <b>초성 검색</b>이 됩니다(<code>ㅍㅈ</code> → 품질). 컬럼명으로 걸린 경우 행 아래에 <code>컬럼: …</code>이 표시됩니다.</li>
+  <li><code>전체 · 테이블 · 뷰</code> 칩으로 종류를 거릅니다. 행 오른쪽 <code>20c</code>는 컬럼 수입니다.</li>
+  <li>회색으로 비활성인 행(<code>컬럼 비공개</code> 배지)은 서버가 컬럼을 감춘 스키마라 들어갈 수 없습니다.</li>
+  <li>목록은 100개씩 이어서 불러옵니다. 스크롤을 내리면 더 나옵니다.</li>
+</ul>
+
+<h3>3-4. 테이블 상세</h3>
+<p>목록에서 하나를 누르면 오른쪽에 상세가 뜹니다. 위에서부터:</p>
+<ol>
+  <li><b>이름 + TABLE/VIEW 배지 + <code>N rows · M columns</code></b>. 미리보기가 열려 있으면 <span class="btn">미리보기로 ↓</span>로 바로 내려갈 수 있습니다.</li>
+  <li><b>AI 요약 / AI 설명</b>(MSSQL만): <span class="btn">AI 요약 생성</span>, 뷰라면 <span class="btn">AI 설명</span>. 사내 LLM이 연결돼 있지 않으면 <code>AI 미연결 — 목업</code> 배지가 붙은 예시 문장이 나옵니다.</li>
+  <li><b>주 버튼</b>
+    <ul>
+      <li><span class="btn">미리보기 TOP 20</span> — 실제 값을 화면 아래에 엽니다(4장). 미허용 스키마면 잠겨 있고 옆에 <code>미리보기 미허용</code>이 표시됩니다.</li>
+      <li><span class="btn">ERD 보기 →</span> — 이 테이블에 포커스한 ERD로 이동합니다.</li>
+      <li><span class="btn">쿼리 보기</span>(뷰만) — 뷰 정의 SQL을 바로 아래 패널로 펼칩니다(3-5).</li>
+    </ul>
+  </li>
+  <li><b>컬럼 (N)</b> — 컬럼 칩 목록. <code>PK</code> 마크, 초록 테두리는 조인 키입니다. 기본 2줄만 보이고 <span class="btn">컬럼 더보기</span>로 펼칩니다. <b>칩을 누르면 조인 검증 화면으로 넘어가 그 컬럼이 출발 컬럼으로 미리 채워집니다.</b></li>
+  <li><b>조인 가능성 찾기</b>(테이블·MSSQL만) — <span class="btn">후보 일괄 검증</span>을 누르면 이 테이블과 이어질 법한 다른 테이블들을 실제 값으로 한꺼번에 검사해 포함률 %와 함께 보여줍니다. 마음에 드는 행은 <span class="btn">빌더에 추가</span>로 조인 검증에 그대로 넘깁니다.</li>
+  <li><b>구성 테이블 (lineage)</b>(뷰만) — 이 뷰가 읽는 테이블. <code>depth</code>는 몇 단계 아래인지입니다.</li>
+  <li><b>이 테이블을 사용하는 뷰</b> — 반대 방향 계보.</li>
+  <li><b>유사 테이블</b>(테이블만) — 컬럼명이 30% 이상 겹치는 테이블. 행의 <span class="btn">검증</span>으로 단건 검사.</li>
+  <li><b>FK 관계</b> — DB에 선언된 외래키. <code>→</code> 나가는 것, <code>←</code> 들어오는 것.</li>
+  <li><b>추론·확정 관계</b> — db-viewer가 찾아 기록한 관계. <code>✓</code>는 확정, <code>추정</code>은 아직 확정 전, <code>N:M</code>은 카디널리티, 숫자는 confidence입니다.</li>
+</ol>
+<p>상세 안의 테이블 이름은 모두 클릭하면 그 테이블로 이동합니다.</p>
+
+<h3 id="s3-5">3-5. 뷰 「쿼리 보기」</h3>
+<ol class="steps">
+  <li>뷰를 선택하고 <span class="btn">쿼리 보기</span>를 누릅니다.</li>
+  <li>버튼 아래에 <b>뷰 정의 SQL</b> 패널이 열립니다. 키워드는 강조색, 나머지는 본문색으로 표시됩니다.</li>
+  <li><span class="btn">복사</span>로 SQL 전체를 클립보드에 복사합니다(<code>복사됨</code> 표시). ×로 닫습니다.</li>
+</ol>
+<div class="note"><b>정의가 안 보이면</b> "정의가 수집되지 않았다 — 원본 DB의 VIEW DEFINITION 권한 확인"이 뜹니다. 카탈로그를 수집할 때 원본 DB가 뷰 정의를 내주지 않은 경우이며, 화면 문제가 아니라 권한 문제입니다. 컬럼 비공개 스키마의 뷰는 버튼이 잠깁니다.</div>
+
+<!-- ───────────────────────────── 4 ───────────────────────────── -->
+<h2 id="s4"><span class="num">4</span>미리보기 (값 보기)</h2>
+<p>미리보기는 <b>테이블·ERD·조인 검증 세 화면이 같은 부품</b>을 씁니다. 한 번 익히면 어디서나 같습니다. 열 때마다 원본 DB에 새로 질의하므로, 조건을 바꾸면 <span class="btn">조회</span>를 눌러야 반영됩니다.</p>
+
+<h3>4-1. 탭 바</h3>
+<ul>
+  <li>여는 테이블마다 탭이 생깁니다. 탭 이름 클릭 = 전환, × = 닫기.</li>
+  <li><span class="btn">분할</span> — 탭이 둘 이상이면 두 테이블을 좌우로 나란히 놓습니다(조인 검증에서 특히 유용). <span class="btn">단일</span>로 되돌립니다.</li>
+  <li><span class="btn">줄바꿈</span> / <span class="btn">말줄임</span> — 긴 값을 접을지 줄바꿈할지.</li>
+  <li><span class="btn">위로</span> — 테이블 상세로 다시 올라갑니다.</li>
+</ul>
+
+<h3>4-2. 필터 거는 법 (조건은 AND로 결합)</h3>
+<ol class="steps">
+  <li><code>필터 컬럼 선택</code>에서 컬럼을 고릅니다.</li>
+  <li>연산자를 고릅니다.
+    <div class="table-wrap"><table>
+      <thead><tr><th style="width:170px">연산자</th><th>뜻</th><th>예</th></tr></thead>
+      <tbody>
+        <tr><td><code>부분 일치</code></td><td>이 글자를 포함</td><td><code>kim</code> → "KIMCHI", "Mr. Kim" 모두</td></tr>
+        <tr><td><code>정확 일치</code></td><td>정확히 이 값(대소문자 무시)</td><td><code>PAID</code> → "paid"도 잡힘</td></tr>
+        <tr><td><code>부분 제외</code></td><td>이 글자를 포함하지 않음(빈 값 포함)</td><td></td></tr>
+        <tr><td><code>정확 제외 (≠)</code></td><td>이 값이 아님(빈 값 포함)</td><td></td></tr>
+        <tr><td><code>비어 있음 (NULL)</code></td><td>값이 없음</td><td>값 입력 불필요</td></tr>
+        <tr><td><code>값 있음 (NOT NULL)</code></td><td>값이 있음</td><td>값 입력 불필요</td></tr>
+      </tbody>
+    </table></div>
+  </li>
+  <li>값을 입력합니다. 이미 불러온 행의 고유값이 자동완성으로 뜹니다. <kbd>Enter</kbd> 또는 <span class="btn">필터 추가</span>로 칩을 만듭니다.</li>
+  <li>칩이 <b>점선 테두리</b>면 아직 적용 전입니다. <span class="btn">조회</span>를 누르면 원본에 다시 질의하고 칩이 실선으로 바뀝니다.</li>
+  <li>칩의 ×로 하나 빼거나 <span class="btn">필터 해제</span>로 전부 지웁니다. 조건은 <b>최대 5개</b>입니다.</li>
+</ol>
+<div class="tip"><b>빠른 길</b> 표의 <b>셀을 더블클릭</b>하면 그 값으로 "정확 일치" 칩이 바로 만들어집니다(빈 셀은 NULL 조건). 그 다음 <span class="btn">조회</span>만 누르면 됩니다.</div>
+
+<h3>4-3. 표 위에서 할 수 있는 조작</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:220px">동작</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>헤더 <b>클릭</b> 또는 <b>우클릭</b></td><td>메뉴: <code>오름차순 정렬 · 내림차순 정렬 · 정렬 해제 · 이 컬럼 숨기기 · 고유값 보기 · 빈값 제외하기 · 이 컬럼 필터 적용 · 컬럼명 복사</code></td></tr>
+    <tr><td>헤더 <b>드래그</b></td><td>컬럼 순서 변경</td></tr>
+    <tr><td>헤더 경계 <b>드래그</b> / <b>더블클릭</b></td><td>폭 조절 / 내용에 맞춤(한 번 더 누르면 기본 폭)</td></tr>
+    <tr><td>셀 <b>더블클릭</b></td><td>그 값으로 정확 일치 조건 추가</td></tr>
+    <tr><td>셀 <b>호버</b></td><td>열 십자 강조, 툴팁에 전체 값</td></tr>
+    <tr><td><code>고유값 보기</code></td><td>그 컬럼의 값별 건수 표. 값을 누르면 <code>복사 · 이 값만 보기 · 이 값 제외하기</code></td></tr>
+    <tr><td><code>빈값 제외하기</code></td><td>NOT NULL 조건을 걸고 <b>즉시</b> 재조회(대기 중이던 칩도 함께 적용)</td></tr>
+    <tr><td><code>TOP 20 ▾</code></td><td>표시 행수 20 / 50 / 100 / 200 / 500. 바꾸면 즉시 재조회</td></tr>
+    <tr><td><code>컬럼 ▾</code></td><td>체크로 컬럼 숨기기/보이기. 숨긴 수가 <code>컬럼 (-N)</code>으로 표시</td></tr>
+  </tbody>
+</table></div>
+
+<h3>4-4. SQL로 보기 · CSV</h3>
+<ul>
+  <li><span class="btn">SQL로 보기</span> — 지금 화면(보이는 컬럼·필터·정렬·행수)과 같은 결과를 내는 <code>SELECT TOP … WHERE … ORDER BY …</code>를 보여줍니다. <span class="btn">클립보드 복사</span>로 가져가 다른 도구에서 그대로 실행할 수 있습니다. <span class="btn">컬럼 편집</span>에서 칩을 빼거나(×, <kbd>Backspace</kbd>) 흐린 칩을 눌러 되살린 뒤 <span class="btn">적용</span>하면 표에도 일괄 반영됩니다.</li>
+  <li><span class="btn">CSV 다운로드</span> — 지금 보이는 컬럼 순서·정렬 그대로 <code>스키마_테이블_preview.csv</code>로 저장합니다.</li>
+</ul>
+
+<h3>4-5. 표가 비어 있을 때 두 가지 문구</h3>
+<ul>
+  <li><code>조건에 맞는 행 없음 — 필터를 완화해 보세요</code>: 조건이 너무 좁습니다.</li>
+  <li><code>원본 소스가 0행을 반환했습니다 (쿼리는 실행됨)</code>: 조건 없이도 0행. 테이블 자체가 비어 있습니다.</li>
+</ul>
+<div class="note"><b>기억할 것</b> 미리보기는 실제 값을 읽는 일이라 <b>허용된 스키마에서만</b> 열리고, 열 때마다 <b>감사 로그</b>에 남습니다. <code>●●●</code>로 보이는 컬럼은 마스킹 정책이 걸린 것입니다.</div>
+
+<!-- ───────────────────────────── 5 ───────────────────────────── -->
+<h2 id="s5"><span class="num">5</span>조인 검증 <code>/verify</code> (MSSQL 전용)</h2>
+<p>"이 두 테이블이 이 컬럼으로 정말 이어지나?"를 값을 읽지 않는 검사부터 비싼 검사 순으로 4단계로 확인하고, 맞으면 관계로 확정해 ERD에 그립니다.</p>
+
+<h3>5-1. 세 칸의 역할</h3>
+<div class="grid">
+  <div class="card"><b>왼쪽 — 선택한 테이블·컬럼</b>출발/대상 테이블을 고르고 연결할 컬럼 페어를 정합니다. 셋이 다 정해지면 자동으로 접혀 한 줄 요약이 되고, 다시 누르면 펼쳐집니다. 그 아래 <b>진행 순서</b> 카드가 4단계의 상태(완료·지금 할 차례·잠김)를 보여줍니다.</div>
+  <div class="card"><b>가운데 — 검증 카드 4장</b>맨 위 「지금 확인 중인 연결」에서 컬럼을 바로 갈아끼울 수 있고, <span class="btn">값 미리보기</span>로 두 테이블을 분할 미리보기로 엽니다.</div>
+  <div class="card"><b>오른쪽 — 확인 대기 목록</b>검증을 기다리는 후보 관계들. 항목을 누르면 왼쪽·가운데가 그 페어로 세팅됩니다. <span class="btn">AI 관계 제안</span>이 후보를 채워 넣습니다.</div>
+</div>
+
+<h3>5-2. 테이블·컬럼 고르기</h3>
+<ol class="steps">
+  <li><code>출발 테이블</code> 입력칸을 누르면 스키마 목록이 펼쳐집니다. 스키마를 고르면 오른쪽에 그 스키마의 테이블이 나오고, 글자를 치면 전체에서 바로 검색됩니다. <kbd>↑</kbd><kbd>↓</kbd><kbd>Enter</kbd>로도 고를 수 있습니다.</li>
+  <li><code>대상 테이블</code>도 같은 방법으로 고릅니다.</li>
+  <li><b>연결할 컬럼 후보</b>가 점수순으로 뜹니다(<code>PK</code>·신호 배지). 마음에 드는 걸 누르거나, 아래 <code>직접 고르기</code>에서 양쪽 컬럼을 직접 선택합니다.</li>
+</ol>
+
+<h3>5-3. 4단계</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:150px">단계</th><th>버튼</th><th>무엇을 보나</th><th>비용</th></tr></thead>
+  <tbody>
+    <tr><td><b>1단계 · 빠른 점검</b></td><td><span class="btn">점검 실행</span></td><td>값을 읽지 않고 <b>타입</b>이 맞는지, 양쪽 컬럼이 <b>중복투성이</b>인지(표본 200행) 봅니다. "타입 불일치"나 "양쪽 다 값이 겹칩니다"면 여기서 멈춥니다.</td><td>거의 0</td></tr>
+    <tr><td><b>2단계 · 실제 값 대조</b></td><td><span class="btn">값 대조</span></td><td>출발 값이 대상에 몇 % 있는지 실제로 셉니다. <code>containment</code> %, <code>cardinality</code>(1:1·1:N·N:M), <code>고아</code>(대상에 없는 값) 건수와 처방 문장이 나옵니다.</td><td>중간</td></tr>
+    <tr><td><b>3단계 · 눈으로 확인</b> (선택)</td><td><span class="btn">조인 샘플 보기</span> 외</td><td>조인된 행 몇 개를 눈으로 봅니다. 출발/대상 테이블 Top 200 샘플도 따로 볼 수 있습니다. 미리보기 허용 스키마에서만.</td><td>중간</td></tr>
+    <tr><td><b>4단계 · 확정</b></td><td><span class="btn">관계 확정</span></td><td>이 연결을 관계로 기록하고 ERD에 그립니다. 2단계를 마쳐야 열립니다.</td><td>0</td></tr>
+  </tbody>
+</table></div>
+<div class="tip"><b>어디서 들어오나</b> 테이블 상세의 컬럼 칩, 「조인 가능성 찾기」의 <span class="btn">빌더에 추가</span>, ERD 노드 우클릭 메뉴의 <code>조인 검증하기</code>가 모두 이 화면으로 값을 채워 넘겨 줍니다.</div>
+
+<!-- ───────────────────────────── 6 ───────────────────────────── -->
+<h2 id="s6"><span class="num">6</span>ERD <code>/erd</code></h2>
+<p>확정된 관계와 FK를 가진 테이블을 한 장의 그림으로 봅니다. <b>검증된 테이블만</b> 그려집니다. 아직 아무 관계도 없으면 "검증된 관계가 아직 없습니다"와 조인 검증으로 가는 버튼이 나옵니다.</p>
+<h3>6-1. 화면 구성</h3>
+<ul>
+  <li><b>좌상단 검색</b> <code>ERD에서 테이블 찾기</code> — 고르면 카메라가 그 노드로 이동하고 강조됩니다. 그래프에 없는 테이블은 "검증된 테이블만 그려집니다"로 안내합니다.</li>
+  <li><b>스키마 필터</b>(접이식) — 한 스키마만 남깁니다.</li>
+  <li><b>노드</b> — <code>TBL</code>/<code>VIEW</code> 배지 + 이름 + 컬럼 수. 펼치면 컬럼 목록(<code>PK</code>, 계산 컬럼 <code>ƒ</code>, NOT NULL <code>*</code>).</li>
+  <li><b>우하단 범례</b> — 확정(FK·사용자 확정) / 추정(검증·AI 제안) / 미검증 / 뷰 계보.</li>
+</ul>
+<h3>6-2. 마우스 조작</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:220px">동작</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>노드 헤더 <b>드래그</b></td><td>이동(이 세션에서만 유지). 좌하단 초기화 버튼으로 자동 배치 복원</td></tr>
+    <tr><td>노드 헤더 <b>더블클릭</b></td><td>컬럼 펼치기/접기</td></tr>
+    <tr><td>노드 <b>우클릭</b></td><td>메뉴: <code>여기서 미리보기 · 테이블 상세로 · 조인 검증하기 · 컬럼 펼치기/접기 · 테이블명 복사</code></td></tr>
+    <tr><td>선(엣지) <b>호버</b></td><td>그 관계만 진하게, 연결 컬럼 라벨 표시</td></tr>
+    <tr><td>선 <b>클릭</b></td><td>양쪽 노드를 펼치고 우하단에 상세(등급·컬럼 페어·confidence·cardinality·검증 시각)</td></tr>
+    <tr><td>빈 곳 클릭</td><td>선택·메뉴 해제</td></tr>
+  </tbody>
+</table></div>
+<p>「여기서 미리보기」를 고르면 그림 아래로 미리보기가 이어 붙습니다(겹치는 창이 아니라 아래에 붙습니다). 다른 화면에서 <code>/erd?focus=…</code>로 들어오면 그 테이블에 포커스된 채 열립니다.</p>
+
+<!-- ───────────────────────────── 7 ───────────────────────────── -->
+<h2 id="s7"><span class="num">7</span>값 추적 <code>/trace</code></h2>
+<h3>7-1. 무엇을 하는 화면인가</h3>
+<p>업무 화면에 <code>ORD-0910-001</code> 같은 값이 보이는데 DB의 어느 테이블·컬럼에 저장돼 있는지 모를 때 씁니다. 값 하나를 넣으면 db-viewer가 후보 컬럼을 고르고, 후보 테이블마다 <b>딱 한 번씩</b> "이 값 있나요?"를 물어 찾은 것부터 화면에 쌓아 줍니다.</p>
+<div class="note"><b>왜 스키마를 꼭 고르나</b> 창고(DB)에 선반이 2,342개라 모든 칸에 물어보면 운영 DB가 느려집니다. 스키마가 곧 시스템이니 "어느 시스템 값인지"만 골라도 대부분을 <b>공짜로</b> 잘라냅니다. 나머지도 타입·길이·마스킹 같은 재고표 정보로 미리 걸러 실제 쿼리는 최소로만 나갑니다.</div>
+
+<h3>7-2. 따라 하기</h3>
+<ol class="steps">
+  <li><b>스키마</b>를 고릅니다. 미리보기가 허용된 스키마만 칩으로 나오며 카테고리별로 묶여 있습니다. <code>허용 스키마 전체</code> 토글로 한 번에 켤 수도 있지만, 좁힐수록 빠르고 쌉니다.</li>
+  <li>필요하면 <code>다른 스키마의 연관 뷰 포함</code>을 켭니다(7-4).</li>
+  <li><b>값</b>을 붙여 넣습니다(100자까지). <b>화면 라벨</b>은 선택 사항입니다. "주문번호"처럼 화면에 적힌 이름을 넣으면 비슷한 컬럼명부터 먼저 찾습니다.</li>
+  <li><b>일치 기준</b>을 고릅니다(7-3). 기본은 <code>표기 변형 포함</code>.</li>
+  <li><span class="btn">찾기</span>를 누릅니다. 버튼이 스피너와 <code>찾는 중 12 / 422</code>로 바뀌고 버튼 안에 진행 바가 찹니다. 그동안 입력칸은 잠깁니다.</li>
+  <li>멈추고 싶으면 <b>버튼 위에 마우스를 올리면</b> <span class="btn">중단</span>으로 바뀝니다. 누르면 지금 확인 중인 객체까지만 끝내고 멈춥니다. 키보드로 <kbd>Enter</kbd>로 시작했다면 키를 뗀 뒤 다시 <kbd>Enter</kbd>가 중단입니다.</li>
+  <li><b>찾은 컬럼</b> 카드에 히트가 도착하는 대로 쌓입니다. 끝까지 기다리지 않아도 됩니다.</li>
+</ol>
+
+<h3>7-3. 일치 기준 3가지</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:150px">기준</th><th>이렇게 찾는다</th><th>언제</th><th>비용</th></tr></thead>
+  <tbody>
+    <tr><td><b>표기 변형 포함</b><br>(기본)</td><td>대소문자·앞뒤 공백·구분자 차이, <code>1,000</code>↔<code>1000</code>, <code>2026.09.10</code>↔<code>2026-09-10</code>↔<code>20260910</code>, 전화번호 하이픈 유무 같은 <b>표기만 다른 값</b>을 함께 찾습니다.</td><td>화면 값이 DB 원본과 포맷이 다를 수 있을 때(대부분)</td><td>싸다 — 인덱스를 탑니다</td></tr>
+    <tr><td><b>정확히</b></td><td>입력한 그대로만.</td><td>값이 정확히 같다고 확신할 때, 결과를 좁히고 싶을 때</td><td>싸다</td></tr>
+    <tr><td><b>부분 일치</b></td><td>이 글자를 포함하는 값(<code>LIKE '%값%'</code>).</td><td>값이 잘렸거나 합쳐져 보일 때</td><td><b>비싸다</b> — 모든 후보를 처음부터 끝까지 읽습니다. 그래서 <b>후보 객체 20개 이하일 때만</b> 허용됩니다. 넘으면 "범위를 좁혀라"는 오류가 뜹니다.</td></tr>
+  </tbody>
+</table></div>
+<div class="note"><b>한계</b> 표기 변형은 대문자·소문자·원문·trim 등 몇 가지 형태만 시도합니다. <code>oRd-0910</code>처럼 임의로 섞인 대소문자는 못 잡습니다. 그런 값은 부분 일치를 쓰되 스키마를 최대한 좁히세요.</div>
+
+<h3>7-4. 연관 뷰 포함</h3>
+<p>고른 스키마의 테이블을 읽는 <b>다른 스키마의 뷰</b>까지 후보에 넣습니다. 뷰는 값을 "가공"해서 보여주는 경우가 있어(코드→이름, 날짜 포맷, 두 컬럼 합치기) 원본 테이블에는 없는 형태가 뷰에만 있을 수 있습니다.</p>
+<ul>
+  <li>그 뷰의 스키마도 <b>미리보기 허용</b>이고 <b>비공개가 아닐 때만</b> 검색합니다. 값을 실제로 읽는 일이라 같은 규칙을 지킵니다.</li>
+  <li>규칙에 걸려 뺀 뷰는 조용히 사라지지 않고 진행 카드에 <code>연관 뷰 +3 · 제외 2 ⓘ</code>처럼 표시됩니다. <b>ⓘ에 마우스를 올리면</b> 어떤 뷰가 왜 빠졌는지(<code>허용 목록 밖</code> / <code>숨김 스키마</code>) 목록이 뜹니다. 10개까지 보이고 나머지는 <code>외 N개</code>입니다.</li>
+  <li>이 옵션은 뷰 계보가 수집된 MSSQL 소스에서 의미가 있습니다. PostgreSQL·SQLite는 계보가 없어 0개입니다.</li>
+</ul>
+
+<h3>7-5. 진행 카드 읽기</h3>
+<ul>
+  <li>상태 배지: <code>대기 · 실행 중 · 완료 · 실패 · 취소됨</code>.</li>
+  <li>스탯 필: <code>후보 객체</code>(실제로 쿼리를 보낼 테이블·뷰 수) · <code>컬럼</code>(검사하는 컬럼 수) · <code>무거운 객체</code>(자동 실행에서 뺀 수) · <code>연관 뷰</code>(켰을 때).</li>
+  <li>진행 바 아래 <code>12 / 422</code>와 <code>지금 확인 중: SAP.T_ORD · 8s</code>. 대략 몇 초에 몇 개를 훑는지로 남은 시간을 가늠할 수 있습니다.</li>
+</ul>
+
+<h3>7-6. 찾은 컬럼 카드</h3>
+<p>행 하나가 히트 하나입니다: <code>테이블/뷰</code> 배지 · <code>스키마.객체</code> · 컬럼 칩 · <b>건수</b>.</p>
+<ul>
+  <li>건수는 1000까지만 셉니다(넘으면 <code>1000+</code>). 무거운 객체를 선택 실행한 경우엔 건수 대신 <code>확인됨</code>입니다.</li>
+  <li>입력값과 저장 형태가 다르면 <code>저장 형태 1000</code>처럼 실제로 맞은 모양을 알려줍니다.</li>
+  <li><span class="btn">미리보기 열기</span> — 테이블 화면이 열리면서 <b>그 컬럼 = 실제 저장값</b> 필터가 이미 걸린 미리보기가 뜹니다. 입력한 값이 아니라 "저장 형태"로 필터를 걸어 주니 바로 행이 보입니다.</li>
+  <li><span class="btn">쿼리 보기</span>(뷰 히트만) — 행 아래에 뷰 정의 SQL이 펼쳐지고 <b>히트한 컬럼이 강조 배경으로 표시</b>됩니다. 헤더에 <code>히트 컬럼: RELATED_CD</code> 칩이 붙고, 아래에 <code>원본: dbo.APV_APRV.APRVCD</code>처럼 이 컬럼이 어느 테이블에서 왔는지도 같이 보여줍니다. 여러 뷰를 동시에 펼쳐 비교할 수 있습니다.</li>
+  <li><code>노출하는 뷰 N</code> — 테이블 히트일 때, 이 컬럼을 그대로 내보내는 뷰 목록을 접이식으로 보여줍니다. "화면은 아마 이 뷰를 읽고 있겠구나"를 짐작하는 데 씁니다.</li>
+  <li><code>오류·타임아웃 대상 N</code> — 쿼리가 실패한 객체 목록. 잡 전체는 계속 진행됩니다.</li>
+</ul>
+<p>다 돌았는데 하나도 없으면 <code>선택한 스키마에서 찾지 못했다</code>와 함께, 아직 안 본 허용 스키마가 남아 있으면 <span class="btn">나머지 허용 스키마로 계속</span> 버튼이 나옵니다. 자동으로 범위를 넓히지 않고 사용자가 누를 때만 넓힙니다.</p>
+
+<h3>7-7. 무거운 객체 카드</h3>
+<p>행 수가 <b>200만을 넘거나</b> 행 수를 <b>모르거나</b>(계보가 안 풀린 뷰), <b>집계·DISTINCT·UNION 같은 무거운 뷰</b>는 자동 실행에서 뺍니다. 한 번의 조회가 운영 DB에 부담을 줄 수 있기 때문입니다.</p>
+<ul>
+  <li>사유 배지: <code>행 수 초과</code>(주황) · <code>행 수 미상</code>(회색) · <code>집계·DISTINCT 뷰</code>(보라). 옆에 추정 행 수.</li>
+  <li>꼭 봐야 하는 객체만 체크하고 <span class="btn">선택 실행</span>. 체크가 곧 "비용을 감수하겠다"는 승인입니다. 잡이 도는 동안은 버튼이 잠기니 끝난 뒤에 누르세요.</li>
+</ul>
+
+<h3>7-8. 팁과 규칙</h3>
+<ul>
+  <li><b>스키마를 좁히는 것이 가장 큰 절약</b>입니다. 시스템을 안다면 그 스키마 하나만 고르세요.</li>
+  <li>검색은 <b>미리보기 허용 스키마 안에서만</b> 됩니다. 원하는 스키마가 목록에 없으면 관리자에게 허용 요청을 하세요.</li>
+  <li>마스킹된 컬럼, 컬럼 비공개 스키마, 모든 테이블이 히트할 법한 저카디널리티 컬럼(<code>USE_YN</code>류)은 후보에서 빠집니다.</li>
+  <li>한 번의 검색은 <b>감사 로그</b>에 남습니다(소스·스키마·값·대상 수). 결과는 검색한 본인과 관리자만 볼 수 있습니다.</li>
+  <li>MSSQL 소스에서 한 쿼리의 시간 상한은 n8n 연결 설정(<code>requestTimeout</code>)이 정합니다. 시간이 초과되면 그 객체만 <code>timeout</code>으로 기록되고 다음으로 넘어갑니다.</li>
+</ul>
+
+<!-- ───────────────────────────── 8 ───────────────────────────── -->
+<h2 id="s8"><span class="num">8</span>파싱 지표 · 스키마 Q&amp;A</h2>
+<h3>8-1. 파싱 지표 <code>/parsing</code> (MSSQL 전용)</h3>
+<p>뷰 정의 SQL을 얼마나 해석했는지 보여줍니다. 큰 숫자가 <b>파싱 성공률</b>이고, 타일에 <code>전체 뷰 · 파싱 성공 · 부분 해석 · 미지원 · 파싱 실패 · 정의 없음(권한)</code>이 나옵니다. 아래 표의 뷰 이름을 누르면 그 뷰의 상세로 이동합니다. 계보가 안 풀린 뷰는 값 추적에서 <code>행 수 미상</code>으로 무거운 객체에 들어가니, 여기서 원인을 확인할 수 있습니다.</p>
+<h3>8-2. 스키마 Q&amp;A (헤더 말풍선 아이콘, MSSQL 전용)</h3>
+<p>"수주와 출하를 잇는 테이블은?"처럼 자연어로 물으면 AI가 스키마 정보를 바탕으로 답합니다. 답변에 붙는 테이블 칩을 누르면 ERD의 그 테이블로 이동합니다. LLM이 연결돼 있지 않으면 <code>AI 미연결 — 목업 응답</code> 배지가 붙습니다. 대화는 브라우저에 저장됩니다.</p>
+
+<!-- ───────────────────────────── 9 ───────────────────────────── -->
+<h2 id="s9"><span class="num">9</span>관리 콘솔 <code>/admin</code> (관리자)</h2>
+<p>시스템 관리자에게만 보입니다. 위에서부터 섹션 순서대로.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:190px">섹션</th><th>무엇을 하나</th><th>알아둘 점</th></tr></thead>
+  <tbody>
+    <tr><td><b>데이터 소스</b></td><td>PostgreSQL·SQLite 소스 등록·연결 테스트·수집·활성/비활성·수정·삭제. <span class="btn">연동 안내서 내려받기</span>는 새 DB를 연결해 줄 서비스 담당자에게 보낼 안내서입니다.</td><td>수정 작업은 <code>관리 비밀번호</code>를 먼저 입력해야 풀립니다. 사내 MSSQL(관리형)은 배포 설정이 원본이라 여기서 못 고칩니다. <code>SOURCE_SECRET_KEY</code>가 없으면 등록이 막힙니다.</td></tr>
+    <tr><td><b>카탈로그 수집</b></td><td><span class="btn">1단계: 카탈로그 수집</span> → <span class="btn">2단계: 뷰 의존·파싱</span> 또는 <span class="btn">전체 실행</span>. 진행 단계와 최근 잡 5건.</td><td>멈춘 잡이 새 수집을 막으면 <span class="btn">중단</span>으로 잡만 닫습니다.</td></tr>
+    <tr><td><b>미리보기 허용 스키마</b></td><td>소스별로 값을 볼 수 있는 스키마를 <span class="btn">허용 추가</span>/<span class="btn">허용 해제</span>. 스키마 1건을 허용하면 그 안의 모든 테이블·뷰가 열립니다.</td><td>목록이 비어 있으면 <b>전부 차단</b>입니다. 수정에는 <code>PREVIEW_ADMIN_PASSWORD</code>가 필요합니다. 값 추적도 이 목록을 따릅니다.</td></tr>
+    <tr><td><b>컬럼 비공개 스키마</b></td><td>서버 <code>HIDDEN_SCHEMAS</code>로 감춘 스키마의 <b>이름을 좌측 목록에 보일지</b>만 토글합니다.</td><td>켜도 컬럼·값·진입은 여전히 막혀 있습니다. 어떤 스키마를 감출지는 .env에서만 바꿉니다.</td></tr>
+    <tr><td><b>AI 임베딩 인덱싱</b></td><td>테이블 검색용 임베딩 생성. 재실행하면 남은 분량을 이어갑니다.</td><td></td></tr>
+    <tr><td><b>로그인 화이트리스트</b></td><td>login_id 추가·삭제, <span class="btn">AD 전체 동기화</span>.</td><td>여기 없는 계정은 로그인해도 "접근 권한이 없습니다"를 봅니다.</td></tr>
+    <tr><td><b>AD 사용자</b></td><td>동기화된 전체 인원 검색(이름·ID·부서). 행에 마우스를 올리면 <code>+</code>로 바로 허용.</td><td></td></tr>
+    <tr><td><b>감사 로그</b> <code>/admin/audit</code></td><td>동작·요청자·대상·기간으로 필터. 미리보기·조인 샘플·값 추적 같은 실값 조회와 권한 변경이 최신순으로.</td><td>100건씩 페이지. 수정·삭제는 없습니다.</td></tr>
+  </tbody>
+</table></div>
+
+<!-- ───────────────────────────── 10 ───────────────────────────── -->
+<h2 id="s10"><span class="num">10</span>자주 묻는 질문 · 문제 해결</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:250px">증상</th><th>이유</th><th>해결</th></tr></thead>
+  <tbody>
+    <tr><td>"접근 권한이 없습니다"</td><td>화이트리스트 미등록</td><td>관리자에게 등록 요청</td></tr>
+    <tr><td><span class="btn">미리보기 TOP 20</span>이 잠겨 있고 <code>미리보기 미허용</code></td><td>그 스키마가 미리보기 허용 목록에 없음</td><td>관리자에게 스키마 허용 요청. 구조(컬럼·관계)는 그대로 볼 수 있음</td></tr>
+    <tr><td>목록에서 회색 <code>컬럼 비공개</code></td><td>서버가 컬럼을 감춘 스키마</td><td>정책 대상. 이름 확인만 가능</td></tr>
+    <tr><td>값 추적에서 고를 스키마가 없음</td><td>이 소스에 허용 스키마가 0개</td><td>관리자에게 허용 요청</td></tr>
+    <tr><td>값 추적 "범위를 좁혀라" 오류</td><td>부분 일치인데 후보가 20개 초과</td><td>스키마를 줄이거나 표기 변형 모드로</td></tr>
+    <tr><td>값 추적 결과 0건</td><td>다른 스키마에 있거나, 뷰에서 가공된 값이거나, 대소문자가 섞였거나, 마스킹 컬럼</td><td>「나머지 허용 스키마로 계속」 → 연관 뷰 포함 → 부분 일치 순으로 넓히기</td></tr>
+    <tr><td>값 추적 히트는 있는데 미리보기가 0행</td><td>직결 소스(PG·SQLite)의 소수 컬럼은 저장 형태(<code>1000.0</code>)와 필터값(<code>1000</code>)이 달라 필터가 안 맞을 수 있음</td><td>미리보기에서 필터를 지우고 <code>부분 일치</code>로 다시 걸기. MSSQL은 해당 없음</td></tr>
+    <tr><td>무거운 객체가 많다</td><td>큰 테이블이 많거나 계보가 안 풀린 뷰가 많음</td><td>정말 필요한 것만 체크해 <span class="btn">선택 실행</span>. 파싱 지표에서 계보 실패 원인 확인</td></tr>
+    <tr><td>미리보기 표가 비어 있음</td><td>문구가 두 가지: 조건이 좁음 / 테이블이 실제로 0행</td><td>4-5절 참고</td></tr>
+    <tr><td>미리보기가 502 오류</td><td>원본 DB에 연결이 안 됨(n8n 워크플로 비활성, 자격증명, 네트워크)</td><td>관리자에게 오류 문구 그대로 전달</td></tr>
+    <tr><td>조인 검증·파싱 지표 메뉴가 안 보임</td><td>MSSQL이 아닌 소스를 보는 중</td><td>헤더 소스 선택에서 사내 MSSQL로 전환</td></tr>
+    <tr><td>AI 요약에 <code>목업</code> 배지</td><td>사내 LLM 미연결</td><td>정상. 연결되면 실제 요약으로 바뀜</td></tr>
+    <tr><td>뷰 쿼리 보기에 "정의가 수집되지 않았다"</td><td>수집 시 원본 DB의 VIEW DEFINITION 권한 없음</td><td>DBA에게 권한 요청 후 카탈로그 재수집</td></tr>
+    <tr><td>복사 버튼이 "복사 실패"</td><td>http 환경에서 클립보드 제한</td><td>텍스트를 직접 드래그해 복사</td></tr>
+  </tbody>
+</table></div>
+
+<!-- ───────────────────────────── 11 ───────────────────────────── -->
+<h2 id="s11"><span class="num">11</span>숫자·한계·주소 모음</h2>
+<h3>11-1. 눈에 띄는 숫자</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>항목</th><th>값</th></tr></thead>
+  <tbody>
+    <tr><td>미리보기 행수</td><td>TOP 20 / 50 / 100 / 200 / 500</td></tr>
+    <tr><td>미리보기 조건 수</td><td>최대 5개</td></tr>
+    <tr><td>값 자동완성</td><td>불러온 행 기준 상위 50개</td></tr>
+    <tr><td>값 추적 입력값</td><td>100자</td></tr>
+    <tr><td>값 추적 부분 일치</td><td>후보 객체 20개 이하일 때만</td></tr>
+    <tr><td>값 추적 건수 표시</td><td>1000까지, 넘으면 1000+</td></tr>
+    <tr><td>값 추적 무거운 객체 기준</td><td>행 수 200만 초과 또는 미상, 집계·DISTINCT·UNION 뷰</td></tr>
+    <tr><td>값 추적 스키마 수</td><td>한 번에 50개까지</td></tr>
+    <tr><td>ⓘ 제외 뷰 목록</td><td>10개 + 외 N개</td></tr>
+    <tr><td>조인 검증 1단계 표본</td><td>TOP 200행, 유니크 비율 0.9</td></tr>
+    <tr><td>유사 테이블 기준</td><td>컬럼명 일치율 30% 이상</td></tr>
+    <tr><td>JOIN KEYS 칩</td><td>12개 + N</td></tr>
+    <tr><td>감사 로그</td><td>100건씩</td></tr>
+  </tbody>
+</table></div>
+<h3>11-2. 주소(딥링크) — 링크로 공유하기</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th style="width:320px">주소</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td><code>/?table=&lt;id&gt;</code></td><td>그 테이블이 선택된 상태로 열림</td></tr>
+    <tr><td><code>/?table=&lt;id&gt;&amp;preview=1</code></td><td>미리보기까지 자동으로 열림(한 번 쓰이면 주소에서 사라짐)</td></tr>
+    <tr><td><code>/?table=&lt;id&gt;&amp;preview=1&amp;filters=[…]</code></td><td>필터가 걸린 미리보기(값 추적의 「미리보기 열기」가 만드는 주소)</td></tr>
+    <tr><td><code>…&amp;source=&lt;id&gt;</code></td><td>어느 데이터 소스인지. 모든 화면에 붙일 수 있음</td></tr>
+    <tr><td><code>/erd?focus=&lt;id&gt;&amp;label=스키마.테이블</code></td><td>그 테이블에 포커스된 ERD</td></tr>
+    <tr><td><code>/verify?src=&lt;id&gt;&amp;tgt=&lt;id&gt;&amp;srcCol=…&amp;tgtCol=…</code></td><td>테이블·컬럼이 미리 채워진 조인 검증</td></tr>
+    <tr><td><code>/trace</code></td><td>값 추적</td></tr>
+    <tr><td><code>/handoff/user-guide.html</code></td><td>이 문서</td></tr>
+  </tbody>
+</table></div>
+<p class="lede" style="margin-top:28px">궁금한 점이 남으면 관리자에게 화면 이름과 눌렀던 버튼, 보인 문구를 그대로 전해 주세요. 그 세 가지면 대부분 바로 답할 수 있습니다.</p>
+<a class="top" href="#s0">맨 위로 ↑</a>
+
+</main>
+</body>
+</html>

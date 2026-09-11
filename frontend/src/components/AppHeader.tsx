@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatPanel } from "@/components/ChatPanel";
-import { CaretDownIcon, LogoMark, MoonIcon, SunIcon } from "@/components/icons";
+import { CaretDownIcon, DownloadIcon, LogoMark, MoonIcon, SunIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
@@ -180,6 +180,18 @@ export function AppHeader({ children, sourceEngine }: AppHeaderProps) {
       <div className="ml-auto flex items-center gap-2">
         {children}
         {isMssqlSource && <ChatPanel />}
+        {/* 사용 안내서 — 정적 HTML을 내려받는다(연동 안내서와 같은 배포 파생물 위치)
+            / static user guide, same handoff location as the integration guide */}
+        <a
+          href="/handoff/user-guide.html"
+          download="db-viewer-사용안내.html"
+          className="icon-button inline-flex items-center gap-1.5"
+          title={t("header.userGuide")}
+          data-testid="AppHeader-userGuideDownload"
+        >
+          <DownloadIcon size={13} className="inline-block align-middle" />
+          <span>{t("header.userGuide")}</span>
+        </a>
         <LangToggle />
         <ThemeToggle />
         <UserMenu />
