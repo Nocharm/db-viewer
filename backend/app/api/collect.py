@@ -58,6 +58,8 @@ def get_collect_runner_for(
 
 
 class TriggerRequest(BaseModel):
+    # 하위 호환용 — 잡·감사의 주체는 인증된 관리자다(이 값은 무시된다)
+    # / kept for old clients; the job and audit requester come from require_sysadmin
     triggered_by: str = "local"
     source_id: int | None = None
 
@@ -66,6 +68,11 @@ class StepRequest(BaseModel):
     job_id: int
     triggered_by: str = "local"
     source_id: int | None = None
+
+
+def _source_label(source_id: int | None) -> str:
+    """감사 대상 표기 — 기본 소스(사내 MSSQL)는 'default' / audit target label for a source."""
+    return f"source={source_id if source_id is not None else 'default'}"
 
 
 def _create_job(db: Session, mode: str, triggered_by: str) -> CollectJob:
@@ -185,15 +192,16 @@ def trigger_catalog_step(
     db: Session = Depends(get_db),
     runner: CollectRunner = Depends(get_collect_runner),
     session_factory: sessionmaker = Depends(get_collect_session_factory),
+    admin: str = Depends(require_sysadmin),
 ) -> dict:
     """1단계 — 카탈로그 수집(객체·컬럼·키·FK·뷰 정의) 트리거."""
     if req.source_id is not None:
         runner = get_collect_runner_for(req.source_id, db, session_factory)
-    job = _create_job(db, "step", req.triggered_by)
+    job = _create_job(db, "step", admin)
     # 소스 DB를 통째로 읽으러 가는 조작 — 누가 어느 소스에 걸었는지 남긴다
-    db.add(AuditLog(action="collect_trigger",
-                    detail=f"catalog source={req.source_id if req.source_id is not None else 'default'}",
-                    requested_by=req.triggered_by, requested_at=datetime.now(UTC)))
+    db.add(AuditLog(action="collect_trigger", target=_source_label(req.source_id),
+                    detail=f"catalog {_source_label(req.source_id)}",
+                    requested_by=admin, requested_at=datetime.now(UTC)))
     background.add_task(_run_catalog_step, session_factory, runner, job.id)
     return _job_payload(job)
 
@@ -205,6 +213,7 @@ def trigger_view_deps_step(
     db: Session = Depends(get_db),
     runner: CollectRunner = Depends(get_collect_runner),
     session_factory: sessionmaker = Depends(get_collect_session_factory),
+    admin: str = Depends(require_sysadmin),
 ) -> dict:
     """2단계 — 뷰 의존 수집 + lineage·파싱. 1단계 완료(catalog_done)가 선행 조건.
 
@@ -227,6 +236,10 @@ def trigger_view_deps_step(
         })
     job.stage = "deps_running"
     job.updated_at = datetime.now(UTC)
+    # 2단계도 소스를 읽는 조작 — 1단계·전체 실행과 같은 action으로 남긴다
+    db.add(AuditLog(action="collect_trigger", target=_source_label(req.source_id),
+                    detail=f"view-deps job=#{job.id} {_source_label(req.source_id)}",
+                    requested_by=admin, requested_at=job.updated_at))
     background.add_task(_run_deps_step, session_factory, runner, job.id, job.snapshot_id)
     return _job_payload(job)
 
@@ -238,14 +251,15 @@ def trigger_full_collection(
     db: Session = Depends(get_db),
     runner: CollectRunner = Depends(get_collect_runner),
     session_factory: sessionmaker = Depends(get_collect_session_factory),
+    admin: str = Depends(require_sysadmin),
 ) -> dict:
     """전체 실행 — 카탈로그 → 뷰 의존을 자동 체인."""
     if req.source_id is not None:
         runner = get_collect_runner_for(req.source_id, db, session_factory)
-    job = _create_job(db, "full", req.triggered_by)
-    db.add(AuditLog(action="collect_trigger",
-                    detail=f"full source={req.source_id if req.source_id is not None else 'default'}",
-                    requested_by=req.triggered_by, requested_at=datetime.now(UTC)))
+    job = _create_job(db, "full", admin)
+    db.add(AuditLog(action="collect_trigger", target=_source_label(req.source_id),
+                    detail=f"full {_source_label(req.source_id)}",
+                    requested_by=admin, requested_at=datetime.now(UTC)))
     background.add_task(_run_full, session_factory, runner, job.id)
     return _job_payload(job)
 
@@ -272,9 +286,14 @@ def cancel_collect_job(
     if job.stage not in RUNNING_STAGES:
         raise HTTPException(409, {"message": "job is not running",
                                   "context": {"job_id": job_id, "stage": job.stage}})
+    previous = job.stage
     job.stage = "failed"
     job.error = f"cancelled by {admin}"
     job.updated_at = datetime.now(UTC)
+    # 중단도 남긴다 — 수집이 왜 실패로 끝났는지 잡 오류 문구만으로는 감사 화면에 안 보인다
+    db.add(AuditLog(action="collect_cancel", target=f"job=#{job.id}",
+                    detail=f"job=#{job.id} stage={previous}",
+                    requested_by=admin, requested_at=job.updated_at))
     return _job_payload(job)
 
 

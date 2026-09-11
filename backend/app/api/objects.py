@@ -465,7 +465,7 @@ def get_object_preview(
         ]
 
     now = datetime.now(UTC)
-    db.add(AuditLog(action="table_preview",
+    db.add(AuditLog(action="table_preview", target=qname,
                     detail=f"{qname} ({len(rows)} rows){format_filter_note(conds)}",
                     requested_by=login_id, requested_at=now))
     return {

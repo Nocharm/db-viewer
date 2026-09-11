@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.validate import resolve_column_ref
+from app.auth import get_current_user
 from app.db import get_db
 from app.models import AuditLog, CatalogColumn, CatalogObject, Relation, Snapshot
 from app.models.sources import MANAGED_MSSQL_SOURCE_ID
@@ -21,11 +22,16 @@ PENDING_LIMIT = 100  # 대기 목록 한 화면 상한 — total로 절단 여�
 class ConfirmRequest(BaseModel):
     src_column_id: int
     tgt_column_id: int
+    # 하위 호환용 — 감사 요청자는 인증 사용자로 기록한다(이 값은 무시된다)
     confirmed_by: str = "local"
 
 
 @router.post("/confirm")
-def confirm_relation(req: ConfirmRequest, db: Session = Depends(get_db)) -> dict:
+def confirm_relation(
+    req: ConfirmRequest,
+    db: Session = Depends(get_db),
+    login_id: str = Depends(get_current_user),
+) -> dict:
     """검증된 관계를 confirmed로 승격 — 이후 스코어링의 정답셋 (계획 §3.6)."""
     src_ref, _ = resolve_column_ref(db, req.src_column_id)
     tgt_ref, _ = resolve_column_ref(db, req.tgt_column_id)
@@ -54,8 +60,8 @@ def confirm_relation(req: ConfirmRequest, db: Session = Depends(get_db)) -> dict
 
     relation.status = "confirmed"
     db.add(AuditLog(
-        action="confirm", detail=f"{src_ref} -> {tgt_ref}",
-        requested_by=req.confirmed_by, requested_at=datetime.now(UTC),
+        action="confirm", target=src_ref.object_qname, detail=f"{src_ref} -> {tgt_ref}",
+        requested_by=login_id, requested_at=datetime.now(UTC),
     ))
     return {
         "src": str(src_ref), "tgt": str(tgt_ref),

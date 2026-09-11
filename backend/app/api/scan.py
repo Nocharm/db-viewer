@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.validate import get_join_validator, resolve_column_ref
+from app.auth import get_current_user
 from app.config import get_settings
 from app.db import get_db, get_session_factory
 from app.domain import scoring
@@ -27,6 +28,7 @@ def get_scan_session_factory() -> sessionmaker:
 class ScanRequest(BaseModel):
     column_id: int
     night_only: bool = False
+    # 하위 호환용 — 잡의 주체는 인증 사용자다(이 값은 무시된다)
     triggered_by: str = "local"
 
 
@@ -37,6 +39,7 @@ def start_scan(
     db: Session = Depends(get_db),
     validator: JoinValidator = Depends(get_join_validator),
     session_factory: sessionmaker = Depends(get_scan_session_factory),
+    login_id: str = Depends(get_current_user),
 ) -> dict:
     """스캔 잡 등록 — 동기 실행 금지, 202 + 폴링 (계획 §4)."""
     src_ref, src_col = resolve_column_ref(db, req.column_id)
@@ -68,7 +71,7 @@ def start_scan(
             now, req.night_only,
             settings.scan_night_start_hour, settings.scan_night_end_hour,
         ),
-        triggered_by=req.triggered_by, created_at=now,
+        triggered_by=login_id, created_at=now,
     )
     db.add(job)
     db.flush()

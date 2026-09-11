@@ -159,7 +159,7 @@ def start_value_probe(
         detail += (f" related_views=+{len(related.object_ids)}/-{len(related.skipped)}"
                    f" related_schemas={_format_schemas(list(related.schemas))}")
     db.add(AuditLog(
-        action="value_probe", detail=detail[:600],
+        action="value_probe", target=_format_schemas(schemas)[:300], detail=detail[:600],
         requested_by=login_id, requested_at=now,
     ))
     db.flush()
@@ -304,7 +304,7 @@ def run_heavy_targets(
         job.finished_at = None
         job.error = None
     db.add(AuditLog(
-        action="value_probe_heavy",
+        action="value_probe_heavy", target=f"job=#{job.id}",
         detail=(f"job={job.id} source={job.data_source_id} "
                 f"targets={','.join(t.qname for t in targets)}")[:600],
         requested_by=login_id, requested_at=now,

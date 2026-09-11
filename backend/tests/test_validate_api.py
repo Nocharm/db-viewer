@@ -49,9 +49,10 @@ def test_containment_records_history_and_relation(vclient, migrated_engine, load
     src_id = _column_id(migrated_engine, rel["src_object"], rel["src_column"])
     tgt_id = _column_id(migrated_engine, rel["tgt_object"], rel["tgt_column"])
 
+    # 관측 주체는 인증 사용자(X-Dev-User) — 본문의 triggered_by는 무시된다
     body = vclient.post("/api/validate/containment", json={
-        "src_column_id": src_id, "tgt_column_id": tgt_id, "triggered_by": "test",
-    }).json()
+        "src_column_id": src_id, "tgt_column_id": tgt_id, "triggered_by": "someone.else",
+    }, headers={"X-Dev-User": "test"}).json()
 
     assert body["containment"] == 1.0
     assert body["cardinality"] == "N:1"

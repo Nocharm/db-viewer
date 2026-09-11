@@ -14,6 +14,7 @@ from app.api.validate import (
     resolve_column_ref,
     resolve_column_source_id,
 )
+from app.auth import get_current_user
 from app.db import get_db
 from app.domain.validation import JoinStepRef, JoinValidator, ValidationDataMissing
 from app.models import AuditLog
@@ -35,6 +36,8 @@ class JoinStepIn(BaseModel):
 
 class JoinPreviewRequest(BaseModel):
     steps: list[JoinStepIn] = Field(min_length=1)
+    # 하위 호환용 — 감사 요청자는 인증 사용자로 기록한다(이 값은 무시된다)
+    # / kept for old clients; the audit requester comes from the auth dependency
     requested_by: str = "local"
 
 
@@ -115,6 +118,7 @@ def run_join_preview(
     req: JoinPreviewRequest,
     db: Session = Depends(get_db),
     validator: JoinValidator = Depends(get_join_validator),
+    login_id: str = Depends(get_current_user),
 ) -> dict:
     """N-웨이 조인 샘플 — 원본 값이 나가는 지점: 무캐시·마스킹·감사 (스펙 §3.3)."""
     if len(req.steps) > MAX_STEPS:
@@ -208,8 +212,9 @@ def run_join_preview(
     now = datetime.now(UTC)
     db.add(AuditLog(
         action="join_preview",
+        target=f"{refs[0].left_schema}.{refs[0].left_table}",
         detail=_build_audit_detail(refs, len(rows)),
-        requested_by=req.requested_by, requested_at=now,
+        requested_by=login_id, requested_at=now,
     ))
     return {
         "rows": rows, "query": query, "limit": PREVIEW_LIMIT,

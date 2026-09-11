@@ -462,15 +462,54 @@ def test_collect_trigger_is_audited(cclient, monkeypatch):
     monkeypatch.setenv("DBV_SYSADMINS", "admin.user")
     get_settings.cache_clear()
 
-    # Act: 카탈로그 수집을 건다
-    res = cclient.post("/api/collect/catalog", json={"triggered_by": "kim.ops"})
+    # Act: 카탈로그 수집을 건다 — 본문의 triggered_by는 위조 가능하므로 무시돼야 한다
+    res = cclient.post("/api/collect/catalog", json={"triggered_by": "kim.ops"},
+                       headers={"X-Dev-User": "admin.user"})
     assert res.status_code == 202
 
-    # Assert: 누가 어느 소스에 걸었는지 남는다 (기본 소스는 'default')
+    # Assert: 누가 어느 소스에 걸었는지 남는다 (기본 소스는 'default') — 인증 사용자 기준
     items = cclient.get("/api/admin/audit",
                         headers={"X-Dev-User": "admin.user"}).json()["items"]
     triggers = [i for i in items if i["action"] == "collect_trigger"]
     assert len(triggers) == 1
     assert triggers[0]["detail"] == "catalog source=default"
-    assert triggers[0]["requested_by"] == "kim.ops"
+    assert triggers[0]["target"] == "source=default"
+    assert triggers[0]["requested_by"] == "admin.user"
+    assert res.json()["triggered_by"] == "admin.user"
+    get_settings.cache_clear()
+
+
+def test_view_deps_and_cancel_are_audited(cclient, monkeypatch):
+    from app.api.collect import get_collect_runner
+    from app.config import get_settings
+
+    monkeypatch.setenv("DBV_SYSADMINS", "admin.user")
+    get_settings.cache_clear()
+    admin = {"X-Dev-User": "admin.user"}
+
+    # 2단계 단독 실행 — 픽스처 러너가 1단계를 catalog_done까지 끝내 준다
+    job_id = cclient.post("/api/collect/catalog", json={}, headers=admin).json()["job_id"]
+    res = cclient.post("/api/collect/view-deps", json={"job_id": job_id}, headers=admin)
+    assert res.status_code == 202
+
+    # 중단 — 콜백이 오지 않는 러너로 멈춘 잡을 만든 뒤 닫는다
+    class HangingRunner:
+        def run_catalog(self, job_id: int) -> None:
+            pass
+
+        def run_view_deps(self, job_id: int, snapshot_id: int) -> None:
+            pass
+
+    cclient.app.dependency_overrides[get_collect_runner] = lambda: HangingRunner()
+    stuck_id = cclient.post("/api/collect/catalog", json={}, headers=admin).json()["job_id"]
+    assert cclient.post(f"/api/collect/jobs/{stuck_id}/cancel", headers=admin).status_code == 200
+
+    items = cclient.get("/api/admin/audit", headers=admin).json()["items"]
+    step2 = [i for i in items if i["action"] == "collect_trigger"
+             and i["detail"].startswith("view-deps job=#")]
+    assert step2 and step2[0]["detail"] == f"view-deps job=#{job_id} source=default"
+    cancel = next(i for i in items if i["action"] == "collect_cancel")
+    assert cancel["requested_by"] == "admin.user"
+    assert cancel["target"] == f"job=#{stuck_id}"
+    assert cancel["detail"] == f"job=#{stuck_id} stage=catalog_running"
     get_settings.cache_clear()
