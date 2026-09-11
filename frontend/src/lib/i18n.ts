@@ -447,6 +447,16 @@ export const MESSAGES = {
   },
   "collect.step1": { ko: "1단계: 카탈로그 수집", en: "Step 1: collect catalog" },
   "collect.step2": { ko: "2단계: 뷰 의존·파싱", en: "Step 2: view deps & parsing" },
+  "collect.step1Only": { ko: "1단계만", en: "Step 1 only" },
+  "collect.step2Only": { ko: "2단계만", en: "Step 2 only" },
+  "collect.stepDone": { ko: "완료", en: "Done" },
+  "collect.stepDoneHint": {
+    ko: "스냅샷이 ready가 되면 화면에 반영됩니다",
+    en: "Applied to the screens once the snapshot is ready",
+  },
+  "collect.running": { ko: "진행 중", en: "Running" },
+  "collect.pending": { ko: "대기", en: "Pending" },
+  "collect.cancelled": { ko: "취소됨", en: "Cancelled" },
   "collect.full": { ko: "전체 실행", en: "Run all" },
   "collect.stageCatalogRunning": { ko: "카탈로그 수집 중", en: "Collecting catalog" },
   "collect.stageCatalogDone": { ko: "카탈로그 적재 완료", en: "Catalog loaded" },
@@ -478,10 +488,7 @@ export const MESSAGES = {
   "admin.embedIndexFailed": { ko: "인덱싱 실패", en: "Indexing failed" },
 
   "admin.tabs.label": { ko: "관리 영역", en: "Admin areas" },
-  "admin.tabs.hint": {
-    ko: "탭을 고르세요 — ←/→ 키로도 이동합니다",
-    en: "Pick a tab — ←/→ keys move between them",
-  },
+  "admin.tabs.kbdHint": { ko: "탭 이동", en: "switch tabs" },
   "admin.tab.sources": { ko: "소스·수집", en: "Sources & collection" },
   "admin.tab.sourcesDesc": {
     ko: "연결할 DB를 등록·테스트하고 카탈로그를 수집합니다",
@@ -503,6 +510,10 @@ export const MESSAGES = {
     en: "Login whitelist and AD user sync",
   },
   "admin.tab.audit": { ko: "감사 로그", en: "Audit log" },
+  "admin.tab.auditDesc": {
+    ko: "누가 언제 실제 값을 봤고 무엇을 바꿨는지 — 지울 수 없는 장부",
+    en: "Who saw real values and who changed what — an append-only ledger",
+  },
 
   "source.pickerLabel": { ko: "데이터 소스", en: "Data source" },
 

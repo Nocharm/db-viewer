@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchUsers, type AppUserEntry } from "@/lib/api";
+import { CheckIcon, PlusIcon, SearchIcon, UsersIcon, WarningIcon } from "@/components/icons";
 
 // 한 번에 받아오는 인원 수 — 백엔드 기본값과 맞춘다 / page size, mirrors the backend default
 const PAGE_SIZE = 100;
@@ -18,6 +19,11 @@ interface AdUserListProps {
   onAllow: (user: AppUserEntry) => void;
   /** 값이 바뀌면 목록을 처음부터 다시 읽는다 (AD 동기화 직후 등). */
   refreshKey: number;
+}
+
+/** 아바타 이니셜 — login_id 첫 글자 (이름은 동기화 전엔 없을 수 있다) */
+export function getInitial(loginId: string): string {
+  return (loginId.trim()[0] ?? "?").toUpperCase();
 }
 
 export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps) {
@@ -67,87 +73,91 @@ export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps
     return () => observer.disconnect();
   }, [hasMore, loading, users.length, query, load]);
 
+  const isEmpty = !loading && users.length === 0;
+
   return (
     <section className="mb-6" data-testid="AdminPage-adUsersSection">
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium">AD 사용자</h2>
-        <span className="badge badge--muted" data-testid="AdminPage-adUserCount">
+      <div className="sec-head">
+        <span className="sec-head__tile"><SearchIcon size={14} /></span>
+        <h2 className="sec-head__title">AD 사용자</h2>
+        <span className="cnt-pill" data-testid="AdminPage-adUserCount">
           {users.length.toLocaleString()} / {total.toLocaleString()}
         </span>
-        <input
-          className="ml-auto w-56 rounded border px-3 py-1.5 text-sm"
-          style={{ borderColor: "var(--border-light)" }}
-          placeholder="이름·ID·부서 검색"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          data-testid="AdminPage-userFilterInput"
-        />
+        <div className="sec-head__right">
+          <input
+            className="ctl-field w-56"
+            placeholder="이름·ID·부서 검색"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="AdminPage-userFilterInput"
+          />
+        </div>
       </div>
-      <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>
+      <p className="sec-desc">
         검색은 동기화된 전체 인원을 대상으로 합니다. 로그인 허용은 위 화이트리스트가 결정합니다.
       </p>
 
-      <div className="scroll-area max-h-96 overflow-y-auto" data-testid="AdminPage-adUsersScroll">
-        <table className="w-full text-sm" data-testid="AdminPage-adUsersTable">
-          <thead>
-            <tr className="border-b text-left" style={{ borderColor: "var(--hairline)" }}>
-              <th className="py-1.5">login_id</th><th>이름</th><th>부서</th>
-              <th>이메일</th><th className="w-16"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.login_id} className="group border-b"
-                  style={{ borderColor: "var(--border-light)" }}
-                  data-testid={`AdminPage-adUserRow-${user.login_id}`}>
-                <td className="py-1.5 font-mono text-xs">{user.login_id}</td>
-                <td>{user.name ?? "—"}</td>
-                <td className="text-xs" style={{ color: "var(--slate)" }}>
-                  {user.department ?? "—"}
-                </td>
-                <td className="text-xs" style={{ color: "var(--slate)" }}>
-                  {user.email ?? "—"}
-                </td>
-                <td className="text-right">
-                  {whitelisted.has(user.login_id) ? (
-                    <span className="text-xs" style={{ color: "var(--rel-confirmed)" }}
-                          title="로그인 허용됨">허용됨</span>
-                  ) : (
-                    // 평소엔 숨고 행 호버·키보드 포커스에서만 보인다 / hover- and focus-revealed
-                    <button
-                      className="icon-button opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                      title={`${user.login_id} 로그인 허용 추가`}
-                      aria-label={`${user.login_id} 로그인 허용 추가`}
-                      onClick={() => onAllow(user)}
-                      data-testid={`AdminPage-allowButton-${user.login_id}`}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                           stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                        <path d="M8 3v10M3 8h10" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!loading && users.length === 0 && (
-              <tr><td colSpan={5} className="py-2" style={{ color: "var(--muted)" }}>
-                {query.trim()
-                  ? "검색 결과 없음"
-                  : "동기화된 사용자 없음 — [AD 전체 동기화]를 실행하세요"}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-        {/* 바닥에 닿으면 다음 페이지를 부른다 / next page loads when this scrolls into view */}
-        <div ref={sentinelRef} className="h-6 text-center text-xs"
-             style={{ color: "var(--muted)" }} data-testid="AdminPage-adUsersSentinel">
-          {loading ? "불러오는 중…" : hasMore ? "" : null}
+      {isEmpty ? (
+        <div className="empty-state" data-testid="AdminPage-adUsersEmptyState">
+          <UsersIcon size={22} />
+          <span>{query.trim() ? "검색 결과 없음" : "동기화된 사용자 없음 — [AD 전체 동기화]를 실행하세요"}</span>
         </div>
-      </div>
+      ) : (
+        <div className="card">
+          <div className="scroll-area max-h-96 overflow-y-auto" data-testid="AdminPage-adUsersScroll">
+            <table className="data-table" data-testid="AdminPage-adUsersTable">
+              <colgroup>
+                <col style={{ width: "28%" }} /><col style={{ width: "16%" }} />
+                <col style={{ width: "18%" }} /><col /><col style={{ width: "96px" }} />
+              </colgroup>
+              <thead>
+                <tr><th>login_id</th><th>이름</th><th>부서</th><th>이메일</th><th></th></tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.login_id} className="reveal-host"
+                      data-testid={`AdminPage-adUserRow-${user.login_id}`}>
+                    <td>
+                      <span className="avatar">{getInitial(user.login_id)}</span>
+                      <span className="font-mono text-xs" style={{ color: "var(--ink)" }}>{user.login_id}</span>
+                    </td>
+                    <td>{user.name ?? "—"}</td>
+                    <td className="text-xs" style={{ color: "var(--slate)" }}>{user.department ?? "—"}</td>
+                    <td className="text-xs" style={{ color: "var(--slate)" }}>{user.email ?? "—"}</td>
+                    <td className="text-right">
+                      {whitelisted.has(user.login_id) ? (
+                        <span className="badge badge--ok badge--plain" title="로그인 허용됨">
+                          <CheckIcon size={11} />허용됨
+                        </span>
+                      ) : (
+                        // 평소엔 숨고 행 호버·키보드 포커스에서만 보인다 / hover- and focus-revealed
+                        <button
+                          className="icon-button reveal-action"
+                          title={`${user.login_id} 로그인 허용 추가`}
+                          aria-label={`${user.login_id} 로그인 허용 추가`}
+                          onClick={() => onAllow(user)}
+                          data-testid={`AdminPage-allowButton-${user.login_id}`}
+                        >
+                          <PlusIcon size={13} />허용
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {/* 바닥에 닿으면 다음 페이지를 부른다 / next page loads when this scrolls into view */}
+            <div ref={sentinelRef} className="h-6 text-center text-xs"
+                 style={{ color: "var(--muted)" }} data-testid="AdminPage-adUsersSentinel">
+              {loading ? "불러오는 중…" : hasMore ? "" : null}
+            </div>
+          </div>
+        </div>
+      )}
       {error && (
-        <p className="text-xs" style={{ color: "var(--error)" }}
-           data-testid="AdminPage-adUsersError">{error}</p>
+        <div className="banner banner--err mt-3" data-testid="AdminPage-adUsersError">
+          <WarningIcon size={15} /><span>{error}</span>
+        </div>
       )}
     </section>
   );

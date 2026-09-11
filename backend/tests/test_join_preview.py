@@ -183,12 +183,17 @@ def test_returns_rows_and_the_executed_sql(jclient, stub, migrated_engine, load_
 def test_writes_an_audit_log(jclient, migrated_engine, load_fixture):
     """원본 값이 나가는 지점 — 감사 없이 통과하면 안 된다."""
     _seed(jclient, load_fixture)
-    jclient.post("/api/join/preview", json={"steps": [_step(migrated_engine)]})
+    # 본문의 requested_by는 위조 가능 — 인증 사용자(X-Dev-User)가 요청자로 남아야 한다
+    jclient.post("/api/join/preview",
+                 json={"steps": [_step(migrated_engine)], "requested_by": "someone.else"},
+                 headers={"X-Dev-User": "hong.gil"})
 
     audit_t = Base.metadata.tables["audit_logs"]
     with migrated_engine.connect() as conn:
-        actions = conn.execute(sa.select(audit_t.c.action)).scalars().all()
-    assert "join_preview" in actions
+        rows = conn.execute(
+            sa.select(audit_t.c.action, audit_t.c.requested_by, audit_t.c.target)
+        ).all()
+    assert ("join_preview", "hong.gil", "dbo.HR_EMP_FAMILY") in rows
 
 
 def test_bounds_the_audit_detail_to_the_column_length():

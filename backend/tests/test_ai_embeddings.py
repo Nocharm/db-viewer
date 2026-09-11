@@ -274,6 +274,11 @@ def test_start_embed_index_returns_202_and_completes(ai_job_client, monkeypatch)
         assert job["kind"] == "embed_index"
         assert job["status"] == "failed"
         assert "no ready snapshot" in job["error"]
+        # 관리 조작 — 누가 시작했는지 감사에 남는다 / the trigger is audited
+        audit = [item for item in ai_job_client.get("/api/admin/audit").json()["items"]
+                 if item["action"] == "embed_index_trigger"]
+        assert audit and audit[0]["target"] == "embed_index"
+        assert audit[0]["detail"] == f"job=#{start.json()['job_id']}"
     finally:
         monkeypatch.delenv("EMBED_URL", raising=False)
         monkeypatch.delenv("EMBED_MODEL", raising=False)

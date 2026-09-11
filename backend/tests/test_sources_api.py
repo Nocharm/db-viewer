@@ -733,7 +733,7 @@ def test_connection_test_and_update_are_audited(client, monkeypatch, tmp_path):
     items = client.get("/api/admin/audit", headers=HEADERS).json()["items"]
     by_action = {i["action"]: i for i in items}
     assert by_action["source_test"]["detail"] == "svcaudit ok"
-    assert by_action["source_update"]["detail"] == "svcaudit2 [name, is_enabled]"
+    assert by_action["source_update"]["detail"] == "svcaudit2 [name, is_enabled=false]"
     get_settings.cache_clear()
 
 
@@ -753,4 +753,19 @@ def test_failed_connection_test_is_audited(client, monkeypatch):
     fails = [i for i in items if i["action"] == "source_test"]
     assert len(fails) == 1
     assert fails[0]["detail"].startswith("svcbroken fail (")
+    get_settings.cache_clear()
+
+
+def test_enable_toggle_audit_records_the_direction(client, monkeypatch):
+    """활성화 토글 감사는 필드명만이 아니라 방향(is_enabled=false)까지 남긴다."""
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcm", "engine": "sqlite", "file_path": "/tmp/m.db"}).json()
+    client.patch(f"/api/sources/{created['id']}", headers=HEADERS,
+                 json={"is_enabled": False})
+
+    rows = [item for item in client.get("/api/admin/audit", headers=HEADERS).json()["items"]
+            if item["action"] == "source_update"]
+    assert rows and rows[0]["target"] == "svcm"
+    assert rows[0]["detail"] == "svcm [is_enabled=false]"
     get_settings.cache_clear()

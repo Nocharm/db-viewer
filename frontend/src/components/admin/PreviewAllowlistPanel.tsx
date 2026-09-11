@@ -1,7 +1,7 @@
 "use client";
 
-/** 미리보기 허용 스키마 관리 — 목록 편집에 환경변수 비밀번호를 요구한다.
- * Preview allowlist editor (schema-level); edits are gated by the env password. */
+/** 미리보기 허용 스키마 관리 — 목록 편집에 환경변수 비밀번호를 요구한다(관리 콘솔 잠금 바가 쥔다).
+ * Preview allowlist editor (schema-level); edits are gated by the env password from the lock bar. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -13,16 +13,22 @@ import {
   type PreviewAllowEntry,
   type SchemaCategoryItem,
 } from "@/lib/api";
+import { BanIcon, CheckIcon, PlusIcon, ShieldIcon, WarningIcon } from "@/components/icons";
 
 interface PreviewAllowlistPanelProps {
   /** 허용 목록 PK가 (data_source_id, schema)라 소스별로 조회·수정한다 — null은 사내 MSSQL. */
   sourceId: number | null;
+  /** 관리 비밀번호(X-Preview-Password) — 관리 콘솔 잠금 바가 쥔 값 */
+  password: string;
+  passwordConfigured: boolean;
+  /** 허용 스키마 수를 알린다 — 탭 카운트 pill용 */
+  onLoaded?: (allowed: number) => void;
 }
 
-export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) {
-  const [password, setPassword] = useState("");
+export function PreviewAllowlistPanel({
+  sourceId, password, passwordConfigured, onLoaded,
+}: PreviewAllowlistPanelProps) {
   const [entries, setEntries] = useState<PreviewAllowEntry[]>([]);
-  const [passwordConfigured, setPasswordConfigured] = useState(true);
   const [schemas, setSchemas] = useState<SchemaCategoryItem[]>([]);
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("");
@@ -33,9 +39,9 @@ export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) 
     fetchPreviewAllowlistAdmin(sourceId)
       .then((res) => {
         setEntries(res.items);
-        setPasswordConfigured(res.password_configured);
+        onLoaded?.(res.items.length);
       })
-      .catch((e) => setError(e.message)), [sourceId]);
+      .catch((e) => setError(e.message)), [sourceId, onLoaded]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -65,6 +71,7 @@ export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) 
   }, [schemas, query, allowedBySchema]);
 
   const canEdit = passwordConfigured && password.length > 0;
+  const lockedTitle = canEdit ? undefined : "잠금 바에 관리 비밀번호를 입력하세요";
 
   const run = (task: () => Promise<unknown>, done: string) => {
     setError(null);
@@ -79,47 +86,32 @@ export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) 
 
   return (
     <section className="mb-6" data-testid="AdminPage-previewAllowSection">
-      <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium">미리보기 허용 스키마</h2>
-        <span className="badge badge--muted" data-testid="AdminPage-previewAllowCount">
-          {entries.length.toLocaleString()} / {schemas.length.toLocaleString()}
+      <div className="sec-head">
+        <span className="sec-head__tile"><ShieldIcon size={14} /></span>
+        <h2 className="sec-head__title">미리보기 허용 스키마</h2>
+        <span className="cnt-pill" data-testid="AdminPage-previewAllowCount">
+          허용 {entries.length.toLocaleString()} · 전체 {schemas.length.toLocaleString()}
         </span>
-        <input
-          className="ml-auto w-56 rounded border px-3 py-1.5 text-sm"
-          style={{ borderColor: "var(--border-light)" }}
-          placeholder="스키마 검색"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          data-testid="AdminPage-previewAllowSearchInput"
-        />
+        <div className="sec-head__right">
+          <input
+            className="ctl-field w-52"
+            placeholder="스키마 검색"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="AdminPage-previewAllowSearchInput"
+          />
+        </div>
       </div>
-      <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
-        허용된 스키마의 객체만 실제 값을 미리볼 수 있습니다 (테이블 화면·ERD 공통, 조인 샘플 포함).
+      <p className="sec-desc">
+        허용된 스키마의 객체만 실제 값을 미리볼 수 있습니다 (테이블 화면·ERD·조인 샘플·값 추적 공통).
         스키마 1건을 허용하면 그 안의 모든 테이블·뷰가 열립니다. 목록이 비어 있으면 전부 차단됩니다.
       </p>
 
-      {!passwordConfigured ? (
-        <p className="mb-3 text-sm" style={{ color: "var(--error)" }}
-           data-testid="AdminPage-previewAllowNoPassword">
-          PREVIEW_ADMIN_PASSWORD가 설정되지 않아 목록을 수정할 수 없습니다 — 서버 .env에
-          값을 넣고 백엔드를 재기동하세요.
-        </p>
-      ) : (
+      {passwordConfigured && (
         <div className="mb-3 flex gap-2">
           <input
-            className="w-64 rounded border px-3 py-1.5 text-sm"
-            style={{ borderColor: "var(--border-light)" }}
-            type="password"
-            autoComplete="off"
-            placeholder="수정 비밀번호 (환경변수)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            data-testid="AdminPage-previewAllowPasswordInput"
-          />
-          <input
-            className="flex-1 rounded border px-3 py-1.5 text-sm"
-            style={{ borderColor: "var(--border-light)" }}
-            placeholder="메모 (선택 — 허용 사유)"
+            className="ctl-field flex-1"
+            placeholder="메모 (선택 — 허용 사유, 다음 허용 추가에 붙습니다)"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             data-testid="AdminPage-previewAllowNoteInput"
@@ -127,79 +119,84 @@ export function PreviewAllowlistPanel({ sourceId }: PreviewAllowlistPanelProps) 
         </div>
       )}
 
-      <div className="scroll-area max-h-96 overflow-y-auto"
-           data-testid="AdminPage-previewAllowScroll">
-        <table className="w-full text-sm" data-testid="AdminPage-previewAllowTable">
-          <thead>
-            <tr className="border-b text-left" style={{ borderColor: "var(--hairline)" }}>
-              <th className="py-1.5">스키마</th><th>객체 수</th><th>메모</th>
-              <th>등록자</th><th className="w-20"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleSchemas.map((item) => {
-              const entry = allowedBySchema.get(item.schema);
-              return (
-                <tr key={item.schema} className="border-b"
-                    style={{ borderColor: "var(--border-light)" }}
-                    data-testid={`AdminPage-previewAllowRow-${item.schema}`}>
-                  <td className="py-1.5 font-mono text-xs">{item.schema}</td>
-                  <td className="text-xs" style={{ color: "var(--slate)" }}>
-                    {item.object_count.toLocaleString()}
-                  </td>
-                  <td className="text-xs" style={{ color: "var(--slate)" }}>
-                    {entry?.note ?? ""}
-                  </td>
-                  <td className="text-xs" style={{ color: "var(--muted)" }}>
-                    {entry?.added_by ?? ""}
-                  </td>
-                  <td className="text-right">
-                    {entry ? (
-                      <button
-                        className="icon-button row-action"
-                        disabled={!canEdit}
-                        title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
-                        onClick={() => run(
-                          () => removePreviewAllow(item.schema, password, sourceId),
-                          `${item.schema} 허용 해제`)}
-                        data-testid={`AdminPage-previewAllowRemoveButton-${item.schema}`}
-                      >
-                        허용 해제
-                      </button>
-                    ) : (
-                      <button
-                        className="btn-primary row-action"
-                        disabled={!canEdit}
-                        title={canEdit ? undefined : "수정 비밀번호를 입력하세요"}
-                        onClick={() => run(
-                          () => addPreviewAllow(
-                            item.schema, password, note.trim() || undefined, sourceId,
-                          ),
-                          `${item.schema} 미리보기 허용`,
-                        )}
-                        data-testid={`AdminPage-previewAllowAddButton-${item.schema}`}
-                      >
-                        허용 추가
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {visibleSchemas.length === 0 && (
-              <tr><td colSpan={5} className="py-2" style={{ color: "var(--muted)" }}
-                      data-testid="AdminPage-previewAllowEmptyState">
-                {query.trim() ? "검색 결과 없음" : "스키마 없음 — 카탈로그를 먼저 수집하세요"}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className="card">
+        <div className="scroll-area max-h-96 overflow-y-auto"
+             data-testid="AdminPage-previewAllowScroll">
+          <table className="data-table" data-testid="AdminPage-previewAllowTable">
+            <colgroup>
+              <col style={{ width: "26%" }} /><col style={{ width: "12%" }} />
+              <col /><col style={{ width: "20%" }} /><col style={{ width: "120px" }} />
+            </colgroup>
+            <thead>
+              <tr><th>스키마</th><th>객체</th><th>메모</th><th>등록</th><th></th></tr>
+            </thead>
+            <tbody>
+              {visibleSchemas.map((item) => {
+                const entry = allowedBySchema.get(item.schema);
+                return (
+                  <tr key={item.schema} className="reveal-host"
+                      data-testid={`AdminPage-previewAllowRow-${item.schema}`}>
+                    <td>
+                      <span className="font-mono text-xs" style={{ color: "var(--ink)" }}>{item.schema}</span>
+                      {entry && <span className="badge badge--ok badge--plain ml-2"><CheckIcon size={11} />허용</span>}
+                    </td>
+                    <td><span className="cnt-pill">{item.object_count.toLocaleString()}</span></td>
+                    <td className="text-xs" style={{ color: "var(--slate)" }}>{entry?.note ?? ""}</td>
+                    <td className="text-xs" style={{ color: "var(--muted)" }}>{entry?.added_by ?? ""}</td>
+                    <td className="text-right">
+                      {entry ? (
+                        <button
+                          className="icon-button reveal-action ctl-field--danger"
+                          disabled={!canEdit}
+                          title={lockedTitle}
+                          onClick={() => run(
+                            () => removePreviewAllow(item.schema, password, sourceId),
+                            `${item.schema} 허용 해제`)}
+                          data-testid={`AdminPage-previewAllowRemoveButton-${item.schema}`}
+                        >
+                          <BanIcon size={13} />허용 해제
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-primary reveal-action inline-flex items-center gap-1.5 !px-3 !py-1.5 text-xs"
+                          disabled={!canEdit}
+                          title={lockedTitle}
+                          onClick={() => run(
+                            () => addPreviewAllow(
+                              item.schema, password, note.trim() || undefined, sourceId,
+                            ),
+                            `${item.schema} 미리보기 허용`,
+                          )}
+                          data-testid={`AdminPage-previewAllowAddButton-${item.schema}`}
+                        >
+                          <PlusIcon size={12} />허용 추가
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {visibleSchemas.length === 0 && (
+                <tr><td colSpan={5} style={{ color: "var(--muted)" }}
+                        data-testid="AdminPage-previewAllowEmptyState">
+                  {query.trim() ? "검색 결과 없음" : "스키마 없음 — 카탈로그를 먼저 수집하세요"}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {message && <p className="mt-2 text-sm" style={{ color: "var(--rel-confirmed)" }}
-                     data-testid="AdminPage-previewAllowMessage">{message}</p>}
-      {error && <p className="mt-2 text-sm" style={{ color: "var(--error)" }}
-                   data-testid="AdminPage-previewAllowError">{error}</p>}
+      {message && (
+        <div className="banner banner--ok mt-3" data-testid="AdminPage-previewAllowMessage">
+          <CheckIcon size={15} /><span>{message}</span>
+        </div>
+      )}
+      {error && (
+        <div className="banner banner--err mt-3" data-testid="AdminPage-previewAllowError">
+          <WarningIcon size={15} /><span>{error}</span>
+        </div>
+      )}
     </section>
   );
 }

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters import create_join_validator
+from app.auth import get_current_user
 from app.config import get_settings
 from app.db import get_db
 from app.domain import scoring
@@ -37,6 +38,7 @@ def get_join_validator() -> JoinValidator:
 class ContainmentRequest(BaseModel):
     src_column_id: int
     tgt_column_id: int
+    # 하위 호환용 — 관측 기록의 주체는 인증 사용자다(이 값은 무시된다)
     triggered_by: str = "local"
 
 
@@ -208,6 +210,7 @@ def run_containment(
     req: ContainmentRequest,
     db: Session = Depends(get_db),
     validator: JoinValidator = Depends(get_join_validator),
+    login_id: str = Depends(get_current_user),
 ) -> dict:
     """T2 — 지정 컬럼 페어 containment 검증, 결과는 영구 기록 (계획 §3.2·§3.4)."""
     src_ref, src_col = resolve_column_ref(db, req.src_column_id)
@@ -225,7 +228,7 @@ def run_containment(
     # 관측치로 컬럼 통계 채움 — 이후 저카디널리티 필터가 동작한다 (계획 §1.2·§3.3)
     src_col.distinct_count = result.src_distinct
     tgt_col.distinct_count = result.tgt_distinct
-    conf = record_observation(db, src_ref, tgt_ref, result, req.triggered_by, now)
+    conf = record_observation(db, src_ref, tgt_ref, result, login_id, now)
 
     return {
         "src": str(src_ref), "tgt": str(tgt_ref),
@@ -241,6 +244,7 @@ def run_containment(
 class PreviewRequest(BaseModel):
     src_column_id: int
     tgt_column_id: int
+    # 하위 호환용 — 감사 요청자는 인증 사용자로 기록한다(이 값은 무시된다)
     requested_by: str = "local"
 
 
@@ -253,6 +257,7 @@ def run_preview(
     req: PreviewRequest,
     db: Session = Depends(get_db),
     validator: JoinValidator = Depends(get_join_validator),
+    login_id: str = Depends(get_current_user),
 ) -> dict:
     """조인 샘플 미리보기 — 원본 값이 나가는 유일한 지점: 무캐시·마스킹·감사 (계획 §3.5)."""
     src_ref, src_col = resolve_column_ref(db, req.src_column_id)
@@ -293,9 +298,9 @@ def run_preview(
 
     now = datetime.now(UTC)
     db.add(AuditLog(
-        action="preview",
+        action="preview", target=src_ref.object_qname,
         detail=f"{src_ref} -> {tgt_ref} ({len(rows)} rows)",
-        requested_by=req.requested_by, requested_at=now,
+        requested_by=login_id, requested_at=now,
     ))
     return {
         "src": str(src_ref), "tgt": str(tgt_ref),

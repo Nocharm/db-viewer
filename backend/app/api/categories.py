@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.objects import resolve_snapshot
 from app.auth import get_current_user
 from app.db import get_db
-from app.models import CatalogObject, SchemaCategory
+from app.models import AuditLog, CatalogObject, SchemaCategory
 
 router = APIRouter(prefix="/api/schema-categories", tags=["categories"])
 
@@ -85,6 +85,11 @@ def assign_schema_category(
 
     row = db.get(SchemaCategory, (snapshot.data_source_id, schema_name))
     category = body.category.strip()
+    # 모든 사용자에게 공통으로 보이는 이름이라 누가 바꿨는지 남긴다 / shared label, audited
+    db.add(AuditLog(action="category_set", target=schema_name,
+                    detail=f"{schema_name} -> {category or '(default)'} "
+                           f"source={snapshot.data_source_id}",
+                    requested_by=login_id, requested_at=datetime.now(UTC)))
     if not category:
         if row is not None:
             db.delete(row)

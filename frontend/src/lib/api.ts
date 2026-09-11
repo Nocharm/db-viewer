@@ -753,6 +753,8 @@ export function fetchViewDefinition(objectId: number): Promise<ViewDefinition> {
 export interface AuditEntry {
   id: number;
   action: string;
+  /** 조작 대상 하나(테이블·스키마·login_id·소스명) — 예전 행은 detail 첫 토큰으로 백필 */
+  target: string | null;
   detail: string;
   requested_by: string;
   requested_at: string;
@@ -762,12 +764,19 @@ export interface AuditPage {
   total: number;
   /** 실제로 쌓인 action 목록 — 필터 드롭다운을 채운다 */
   actions: string[];
+  /** 요청자·대상 드롭다운 축 (각 500개 상한) */
+  requesters: string[];
+  targets: string[];
+  /** 동작 필터를 뺀 나머지 조건으로 센 action별 건수 — 요약 타일용 */
+  counts_by_action: Record<string, number>;
+  /** 접근 거부 + LDAP 실패 건수 (같은 조건) */
+  failed_logins: number;
   items: AuditEntry[];
 }
 
 export function fetchAuditLog(
   opts: {
-    action?: string; requestedBy?: string; q?: string;
+    action?: string; requestedBy?: string; target?: string; q?: string;
     /** 기간 [from, to) — ISO 문자열, 프론트가 로컬 자정 기준으로 변환 */
     dateFrom?: string; dateTo?: string;
     limit?: number; offset?: number;
@@ -776,6 +785,7 @@ export function fetchAuditLog(
   const params = new URLSearchParams();
   if (opts.action) params.set("action", opts.action);
   if (opts.requestedBy) params.set("requested_by", opts.requestedBy);
+  if (opts.target) params.set("target", opts.target);
   if (opts.q) params.set("q", opts.q);
   if (opts.dateFrom) params.set("date_from", opts.dateFrom);
   if (opts.dateTo) params.set("date_to", opts.dateTo);

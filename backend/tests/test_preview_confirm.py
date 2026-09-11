@@ -56,8 +56,10 @@ def test_preview_caps_rows_and_writes_audit(vclient, migrated_engine, load_fixtu
     rel, ids = _relation_pair(migrated_engine, load_fixture)
     allow_preview(rel["src_object"], rel["tgt_object"])
 
+    # 요청자는 인증 사용자(X-Dev-User)다 — 본문의 requested_by는 위조 가능해 무시된다
     body = vclient.post("/api/validate/preview",
-                        json={**ids, "requested_by": "tester"}).json()
+                        json={**ids, "requested_by": "someone.else"},
+                        headers={"X-Dev-User": "tester"}).json()
     assert len(body["rows"]) <= PREVIEW_LIMIT
     key = f"src.{rel['src_column']}"
     assert all(key in row for row in body["rows"])
@@ -66,6 +68,7 @@ def test_preview_caps_rows_and_writes_audit(vclient, migrated_engine, load_fixtu
         audit = conn.execute(sa.select(Base.metadata.tables["audit_logs"])).all()
     assert len(audit) == 1
     assert audit[0].action == "preview" and audit[0].requested_by == "tester"
+    assert audit[0].target == rel["src_object"]
     assert rel["src_object"] in audit[0].detail
 
 

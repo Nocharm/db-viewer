@@ -206,7 +206,8 @@ def create_data_source(
                        "violated constraint.",
             "context": {"name": req.name.strip(), "error_type": error_type},
         }) from e
-    db.add(AuditLog(action="source_create", detail=f"{source.name} ({source.engine})",
+    db.add(AuditLog(action="source_create", target=source.name,
+                    detail=f"{source.name} ({source.engine})",
                     requested_by=admin, requested_at=now))
     return _serialize(source)
 
@@ -218,7 +219,8 @@ def update_data_source(
 ) -> dict:
     source = _get_editable(db, source_id)
     # 감사에 "무엇이" 바뀌었는지 필드명만 남긴다 — 값(호스트·계정 등)은 남기지 않는다.
-    # 이름만으로는 활성화 토글인지 자격증명 교체인지 구분이 안 됐다 / field names only
+    # 이름만으로는 활성화 토글인지 자격증명 교체인지 구분이 안 됐다 / field names only.
+    # 활성화 토글만은 방향까지 남긴다 — 켰는지 껐는지가 곧 감사의 요점이다
     changed: list[str] = []
     if req.name is not None:
         source.name = req.name.strip()
@@ -227,7 +229,7 @@ def update_data_source(
         value = getattr(req, field)
         if value is not None:
             setattr(source, field, value)
-            changed.append(field)
+            changed.append(f"is_enabled={str(value).lower()}" if field == "is_enabled" else field)
     if req.password:
         changed.append("password")
     if req.password:
@@ -238,7 +240,7 @@ def update_data_source(
     source.updated_at = datetime.now(UTC)
     # 낡은 접속정보(host·비밀번호·파일경로)로 계속 붙지 않게 캐시를 비운다 (이월 4)
     clear_sa_engine(source.id)
-    db.add(AuditLog(action="source_update",
+    db.add(AuditLog(action="source_update", target=source.name,
                     detail=f"{source.name} [{', '.join(changed) or 'no-op'}]",
                     requested_by=admin, requested_at=source.updated_at))
     return _serialize(source)
@@ -292,7 +294,7 @@ def delete_data_source(
     detail = name if not has_dependents else (
         f"{name} [cascade: " + ", ".join(f"{k}={v}" for k, v in dependents.items()) + "]"
     )
-    db.add(AuditLog(action="source_delete", detail=detail, requested_by=admin,
+    db.add(AuditLog(action="source_delete", target=name, detail=detail, requested_by=admin,
                     requested_at=datetime.now(UTC)))
     return {"id": source_id, "removed": True, "removed_dependents": dependents}
 
@@ -339,7 +341,8 @@ def test_data_source(
                        extra={"source_id": source.id, "error_type": error_type})
         source.last_error = error_type
         source.updated_at = now
-        db.add(AuditLog(action="source_test", detail=f"{source.name} fail ({error_type})",
+        db.add(AuditLog(action="source_test", target=source.name,
+                        detail=f"{source.name} fail ({error_type})",
                         requested_by=user, requested_at=now))
         db.commit()
         raise HTTPException(503, {"message": str(e),
@@ -354,7 +357,8 @@ def test_data_source(
                        exc_info=True)
         source.last_error = error_type
         source.updated_at = now
-        db.add(AuditLog(action="source_test", detail=f"{source.name} fail ({error_type})",
+        db.add(AuditLog(action="source_test", target=source.name,
+                        detail=f"{source.name} fail ({error_type})",
                         requested_by=user, requested_at=now))
         # get_db는 라우트가 던진 예외를 받으면 세션을 롤백한다 — 실패 기록이 그
         # 롤백에 같이 쓸려가지 않도록 여기서 먼저 커밋해 둔다
@@ -368,7 +372,7 @@ def test_data_source(
     source.last_error = None
     source.updated_at = now
     # 저장된 자격증명으로 남의 DB에 실제 접속한 조작 — 성공도 남긴다
-    db.add(AuditLog(action="source_test", detail=f"{source.name} ok",
+    db.add(AuditLog(action="source_test", target=source.name, detail=f"{source.name} ok",
                     requested_by=user, requested_at=now))
     return {"ok": True, "version": row["version"], "database": row["database"],
             "latency_ms": round((time.monotonic() - started) * 1000, 1)}

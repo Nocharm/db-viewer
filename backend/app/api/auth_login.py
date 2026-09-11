@@ -139,7 +139,7 @@ def login_with_ldap(req: LdapLoginRequest, db: Session = Depends(get_db)) -> dic
     now = datetime.now(UTC)
     if not verified:
         _record_failure(lockout_key)
-        db.add(AuditLog(action="ldap_login", detail=f"{login_id} fail",
+        db.add(AuditLog(action="ldap_login", target=login_id, detail=f"{login_id} fail",
                         requested_by=login_id, requested_at=now))
         # get_db가 예외에서 롤백하므로 감사 행을 먼저 커밋한다 (sources.py와 같은 이유)
         db.commit()
@@ -147,7 +147,7 @@ def login_with_ldap(req: LdapLoginRequest, db: Session = Depends(get_db)) -> dic
 
     _failures.pop(lockout_key, None)
     token, expires_at = issue_session_token(login_id, user.name)
-    db.add(AuditLog(action="ldap_login", detail=f"{login_id} ok",
+    db.add(AuditLog(action="ldap_login", target=login_id, detail=f"{login_id} ok",
                     requested_by=login_id, requested_at=now))
     return {
         "access_token": token, "token_type": "bearer",

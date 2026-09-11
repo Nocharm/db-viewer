@@ -67,3 +67,17 @@ def test_unknown_schema_is_rejected(client, load_fixture):
     res = client.put("/api/schema-categories/NOPE_SCHEMA", json={"category": "X"})
     assert res.status_code == 400
     assert "schema" in res.json()["error"]["message"]
+
+
+def test_category_change_is_audited(client, load_fixture):
+    """모든 사용자에게 공통인 이름 변경 — 누가 바꿨는지 감사에 남는다."""
+    _seed(client, load_fixture)
+    res = client.put("/api/schema-categories/dbo", json={"category": "품질"},
+                     headers={"X-Dev-User": "hong.gil"})
+    assert res.status_code == 200
+
+    rows = [item for item in client.get("/api/admin/audit").json()["items"]
+            if item["action"] == "category_set"]
+    assert rows and rows[0]["target"] == "dbo"
+    assert rows[0]["detail"] == "dbo -> 품질 source=1"
+    assert rows[0]["requested_by"] == "hong.gil"
