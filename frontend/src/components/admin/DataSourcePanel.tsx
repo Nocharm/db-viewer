@@ -1,12 +1,13 @@
 "use client";
 
 /** 데이터 소스 등록부 — 등록·수정·활성화 전환·삭제·연결 테스트. 미리보기 허용 목록과 같은
- * 비밀번호 게이트(X-Preview-Password)를 쓴다. 소스가 없으면 나머지 관리 기능이 전부 무의미
- * 하므로 관리 콘솔의 첫 탭에 둔다. 삭제는 함께 사라질 행(스냅샷·정책·값 추적 잡)을 먼저
- * 보여주고 체크를 받은 뒤 cascade로 한 번에 지운다.
+ * 비밀번호 게이트(X-Preview-Password)를 쓰며, 비밀번호는 관리 콘솔의 잠금 바가 쥔다. 소스가
+ * 없으면 나머지 관리 기능이 전부 무의미하므로 관리 콘솔의 첫 탭에 둔다. 삭제는 함께 사라질
+ * 행(스냅샷·정책·값 추적 잡)을 먼저 보여주고 체크를 받은 뒤 cascade로 한 번에 지운다.
  * Data source registry: create/edit/enable-toggle/delete/test, gated by the preview-admin
- * password — first tab of the admin console since nothing else works without a source.
- * Delete lists the dependents, requires an explicit acknowledgement, then cascades. */
+ * password held by the console's lock bar — first tab of the admin console since nothing
+ * else works without a source. Delete lists the dependents, requires an explicit
+ * acknowledgement, then cascades. */
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -25,12 +26,20 @@ import {
 import {
   BanIcon,
   CheckCircleIcon,
+  CheckIcon,
+  ClockIcon,
   DatabaseIcon,
   DownloadIcon,
+  FileIcon,
+  KeyIcon,
+  LockIcon,
   PencilIcon,
   PlugIcon,
+  PlusIcon,
   TrashIcon,
+  WarningIcon,
 } from "@/components/icons";
+import { formatRelativeTime } from "@/lib/relative-time";
 
 export interface SourceFormState {
   name: string;
@@ -136,8 +145,25 @@ interface DeleteConfirmState {
   error: string | null;
 }
 
-export function DataSourcePanel() {
-  const [password, setPassword] = useState("");
+interface DataSourcePanelProps {
+  /** 관리 비밀번호(X-Preview-Password) — 관리 콘솔 잠금 바가 쥔 값 */
+  password: string;
+  /** PREVIEW_ADMIN_PASSWORD가 서버에 설정돼 있는가 — 없으면 수정 조작이 전부 잠긴다 */
+  passwordConfigured: boolean;
+  /** 목록을 읽을 때마다 소스 수를 알린다 — 탭 카운트 pill용 */
+  onLoaded?: (count: number) => void;
+}
+
+/** 마지막 연결 테스트 결과 한 줄 — 실패·성공·이력 없음 / last connection-test summary */
+function describeLastTest(item: DataSourceItem): { tone: "err" | "ok" | "none"; text: string } {
+  if (item.last_error) {
+    return { tone: "err", text: `연결 실패 · ${item.last_ok_at ? `마지막 성공 ${formatRelativeTime(item.last_ok_at)}` : "성공 이력 없음"}` };
+  }
+  if (item.last_ok_at) return { tone: "ok", text: `연결 성공 · ${formatRelativeTime(item.last_ok_at)}` };
+  return { tone: "none", text: "테스트 이력 없음" };
+}
+
+export function DataSourcePanel({ password, passwordConfigured, onLoaded }: DataSourcePanelProps) {
   const [items, setItems] = useState<DataSourceItem[]>([]);
   const [keyConfigured, setKeyConfigured] = useState(true);
   const [createForm, setCreateForm] = useState<SourceFormState>(EMPTY_FORM);
@@ -155,17 +181,19 @@ export function DataSourcePanel() {
         .then((res) => {
           setItems(res.items);
           setKeyConfigured(res.secret_key_configured);
+          onLoaded?.(res.items.length);
         })
         .catch((e) => setError(e.message)),
-    [],
+    [onLoaded],
   );
 
   useEffect(() => { void reload(); }, [reload]);
 
   // X-Preview-Password 게이트 — 미리보기 허용 목록과 같은 비밀번호. 암호화 저장이 걸린
   // 등록만 SOURCE_SECRET_KEY 존재 여부(keyConfigured)를 추가로 요구한다.
-  const canMutate = password.length > 0;
+  const canMutate = passwordConfigured && password.length > 0;
   const canRegister = canMutate && isSourceFormValid(createForm);
+  const lockedTitle = canMutate ? undefined : "잠금 바에 관리 비밀번호를 입력하세요";
 
   /** 작업 실행 → 메시지 표시 → 목록 갱신. task가 문자열을 반환하면 그 메시지를 쓴다
    * (관리 콘솔 AdminPage.run과 동일 관용 — 연결 테스트처럼 계산된 메시지가 필요해서). */
@@ -269,423 +297,455 @@ export function DataSourcePanel() {
       .finally(() => void reload());
   };
 
+  const setCreate = (patch: Partial<SourceFormState>) => setCreateForm({ ...createForm, ...patch });
+  const setEdit = (patch: Partial<SourceFormState>) => setEditForm({ ...editForm, ...patch });
+
   return (
     <section className="mb-6" data-testid="DataSourcePanel-root">
-      <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium">데이터 소스</h2>
-        <span className="badge badge--muted" data-testid="DataSourcePanel-count">
+      <div className="sec-head">
+        <span className="sec-head__tile"><DatabaseIcon size={14} /></span>
+        <h2 className="sec-head__title">데이터 소스</h2>
+        <span className="cnt-pill" data-testid="DataSourcePanel-count">
           {items.length.toLocaleString()}
         </span>
+        <div className="sec-head__right">
+          {/* 새 서비스 DB를 붙일 때 담당자에게 전달할 ELI5 안내서 — public 정적 파일을 내려받는다 */}
+          <a
+            className="btn-secondary inline-flex items-center gap-1.5 text-sm"
+            href="/handoff/integration-guide.html"
+            download="db-viewer-연동안내서.html"
+            data-testid="DataSourcePanel-guideDownload"
+          >
+            <DownloadIcon size={14} />
+            연동 안내서 내려받기
+          </a>
+        </div>
       </div>
-      <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
+      <p className="sec-desc">
         조회·수집·미리보기가 모두 여기 등록된 소스를 기준으로 동작합니다. 관리형(사내 MSSQL)
-        소스는 배포 설정(.env / n8n)이 원본이라 이 화면에서 수정·삭제할 수 없습니다.
-      </p>
-
-      {/* 새 서비스 DB를 붙일 때 담당자에게 전달할 ELI5 안내서 — public 정적 파일을 내려받는다 */}
-      <a
-        className="btn-secondary mb-3 inline-flex items-center gap-1.5 text-sm"
-        href="/handoff/integration-guide.html"
-        download="db-viewer-연동안내서.html"
-        data-testid="DataSourcePanel-guideDownload"
-      >
-        <DownloadIcon size={14} className="inline-block align-middle" />
-        연동 안내서 내려받기
-      </a>
-      <p className="mb-3 text-xs" style={{ color: "var(--muted)" }}>
-        새 서비스 DB를 연결하려면 이 안내서(담당자용 연동 요청서)를 서비스 담당자에게 전달하세요.
+        소스는 배포 설정(.env / n8n)이 원본이라 이 화면에서 수정·삭제할 수 없습니다. 새 서비스 DB를
+        연결하려면 안내서(담당자용 연동 요청서)를 서비스 담당자에게 전달하세요.
       </p>
 
       {!keyConfigured && (
-        <p className="mb-3 text-sm" style={{ color: "var(--error)" }}
-           data-testid="DataSourcePanel-keyMissing">
-          SOURCE_SECRET_KEY가 설정되지 않아 소스를 등록할 수 없습니다 — 서버 .env에 값을
-          넣고 백엔드를 재기동하세요. (기존 소스의 활성화·비활성화·삭제는 계속 할 수 있습니다.)
-        </p>
+        <div className="banner banner--warn" data-testid="DataSourcePanel-keyMissing">
+          <WarningIcon size={15} />
+          <span>
+            <b>SOURCE_SECRET_KEY가 설정되지 않았습니다.</b> 접속 비밀번호를 잠글 금고 열쇠가
+            없어 새 소스를 등록할 수 없습니다 — 서버 .env에 값을 넣고 백엔드를 재기동하세요.
+            기존 소스의 활성화·비활성화·삭제는 계속 할 수 있습니다.
+          </span>
+        </div>
       )}
 
-      <div className="mb-3 flex items-center gap-2">
-        <input
-          className="w-64 rounded border px-3 py-1.5 text-sm"
-          style={{ borderColor: "var(--border-light)" }}
-          type="password"
-          autoComplete="off"
-          placeholder="관리 비밀번호 (수정용 — 접속 비밀번호와 다릅니다)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          data-testid="DataSourcePanel-passwordInput"
-        />
-      </div>
-
-      <ul className="mb-4 space-y-2" data-testid="DataSourcePanel-list">
-        {items.map((item) => (
-          <li key={item.id} className="card reveal-host flex flex-col gap-2 p-3 text-sm"
-              data-testid={`DataSourcePanel-item-${item.id}`}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{item.name}</span>
-              <span className="badge badge--muted">{item.engine}</span>
-              <span className="badge badge--muted">{item.access_mode}</span>
-              {item.is_managed && (
-                <span className="badge badge--muted" data-testid={`DataSourcePanel-managedBadge-${item.id}`}>
-                  관리형 · 읽기전용
+      <ul className="mb-3 flex flex-col gap-2.5" data-testid="DataSourcePanel-list">
+        {items.map((item) => {
+          const lastTest = describeLastTest(item);
+          const isPending = editingId !== item.id && deleteConfirm?.id !== item.id;
+          return (
+            <li
+              key={item.id}
+              className={`card src-card reveal-host text-sm${item.is_enabled ? "" : " src-card--off"}`}
+              data-testid={`DataSourcePanel-item-${item.id}`}
+            >
+              <div className={`src-card__engine src-card__engine--${item.engine}`}>
+                {item.engine === "sqlite" ? <FileIcon size={18} /> : <DatabaseIcon size={18} />}
+              </div>
+              <div className="src-card__top">
+                <span className="src-card__name">{item.name}</span>
+                <span className="badge badge--muted">{item.engine}</span>
+                <span className="badge badge--muted">{item.access_mode}</span>
+                {item.is_managed && (
+                  <span className="badge badge--muted badge--plain"
+                        data-testid={`DataSourcePanel-managedBadge-${item.id}`}>
+                    <LockIcon size={11} />관리형 · 읽기전용
+                  </span>
+                )}
+                <span className={`badge badge--plain ${item.is_enabled ? "badge--ok" : "badge--muted"}`}
+                      data-testid={`DataSourcePanel-status-${item.id}`}>
+                  <span className="badge__dot" />{item.is_enabled ? "활성" : "비활성"}
                 </span>
-              )}
-              <span className="font-mono text-xs" style={{ color: "var(--muted)" }}>
-                {formatLocation(item)}
-              </span>
-              <span className="text-xs" style={{ color: "var(--slate)" }}>
-                {item.has_password ? "비밀번호 설정됨" : "비밀번호 없음"}
-              </span>
-              <span className="text-xs"
-                    style={{ color: item.is_enabled ? "var(--rel-confirmed)" : "var(--muted)" }}
-                    data-testid={`DataSourcePanel-status-${item.id}`}>
-                {item.is_enabled ? "활성" : "비활성"}
-              </span>
-              <span className="ml-auto text-xs" style={{ color: "var(--muted)" }}>
-                {item.last_ok_at
-                  ? `마지막 성공 ${new Date(item.last_ok_at).toLocaleString()}`
-                  : "성공 이력 없음"}
-              </span>
-            </div>
-
-            {item.last_error && (
-              <p className="text-xs" style={{ color: "var(--error)" }}
-                 data-testid={`DataSourcePanel-error-${item.id}`}>
-                연결 실패 — {item.last_error}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {/* n8n 경유 소스(관리형 사내 MSSQL)는 access_mode!="direct"라 백엔드가 테스트를
-                  항상 400으로 거부한다 — 눌러도 절대 성공 못 하는 버튼을 아예 안 보여준다. */}
-              {!item.is_managed && (
-                <button
-                  className="icon-button inline-flex items-center gap-1.5"
-                  onClick={() => handleTest(item)}
-                  data-testid={`DataSourcePanel-testButton-${item.id}`}
+              </div>
+              <div className="src-card__meta">
+                <span className="font-mono" style={{ color: "var(--slate)" }}>{formatLocation(item)}</span>
+                <span className="src-card__kv">
+                  <KeyIcon size={12} />{item.has_password ? "비밀번호 설정됨" : "비밀번호 없음"}
+                </span>
+                <span
+                  className="src-card__kv"
+                  style={{ color: lastTest.tone === "err" ? "var(--error)"
+                    : lastTest.tone === "ok" ? "var(--deep-green)" : undefined }}
+                  data-testid={`DataSourcePanel-lastTest-${item.id}`}
                 >
-                  <PlugIcon size={13} />
-                  연결 테스트
-                </button>
-              )}
-              {!item.is_managed && editingId !== item.id && deleteConfirm?.id !== item.id && (
-                <>
-                  <button
-                    className="icon-button inline-flex items-center gap-1.5"
-                    onClick={() => handleCollect(item)}
-                    data-testid={`DataSourcePanel-collectButton-${item.id}`}
-                  >
-                    <DatabaseIcon size={13} />
-                    카탈로그 수집
-                  </button>
-                  {/* 부수 조작은 카드 hover·포커스에서만 드러난다(.reveal-action) — 목록을
-                      훑을 때는 이름·상태·연결 테스트·수집만 보인다 */}
-                  <button
-                    className="icon-button reveal-action inline-flex items-center gap-1.5"
-                    onClick={() => startEdit(item)}
-                    data-testid={`DataSourcePanel-editButton-${item.id}`}
-                  >
-                    <PencilIcon size={13} />
-                    수정
-                  </button>
-                  <button
-                    className="icon-button reveal-action inline-flex items-center gap-1.5"
-                    disabled={!canMutate}
-                    title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
-                    onClick={() => handleToggleEnabled(item)}
-                    data-testid={`DataSourcePanel-toggleButton-${item.id}`}
-                  >
-                    {item.is_enabled ? <BanIcon size={13} /> : <CheckCircleIcon size={13} />}
-                    {item.is_enabled ? "비활성화" : "활성화"}
-                  </button>
-                  <button
-                    className="icon-button reveal-action inline-flex items-center gap-1.5"
-                    disabled={!canMutate}
-                    title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
-                    onClick={() => startDelete(item)}
-                    data-testid={`DataSourcePanel-deleteButton-${item.id}`}
-                  >
-                    <TrashIcon size={13} />
-                    삭제
-                  </button>
-                </>
-              )}
-            </div>
+                  {lastTest.tone === "err" ? <WarningIcon size={12} />
+                    : lastTest.tone === "ok" ? <CheckIcon size={12} /> : <ClockIcon size={12} />}
+                  {lastTest.text}
+                </span>
+              </div>
 
-            {deleteConfirm?.id === item.id && (
-              <div className="danger-box flex flex-col gap-2"
-                   data-testid={`DataSourcePanel-deleteConfirm-${item.id}`}>
-                <p className="flex items-center gap-1.5 font-medium" style={{ color: "var(--error)" }}>
-                  <TrashIcon size={14} />
-                  ‘{item.name}’ 소스를 삭제합니다 — 되돌릴 수 없습니다.
+              {item.last_error && (
+                <p className="src-card__error" data-testid={`DataSourcePanel-error-${item.id}`}>
+                  <WarningIcon size={13} />{item.last_error}
                 </p>
-                <p className="text-xs" style={{ color: "var(--body-text)" }}>
-                  아래 정보가 <strong>함께 삭제</strong>됩니다. 접속만 끊고 기록은 남기려면
-                  삭제 대신 비활성화를 쓰세요.
-                </p>
-                {deleteConfirm.error && (
-                  <p className="text-xs" style={{ color: "var(--error)" }}
-                     data-testid={`DataSourcePanel-dependentsError-${item.id}`}>
-                    함께 삭제되는 항목을 확인하지 못했습니다 — {deleteConfirm.error}
-                  </p>
-                )}
-                {!deleteConfirm.dependents && !deleteConfirm.error && (
-                  <p className="text-xs" style={{ color: "var(--muted)" }}
-                     data-testid={`DataSourcePanel-dependentsLoading-${item.id}`}>
-                    함께 삭제되는 항목을 확인하는 중…
-                  </p>
-                )}
-                {deleteConfirm.dependents && (
-                  <ul className="flex flex-wrap gap-1.5"
-                      data-testid={`DataSourcePanel-dependents-${item.id}`}>
-                    {buildDependentLines(deleteConfirm.dependents).map((line) => (
-                      <li key={line.key} className="stat-pill"
-                          style={line.count === 0 ? { opacity: 0.55 } : undefined}
-                          data-testid={`DataSourcePanel-dependent-${line.key}-${item.id}`}>
-                        {line.label} <b>{line.count.toLocaleString()}건</b>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <label className="flex items-center gap-2 text-xs" style={{ color: "var(--ink)" }}>
-                  <input
-                    type="checkbox"
-                    className="ctl-check"
-                    checked={cascadeAcknowledged}
-                    // 개수를 못 읽었으면 무엇이 지워지는지 모른 채 체크하게 되므로 잠근다
-                    disabled={!deleteConfirm.dependents}
-                    onChange={(e) => setCascadeAcknowledged(e.target.checked)}
-                    data-testid={`DataSourcePanel-cascadeCheck-${item.id}`}
-                  />
-                  위 정보가 함께 삭제되는 것을 확인했습니다
-                </label>
-                <div className="flex flex-wrap gap-2">
+              )}
+
+              <div className="src-card__actions">
+                {/* n8n 경유 소스(관리형 사내 MSSQL)는 access_mode!="direct"라 백엔드가 테스트를
+                    항상 400으로 거부한다 — 누를 수 없는 이유를 버튼이 직접 말한다. */}
+                {item.is_managed ? (
+                  <>
+                    <button className="icon-button" disabled title="관리형 소스는 n8n이 접속합니다">
+                      <PlugIcon size={13} />연결 테스트
+                    </button>
+                    <span className="badge badge--muted badge--plain">수집은 아래 카탈로그 수집에서</span>
+                  </>
+                ) : (
                   <button
-                    className="btn-secondary btn-danger"
-                    disabled={!cascadeAcknowledged || !canMutate}
-                    title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
-                    onClick={() => confirmDelete(item)}
-                    data-testid={`DataSourcePanel-confirmDeleteButton-${item.id}`}
+                    className="icon-button"
+                    onClick={() => handleTest(item)}
+                    data-testid={`DataSourcePanel-testButton-${item.id}`}
                   >
-                    <TrashIcon size={13} />
-                    함께 삭제
+                    <PlugIcon size={13} />연결 테스트
+                  </button>
+                )}
+                {!item.is_managed && isPending && (
+                  <>
+                    <button
+                      className="icon-button"
+                      onClick={() => handleCollect(item)}
+                      data-testid={`DataSourcePanel-collectButton-${item.id}`}
+                    >
+                      <DatabaseIcon size={13} />카탈로그 수집
+                    </button>
+                    <span className="src-card__spacer" />
+                    {/* 부수 조작은 카드 hover·포커스에서만 드러난다(.reveal-action) — 목록을
+                        훑을 때는 이름·상태·연결 테스트·수집만 보인다 */}
+                    <button
+                      className="icon-button reveal-action"
+                      onClick={() => startEdit(item)}
+                      data-testid={`DataSourcePanel-editButton-${item.id}`}
+                    >
+                      <PencilIcon size={13} />수정
+                    </button>
+                    <button
+                      className="icon-button reveal-action"
+                      disabled={!canMutate}
+                      title={lockedTitle}
+                      onClick={() => handleToggleEnabled(item)}
+                      data-testid={`DataSourcePanel-toggleButton-${item.id}`}
+                    >
+                      {item.is_enabled ? <BanIcon size={13} /> : <CheckCircleIcon size={13} />}
+                      {item.is_enabled ? "비활성화" : "활성화"}
+                    </button>
+                    <button
+                      className="icon-button reveal-action ctl-field--danger"
+                      disabled={!canMutate}
+                      title={lockedTitle}
+                      onClick={() => startDelete(item)}
+                      data-testid={`DataSourcePanel-deleteButton-${item.id}`}
+                    >
+                      <TrashIcon size={13} />삭제
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {deleteConfirm?.id === item.id && (
+                <div className="danger-box src-card__form flex flex-col gap-2"
+                     data-testid={`DataSourcePanel-deleteConfirm-${item.id}`}>
+                  <p className="flex items-center gap-1.5 font-medium" style={{ color: "var(--error)" }}>
+                    <TrashIcon size={14} />
+                    ‘{item.name}’ 소스를 삭제합니다 — 되돌릴 수 없습니다.
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--body-text)" }}>
+                    아래 정보가 <strong>함께 삭제</strong>됩니다. 접속만 끊고 기록은 남기려면
+                    삭제 대신 비활성화를 쓰세요.
+                  </p>
+                  {deleteConfirm.error && (
+                    <p className="text-xs" style={{ color: "var(--error)" }}
+                       data-testid={`DataSourcePanel-dependentsError-${item.id}`}>
+                      함께 삭제되는 항목을 확인하지 못했습니다 — {deleteConfirm.error}
+                    </p>
+                  )}
+                  {!deleteConfirm.dependents && !deleteConfirm.error && (
+                    <p className="text-xs" style={{ color: "var(--muted)" }}
+                       data-testid={`DataSourcePanel-dependentsLoading-${item.id}`}>
+                      함께 삭제되는 항목을 확인하는 중…
+                    </p>
+                  )}
+                  {deleteConfirm.dependents && (
+                    <ul className="flex flex-wrap gap-1.5"
+                        data-testid={`DataSourcePanel-dependents-${item.id}`}>
+                      {buildDependentLines(deleteConfirm.dependents).map((line) => (
+                        <li key={line.key} className="stat-pill"
+                            style={line.count === 0 ? { opacity: 0.55 } : undefined}
+                            data-testid={`DataSourcePanel-dependent-${line.key}-${item.id}`}>
+                          {line.label} <b>{line.count.toLocaleString()}건</b>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <label className="flex items-center gap-2 text-xs" style={{ color: "var(--ink)" }}>
+                    <input
+                      type="checkbox"
+                      className="ctl-check"
+                      checked={cascadeAcknowledged}
+                      // 개수를 못 읽었으면 무엇이 지워지는지 모른 채 체크하게 되므로 잠근다
+                      disabled={!deleteConfirm.dependents}
+                      onChange={(e) => setCascadeAcknowledged(e.target.checked)}
+                      data-testid={`DataSourcePanel-cascadeCheck-${item.id}`}
+                    />
+                    위 정보가 함께 삭제되는 것을 확인했습니다
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn-secondary btn-danger"
+                      disabled={!cascadeAcknowledged || !canMutate}
+                      title={lockedTitle}
+                      onClick={() => confirmDelete(item)}
+                      data-testid={`DataSourcePanel-confirmDeleteButton-${item.id}`}
+                    >
+                      <TrashIcon size={13} />
+                      함께 삭제
+                    </button>
+                    <button
+                      className="icon-button"
+                      onClick={cancelDelete}
+                      data-testid={`DataSourcePanel-cancelDeleteButton-${item.id}`}
+                    >
+                      취소
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {editingId === item.id && (
+                <div className="src-card__form flex flex-wrap items-end gap-2 border-t pt-2"
+                     style={{ borderColor: "var(--border-light)" }}
+                     data-testid={`DataSourcePanel-editForm-${item.id}`}>
+                  <input
+                    className="ctl-field"
+                    placeholder="이름"
+                    value={editForm.name}
+                    onChange={(e) => setEdit({ name: e.target.value })}
+                    data-testid={`DataSourcePanel-editNameInput-${item.id}`}
+                  />
+                  {editForm.engine === "sqlite" ? (
+                    <input
+                      className="ctl-field"
+                      placeholder="파일 경로"
+                      value={editForm.file_path}
+                      onChange={(e) => setEdit({ file_path: e.target.value })}
+                      data-testid={`DataSourcePanel-editFilePathInput-${item.id}`}
+                    />
+                  ) : (
+                    <>
+                      <input
+                        className="ctl-field"
+                        placeholder="호스트"
+                        value={editForm.host}
+                        onChange={(e) => setEdit({ host: e.target.value })}
+                        data-testid={`DataSourcePanel-editHostInput-${item.id}`}
+                      />
+                      <input
+                        className="ctl-field w-24"
+                        type="number"
+                        value={editForm.port}
+                        onChange={(e) => setEdit({ port: Number(e.target.value) })}
+                        data-testid={`DataSourcePanel-editPortInput-${item.id}`}
+                      />
+                      <input
+                        className="ctl-field"
+                        placeholder="database"
+                        value={editForm.database}
+                        onChange={(e) => setEdit({ database: e.target.value })}
+                        data-testid={`DataSourcePanel-editDatabaseInput-${item.id}`}
+                      />
+                      <input
+                        className="ctl-field"
+                        placeholder="읽기전용 계정"
+                        value={editForm.username}
+                        onChange={(e) => setEdit({ username: e.target.value })}
+                        data-testid={`DataSourcePanel-editUsernameInput-${item.id}`}
+                      />
+                    </>
+                  )}
+                  <input
+                    className="ctl-field"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={item.has_password ? "접속 비밀번호 (비우면 유지)" : "접속 비밀번호"}
+                    value={editForm.password}
+                    onChange={(e) => setEdit({ password: e.target.value })}
+                    data-testid={`DataSourcePanel-editPasswordInput-${item.id}`}
+                  />
+                  <button
+                    className="btn-secondary"
+                    disabled={!canMutate || !isSourceFormValid(editForm)}
+                    onClick={() => handleSaveEdit(item.id)}
+                    data-testid={`DataSourcePanel-saveEditButton-${item.id}`}
+                  >
+                    저장
                   </button>
                   <button
                     className="icon-button"
-                    onClick={cancelDelete}
-                    data-testid={`DataSourcePanel-cancelDeleteButton-${item.id}`}
+                    onClick={() => {
+                      // 폼도 같이 비운다 — 안 그러면 취소한 접속 비밀번호가 다음 편집까지
+                      // 컴포넌트 상태에 남는다(렌더·전송·로깅은 안 되지만 불필요한 잔류).
+                      setEditingId(null);
+                      setEditForm(EMPTY_FORM);
+                    }}
+                    data-testid={`DataSourcePanel-cancelEditButton-${item.id}`}
                   >
                     취소
                   </button>
                 </div>
-              </div>
-            )}
-
-            {editingId === item.id && (
-              <div className="flex flex-wrap items-end gap-2 border-t pt-2"
-                   style={{ borderColor: "var(--border-light)" }}
-                   data-testid={`DataSourcePanel-editForm-${item.id}`}>
-                <input
-                  className="rounded border px-2 py-1 text-sm"
-                  style={{ borderColor: "var(--border-light)" }}
-                  placeholder="이름"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  data-testid={`DataSourcePanel-editNameInput-${item.id}`}
-                />
-                {editForm.engine === "sqlite" ? (
-                  <input
-                    className="rounded border px-2 py-1 text-sm"
-                    style={{ borderColor: "var(--border-light)" }}
-                    placeholder="파일 경로"
-                    value={editForm.file_path}
-                    onChange={(e) => setEditForm({ ...editForm, file_path: e.target.value })}
-                    data-testid={`DataSourcePanel-editFilePathInput-${item.id}`}
-                  />
-                ) : (
-                  <>
-                    <input
-                      className="rounded border px-2 py-1 text-sm"
-                      style={{ borderColor: "var(--border-light)" }}
-                      placeholder="호스트"
-                      value={editForm.host}
-                      onChange={(e) => setEditForm({ ...editForm, host: e.target.value })}
-                      data-testid={`DataSourcePanel-editHostInput-${item.id}`}
-                    />
-                    <input
-                      className="w-20 rounded border px-2 py-1 text-sm"
-                      style={{ borderColor: "var(--border-light)" }}
-                      type="number"
-                      value={editForm.port}
-                      onChange={(e) => setEditForm({ ...editForm, port: Number(e.target.value) })}
-                      data-testid={`DataSourcePanel-editPortInput-${item.id}`}
-                    />
-                    <input
-                      className="rounded border px-2 py-1 text-sm"
-                      style={{ borderColor: "var(--border-light)" }}
-                      placeholder="database"
-                      value={editForm.database}
-                      onChange={(e) => setEditForm({ ...editForm, database: e.target.value })}
-                      data-testid={`DataSourcePanel-editDatabaseInput-${item.id}`}
-                    />
-                    <input
-                      className="rounded border px-2 py-1 text-sm"
-                      style={{ borderColor: "var(--border-light)" }}
-                      placeholder="읽기전용 계정"
-                      value={editForm.username}
-                      onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                      data-testid={`DataSourcePanel-editUsernameInput-${item.id}`}
-                    />
-                  </>
-                )}
-                <input
-                  className="rounded border px-2 py-1 text-sm"
-                  style={{ borderColor: "var(--border-light)" }}
-                  type="password"
-                  autoComplete="off"
-                  placeholder={item.has_password ? "접속 비밀번호 (비우면 유지)" : "접속 비밀번호"}
-                  value={editForm.password}
-                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                  data-testid={`DataSourcePanel-editPasswordInput-${item.id}`}
-                />
-                <button
-                  className="btn-secondary"
-                  disabled={!canMutate || !isSourceFormValid(editForm)}
-                  onClick={() => handleSaveEdit(item.id)}
-                  data-testid={`DataSourcePanel-saveEditButton-${item.id}`}
-                >
-                  저장
-                </button>
-                <button
-                  className="icon-button"
-                  onClick={() => {
-                    // 폼도 같이 비운다 — 안 그러면 취소한 접속 비밀번호가 다음 편집까지
-                    // 컴포넌트 상태에 남는다(렌더·전송·로깅은 안 되지만 불필요한 잔류).
-                    setEditingId(null);
-                    setEditForm(EMPTY_FORM);
-                  }}
-                  data-testid={`DataSourcePanel-cancelEditButton-${item.id}`}
-                >
-                  취소
-                </button>
-              </div>
-            )}
-          </li>
-        ))}
+              )}
+            </li>
+          );
+        })}
         {items.length === 0 && (
-          <li className="text-sm" style={{ color: "var(--muted)" }}
-              data-testid="DataSourcePanel-emptyState">
-            등록된 소스가 없습니다
+          <li className="empty-state" data-testid="DataSourcePanel-emptyState">
+            <DatabaseIcon size={22} />
+            <span>등록된 소스가 없습니다</span>
           </li>
         )}
       </ul>
 
       {keyConfigured && (
-        <div className="flex flex-col gap-2 rounded border p-3"
-             style={{ borderColor: "var(--border-light)" }}
-             data-testid="DataSourcePanel-form">
-          <div className="flex flex-wrap gap-2">
-            <input
-              className="rounded border px-2 py-1 text-sm"
-              style={{ borderColor: "var(--border-light)" }}
-              placeholder="이름"
-              value={createForm.name}
-              onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              data-testid="DataSourcePanel-nameInput"
-            />
-            <select
-              className="rounded border px-2 py-1 text-sm"
-              style={{ borderColor: "var(--border-light)" }}
-              value={createForm.engine}
-              onChange={(e) =>
-                setCreateForm({ ...createForm, engine: e.target.value as "postgres" | "sqlite" })}
-              data-testid="DataSourcePanel-engineSelect"
-            >
-              <option value="postgres">PostgreSQL</option>
-              <option value="sqlite">SQLite</option>
-            </select>
-          </div>
-
-          {createForm.engine === "sqlite" ? (
-            <input
-              className="rounded border px-2 py-1 text-sm"
-              style={{ borderColor: "var(--border-light)" }}
-              placeholder="/mnt/sources/svcc/app.db"
-              value={createForm.file_path}
-              onChange={(e) => setCreateForm({ ...createForm, file_path: e.target.value })}
-              data-testid="DataSourcePanel-filePathInput"
-            />
-          ) : (
-            <div className="flex flex-wrap gap-2">
+        <details className="collapse" data-testid="DataSourcePanel-newSource">
+          <summary>
+            <PlusIcon size={14} />새 소스 등록
+            <span className="badge badge--muted badge--plain">PostgreSQL · SQLite</span>
+          </summary>
+          <div className="form-grid" data-testid="DataSourcePanel-form">
+            <label className="span-2">
+              이름
               <input
-                className="rounded border px-2 py-1 text-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                placeholder="컨테이너 이름 또는 네트워크 별칭"
-                value={createForm.host}
-                onChange={(e) => setCreateForm({ ...createForm, host: e.target.value })}
-                data-testid="DataSourcePanel-hostInput"
+                className="ctl-field"
+                placeholder="svca"
+                value={createForm.name}
+                onChange={(e) => setCreate({ name: e.target.value })}
+                data-testid="DataSourcePanel-nameInput"
               />
-              <input
-                className="w-20 rounded border px-2 py-1 text-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                type="number"
-                value={createForm.port}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, port: Number(e.target.value) })}
-                data-testid="DataSourcePanel-portInput"
-              />
-              <input
-                className="rounded border px-2 py-1 text-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                placeholder="database"
-                value={createForm.database}
-                onChange={(e) => setCreateForm({ ...createForm, database: e.target.value })}
-                data-testid="DataSourcePanel-databaseInput"
-              />
-              <input
-                className="rounded border px-2 py-1 text-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                placeholder="읽기전용 계정"
-                value={createForm.username}
-                onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
-                data-testid="DataSourcePanel-usernameInput"
-              />
-              <input
-                className="rounded border px-2 py-1 text-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                type="password"
-                autoComplete="off"
-                placeholder="접속 비밀번호 (선택)"
-                value={createForm.password}
-                onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                data-testid="DataSourcePanel-secretInput"
-              />
+            </label>
+            <label className="span-2">
+              엔진
+              <span className="seg" role="group" aria-label="엔진" data-testid="DataSourcePanel-engineSelect">
+                <button
+                  type="button"
+                  className={`seg__btn${createForm.engine === "postgres" ? " seg__btn--on" : ""}`}
+                  aria-pressed={createForm.engine === "postgres"}
+                  onClick={() => setCreate({ engine: "postgres" })}
+                  data-testid="DataSourcePanel-engine-postgres"
+                >
+                  <DatabaseIcon size={13} />PostgreSQL
+                </button>
+                <button
+                  type="button"
+                  className={`seg__btn${createForm.engine === "sqlite" ? " seg__btn--on" : ""}`}
+                  aria-pressed={createForm.engine === "sqlite"}
+                  onClick={() => setCreate({ engine: "sqlite" })}
+                  data-testid="DataSourcePanel-engine-sqlite"
+                >
+                  <FileIcon size={13} />SQLite
+                </button>
+              </span>
+            </label>
+            {createForm.engine === "sqlite" ? (
+              <label className="span-6">
+                파일 경로 (backend 컨테이너 안)
+                <input
+                  className="ctl-field"
+                  placeholder="/mnt/sources/svcc/app.db"
+                  value={createForm.file_path}
+                  onChange={(e) => setCreate({ file_path: e.target.value })}
+                  data-testid="DataSourcePanel-filePathInput"
+                />
+              </label>
+            ) : (
+              <>
+                <label className="span-2">
+                  호스트 (네트워크 별칭)
+                  <input
+                    className="ctl-field"
+                    placeholder="svca-db"
+                    value={createForm.host}
+                    onChange={(e) => setCreate({ host: e.target.value })}
+                    data-testid="DataSourcePanel-hostInput"
+                  />
+                </label>
+                <label className="span-2">
+                  포트
+                  <input
+                    className="ctl-field"
+                    type="number"
+                    value={createForm.port}
+                    onChange={(e) => setCreate({ port: Number(e.target.value) })}
+                    data-testid="DataSourcePanel-portInput"
+                  />
+                </label>
+                <label className="span-2">
+                  database
+                  <input
+                    className="ctl-field"
+                    placeholder="billing"
+                    value={createForm.database}
+                    onChange={(e) => setCreate({ database: e.target.value })}
+                    data-testid="DataSourcePanel-databaseInput"
+                  />
+                </label>
+                <label className="span-2">
+                  읽기전용 계정
+                  <input
+                    className="ctl-field"
+                    placeholder="dbviewer_ro"
+                    value={createForm.username}
+                    onChange={(e) => setCreate({ username: e.target.value })}
+                    data-testid="DataSourcePanel-usernameInput"
+                  />
+                </label>
+                <label className="span-3">
+                  접속 비밀번호 (선택)
+                  <input
+                    className="ctl-field"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="보안 채널로 받은 값"
+                    value={createForm.password}
+                    onChange={(e) => setCreate({ password: e.target.value })}
+                    data-testid="DataSourcePanel-secretInput"
+                  />
+                </label>
+              </>
+            )}
+            <div className="form-grid__foot">
+              <button
+                className="btn-primary inline-flex items-center gap-1.5"
+                disabled={!canRegister}
+                title={lockedTitle}
+                onClick={handleCreate}
+                data-testid="DataSourcePanel-createButton"
+              >
+                <PlusIcon size={13} />등록
+              </button>
+              <span className="text-xs" style={{ color: "var(--muted)" }}>
+                등록 직후 [연결 테스트]로 database·version이 회신값과 같은지 확인하세요.
+              </span>
             </div>
-          )}
-
-          <button
-            className="btn-primary self-start"
-            disabled={!canRegister}
-            title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
-            onClick={handleCreate}
-            data-testid="DataSourcePanel-createButton"
-          >
-            등록
-          </button>
-        </div>
+          </div>
+        </details>
       )}
 
       {message && (
-        <p className="mt-2 text-sm" style={{ color: "var(--rel-confirmed)" }}
-           data-testid="DataSourcePanel-message">
-          {message}
-        </p>
+        <div className="banner banner--ok mt-3" data-testid="DataSourcePanel-message">
+          <CheckIcon size={15} /><span>{message}</span>
+        </div>
       )}
       {error && (
-        <p className="mt-2 text-sm" style={{ color: "var(--error)" }}
-           data-testid="DataSourcePanel-errorMessage">
-          {error}
-        </p>
+        <div className="banner banner--err mt-3" data-testid="DataSourcePanel-errorMessage">
+          <WarningIcon size={15} /><span>{error}</span>
+        </div>
       )}
     </section>
   );

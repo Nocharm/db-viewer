@@ -441,3 +441,64 @@ export function ClipboardIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M7 4l13 8-13 8V4z" />
+    </Svg>
+  );
+}
+
+export function KeyIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="12" r="4" />
+      <path d="M12 12h9M18 12v3M15 12v2" />
+    </Svg>
+  );
+}
+
+export function SyncIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3" />
+      <path d="M18 3v4h-4M6 21v-4h4" />
+    </Svg>
+  );
+}
+
+export function WarningIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3L2.5 20h19L12 3z" />
+      <path d="M12 10v4M12 17v.5" />
+    </Svg>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </Svg>
+  );
+}
+
+export function FileIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 3h8l4 4v14H6V3z" />
+      <path d="M14 3v4h4" />
+    </Svg>
+  );
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Svg>
+  );
+}
