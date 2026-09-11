@@ -342,3 +342,41 @@ export function PencilIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function SpinnerIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 끊긴 원 — .spin으로 돌린다. 열린 틈이 있어야 회전이 보인다 / open arc so the spin reads */}
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </Svg>
+  );
+}
+
+export function StopIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 정지 — 속을 채운 사각형(미디어 정지 문법) / filled square, the media stop glyph */}
+      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function TableIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 표 — 머리글 행과 첫 열 구분선 / a grid with a header row and a column rule */}
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 10v10" />
+    </Svg>
+  );
+}
+
+export function ViewIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 눈 — 뷰(view)의 동음 은유, obj-chip--view와 같은 자리에 쓴다 / eye for views */}
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </Svg>
+  );
+}

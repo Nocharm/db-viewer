@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SchemaCategoryItem, ValueProbeHit } from "./api";
 import {
-  buildPreviewHref, formatMatchCount, parseFiltersParam, remainingSchemas,
-  selectableSchemas, shouldKeepPolling, validateProbeRequest,
+  buildPreviewHref, describeSkippedView, findButtonLabel, formatMatchCount, parseFiltersParam,
+  remainingSchemas, selectableSchemas, shouldKeepPolling, validateProbeRequest,
 } from "./value-probe";
 
 const hit: ValueProbeHit = {
@@ -13,7 +13,10 @@ const hit: ValueProbeHit = {
 };
 
 describe("validateProbeRequest", () => {
-  const ok = { sourceId: 1, schemas: ["SAP"], value: "x", hint: "", mode: "normalized" as const };
+  const ok = {
+    sourceId: 1, schemas: ["SAP"], value: "x", hint: "",
+    mode: "normalized" as const, includeRelatedViews: false,
+  };
 
   it("accepts a complete form", () => {
     expect(validateProbeRequest(ok)).toBeNull();
@@ -96,5 +99,22 @@ describe("formatMatchCount", () => {
     expect(formatMatchCount({ ...hit, match_count: 1000, count_capped: true })).toBe("1000+");
     expect(formatMatchCount({ ...hit, match_count: 7 })).toBe("7");
     expect(formatMatchCount({ ...hit, match_count: null })).toBeNull();
+  });
+});
+
+describe("describeSkippedView", () => {
+  it("names the view and the policy reason", () => {
+    expect(describeSkippedView({ qname: "SAP.V_X", schema: "SAP", reason: "not_allowed" }, "ko"))
+      .toBe("SAP.V_X — 허용 목록 밖");
+    expect(describeSkippedView({ qname: "HR.V_Y", schema: "HR", reason: "hidden" }, "en"))
+      .toBe("HR.V_Y — hidden schema");
+  });
+});
+
+describe("findButtonLabel", () => {
+  it("shows progress while running and stop on hover", () => {
+    expect(findButtonLabel({ running: false, hovering: false, done: 0, total: 0 })).toBe("find");
+    expect(findButtonLabel({ running: true, hovering: false, done: 12, total: 422 })).toBe("progress");
+    expect(findButtonLabel({ running: true, hovering: true, done: 12, total: 422 })).toBe("stop");
   });
 });

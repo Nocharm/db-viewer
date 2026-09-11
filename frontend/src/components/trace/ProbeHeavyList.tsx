@@ -23,6 +23,13 @@ const REASON_KEYS: Record<ValueProbeHeavy["reason"], MessageKey> = {
   view_shape: "trace.heavy.reason.view_shape",
 };
 
+// 사유마다 색을 달리 준다 — 행 수 초과(주의)·미상(중립)·뷰 모양(추론)이 한눈에 갈린다
+const REASON_BADGES: Record<ValueProbeHeavy["reason"], string> = {
+  rows: "badge--unresolved",
+  unknown_rows: "badge--muted",
+  view_shape: "badge--ai",
+};
+
 export function ProbeHeavyList({ job, busy, onRun }: ProbeHeavyListProps) {
   const { t } = useI18n();
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -50,14 +57,18 @@ export function ProbeHeavyList({ job, busy, onRun }: ProbeHeavyListProps) {
       <ul className="flex flex-col gap-1">
         {job.heavy.map((target) => (
           <li key={target.target_id} className="list-row flex items-center gap-2 px-2 py-1 text-sm">
-            <input type="checkbox" checked={picked.has(target.target_id)}
+            <input type="checkbox" className="ctl-check" checked={picked.has(target.target_id)}
                    onChange={() => toggle(target.target_id)}
                    data-testid={`ProbeHeavyList-item-${target.target_id}`} />
             <span className="font-mono">{target.qname}</span>
-            <span className="text-xs" style={{ color: "var(--muted)" }}>
+            <span className={`badge ${REASON_BADGES[target.reason]}`}>
               {t(REASON_KEYS[target.reason])}
-              {target.est_rows !== null ? ` · ${target.est_rows.toLocaleString()} ${t("trace.heavy.rows")}` : ""}
             </span>
+            {target.est_rows !== null && (
+              <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
+                {target.est_rows.toLocaleString()} {t("trace.heavy.rows")}
+              </span>
+            )}
           </li>
         ))}
       </ul>

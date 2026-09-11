@@ -67,7 +67,7 @@ function TracePageInner() {
   const allowedNames = schemaOptions.map((item) => item.schema);
 
   const [form, setForm] = useState<ProbeFormState>({
-    sourceId, schemas: [], value: "", hint: "", mode: "normalized",
+    sourceId, schemas: [], value: "", hint: "", mode: "normalized", includeRelatedViews: false,
   });
   const [starting, setStarting] = useState(false);
   const [plan, setPlan] = useState<ValueProbeStart["plan"] | null>(null);
@@ -98,6 +98,7 @@ function TracePageInner() {
       const started = await startValueProbe({
         source_id: effectiveSourceId, schemas, value: request.value.trim(),
         mode: request.mode, hint: request.hint.trim() || undefined,
+        include_related_views: request.includeRelatedViews,
       });
       setPlan(started.plan);
       setJob(await fetchValueProbeJob(started.job_id));
@@ -167,9 +168,12 @@ function TracePageInner() {
               {error}
             </div>
           )}
-          <ProbeForm form={form} schemas={schemaOptions} busy={starting || polling}
-                     onChange={setForm} onSubmit={() => void start(form.schemas)} />
-          {job && <ProbeProgress job={job} plan={plan} onCancel={() => void handleCancel()} />}
+          {/* 시작 요청(starting) 동안에도 실행 상태다 — 응답 전 두 번 눌러 잡이 겹치지 않게 */}
+          <ProbeForm form={form} schemas={schemaOptions} running={starting || polling}
+                     progress={job && polling ? job.progress : null}
+                     onChange={setForm} onSubmit={() => void start(form.schemas)}
+                     onStop={() => void handleCancel()} />
+          {job && <ProbeProgress job={job} plan={plan} />}
           {job && (
             <ProbeHits job={job} sourceId={sourceId} canContinue={rest.length > 0}
                        onContinue={handleContinue} />

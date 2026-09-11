@@ -6,7 +6,7 @@
 import Link from "next/link";
 
 import { useI18n } from "@/components/i18n";
-import { ListIcon } from "@/components/icons";
+import { ListIcon, TableIcon, ViewIcon } from "@/components/icons";
 import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import type { ValueProbeJob } from "@/lib/api";
 import { buildPreviewHref, formatMatchCount, shouldKeepPolling } from "@/lib/value-probe";
@@ -49,12 +49,14 @@ export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsP
             return (
               <li key={key} className="list-row flex flex-wrap items-center gap-2 px-2 py-1.5"
                   data-testid={`ProbeHits-hit-${key}`}>
-                <span className={`obj-chip${hit.object_type === "view" ? " obj-chip--view" : ""}`}>
+                <span className={`obj-chip inline-flex items-center gap-1${
+                  hit.object_type === "view" ? " obj-chip--view" : ""}`}>
+                  {hit.object_type === "view" ? <ViewIcon size={11} /> : <TableIcon size={11} />}
                   {t(hit.object_type === "view" ? "trace.hits.view" : "trace.hits.table")}
                 </span>
                 <span className="font-mono text-sm">{hit.qname}</span>
                 <span className="key-chip">{hit.column}</span>
-                <span className="text-xs tabular-nums" style={{ color: "var(--slate)" }}>
+                <span className="badge badge--muted tabular-nums">
                   {count ?? t("trace.hits.confirmed")}
                 </span>
                 {hit.matched_variant !== job.value && (

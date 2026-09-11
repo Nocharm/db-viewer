@@ -1,9 +1,15 @@
 /** 값 추적 화면의 순수 로직 — 페이지는 얇게, 판단은 여기서 (vitest 대상).
  *  Pure helpers for the value-probe page; the page component stays thin. */
 
-import type { SchemaCategoryItem, ValueProbeHit, ValueProbeJob, ValueProbeMode } from "@/lib/api";
+import type {
+  SchemaCategoryItem, SkippedRelatedView, ValueProbeHit, ValueProbeJob, ValueProbeMode,
+} from "@/lib/api";
+import type { Lang } from "@/lib/i18n";
 import type { PreviewFilterCond, PreviewFilterOp } from "@/lib/preview-utils";
 import { withSourceQuery } from "@/lib/source-param";
+
+// 타입 소유자는 api.ts(응답 스키마) — 화면은 이 모듈 하나만 import하면 되게 다시 내보낸다
+export type { SkippedRelatedView };
 
 /** 백엔드 PROBE_VALUE_MAX_LEN과 동일 — 미리보기 필터 값 상한과 같다 */
 export const VALUE_MAX_LEN = 100;
@@ -19,6 +25,8 @@ export interface ProbeForm {
   value: string;
   hint: string;
   mode: ValueProbeMode;
+  /** 선택 스키마의 테이블을 읽는 다른 스키마의 뷰까지 검색할지 / pull in related views */
+  includeRelatedViews: boolean;
 }
 
 export type ProbeFormError = "trace.err.noSchema" | "trace.err.noValue" | "trace.err.valueTooLong";
@@ -59,6 +67,26 @@ export function remainingSchemas(allowed: string[], searched: string[]): string[
 export function formatMatchCount(hit: ValueProbeHit): string | null {
   if (hit.match_count === null) return null;
   return hit.count_capped ? `${hit.match_count}+` : String(hit.match_count);
+}
+
+const SKIP_REASON: Record<SkippedRelatedView["reason"], { ko: string; en: string }> = {
+  hidden: { ko: "숨김 스키마", en: "hidden schema" },
+  not_allowed: { ko: "허용 목록 밖", en: "not on the preview allowlist" },
+};
+
+/** ⓘ 말풍선 한 줄 — 뷰 이름과 정책 사유 / one tooltip line: view + policy reason. */
+export function describeSkippedView(item: SkippedRelatedView, lang: Lang): string {
+  return `${item.qname} — ${SKIP_REASON[item.reason][lang]}`;
+}
+
+export type FindButtonMode = "find" | "progress" | "stop";
+
+/** 찾기 버튼의 세 얼굴 — 대기·진행·중단(호버) / the find button's three states. */
+export function findButtonLabel(
+  state: { running: boolean; hovering: boolean; done: number; total: number },
+): FindButtonMode {
+  if (!state.running) return "find";
+  return state.hovering ? "stop" : "progress";
 }
 
 function isFilterCond(value: unknown): value is PreviewFilterCond {

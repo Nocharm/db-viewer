@@ -623,6 +623,13 @@ export interface ValueProbeHeavy {
   reason: "rows" | "unknown_rows" | "view_shape";
 }
 
+/** 연관 뷰 중 정책(숨김·미리보기 비허용)으로 검색하지 않은 뷰 / a related view left unsearched. */
+export interface SkippedRelatedView {
+  qname: string;
+  schema: string;
+  reason: "hidden" | "not_allowed";
+}
+
 export interface ValueProbeJob {
   job_id: number;
   status: "queued" | "running" | "done" | "failed" | "cancelled";
@@ -633,6 +640,10 @@ export interface ValueProbeJob {
   mode: ValueProbeMode;
   schemas: string[];
   source_id: number;
+  include_related_views: boolean;
+  /** 연관 뷰로 추가된 스키마 — 선택 스키마 밖이다 / extra schemas pulled in by related views */
+  related_schemas: string[];
+  related_view_skipped: SkippedRelatedView[];
   hits: ValueProbeHit[];
   heavy: ValueProbeHeavy[];
   failed_targets: { qname: string; status: string; error: string | null }[];
@@ -641,7 +652,12 @@ export interface ValueProbeJob {
 export interface ValueProbeStart {
   job_id: number;
   status: string;
-  plan: { auto: number; heavy: number; columns: number };
+  plan: {
+    auto: number;
+    heavy: number;
+    columns: number;
+    related_views: { included: number; skipped: SkippedRelatedView[] };
+  };
 }
 
 export interface ValueProbeRequest {
@@ -650,6 +666,7 @@ export interface ValueProbeRequest {
   value: string;
   mode: ValueProbeMode;
   hint?: string;
+  include_related_views?: boolean;
 }
 
 export function startValueProbe(req: ValueProbeRequest): Promise<ValueProbeStart> {
