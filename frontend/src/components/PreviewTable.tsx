@@ -1,6 +1,7 @@
 "use client";
 
-/** 공용 미리보기 테이블 — 헤더 우클릭(정렬·숨김·고유값 모달) / shared preview grid. */
+/** 공용 미리보기 테이블 — 헤더 우클릭(정렬·숨김·고유값 모달)·셀 우클릭(복사·값 필터)
+ * / shared preview grid with header and cell context menus. */
 
 import { useEffect, useRef, useState } from "react";
 
@@ -55,6 +56,14 @@ interface ValueMenu {
   y: number;
 }
 
+/** 우클릭한 셀 — 원본 값을 그대로 든다(null이면 NULL 조건으로 내려간다) / right-clicked cell */
+interface CellMenu {
+  column: string;
+  value: unknown;
+  x: number;
+  y: number;
+}
+
 // 토스트 표시 시간(ms) — 읽고 지나갈 만큼만 / how long a toast stays up
 const TOAST_MS = 2400;
 
@@ -104,6 +113,7 @@ export function PreviewTable({
   const [menu, setMenu] = useState<HeaderMenu | null>(null);
   const [uniqueColumn, setUniqueColumn] = useState<string | null>(null);
   const [valueMenu, setValueMenu] = useState<ValueMenu | null>(null);
+  const [cellMenu, setCellMenu] = useState<CellMenu | null>(null);
   // 토스트 — 같은 문구를 연속으로 띄워도 다시 뜨도록 id를 함께 든다
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   // 헤더 드래그 순서 변경 — 드래그 중인 컬럼과 드롭 위치(대상 앞/뒤) 표시
@@ -114,6 +124,7 @@ export function PreviewTable({
   const [widths, setWidths] = useState<Record<string, number>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const valueMenuRef = useRef<HTMLDivElement | null>(null);
+  const cellMenuRef = useRef<HTMLDivElement | null>(null);
   // 내용 실측용 캔버스 — DOM으로 재려면 말줄임·줄바꿈을 임시로 풀었다 되돌려야 해서
   // 레이아웃을 두 번 흔든다 / a canvas measures text without disturbing the layout
   const measureRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -191,8 +202,18 @@ export function PreviewTable({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [valueMenu]);
 
+  useEffect(() => {
+    if (!cellMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!cellMenuRef.current?.contains(e.target as Node)) setCellMenu(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [cellMenu]);
+
   useViewportClamp(menu, menuRef, setMenu);
   useViewportClamp(valueMenu, valueMenuRef, setValueMenu);
+  useViewportClamp(cellMenu, cellMenuRef, setCellMenu);
 
   useEffect(() => {
     if (!toast) return;
@@ -280,13 +301,31 @@ export function PreviewTable({
     showToast(t("preview.filterStaged"));
   };
 
+  // HTTP(비보안 컨텍스트)에서도 동작 — 공용 헬퍼가 execCommand로 폴백한다
+  const copyWithToast = (text: string) =>
+    copyTextToClipboard(text).then((ok) =>
+      showToast(t(ok ? "preview.copied" : "preview.copyFailed")));
+
   const copyValue = () => {
     if (!valueMenu) return;
     const { value } = valueMenu;
     setValueMenu(null);
-    // HTTP(비보안 컨텍스트)에서도 동작 — 공용 헬퍼가 execCommand로 폴백한다
-    copyTextToClipboard(value).then((ok) =>
-      showToast(t(ok ? "preview.copied" : "preview.copyFailed")));
+    void copyWithToast(value);
+  };
+
+  /** 셀 우클릭 메뉴의 세 행동 — 값은 원본 그대로 넘겨 셀 더블클릭과 같은 NULL 관례를 탄다
+   * / the cell menu's actions; raw value keeps the double-click NULL convention */
+  const copyCell = () => {
+    if (!cellMenu) return;
+    const text = String(cellMenu.value ?? "");
+    setCellMenu(null);
+    void copyWithToast(text);
+  };
+  const stageCellFilter = (op: "eq" | "neq") => {
+    if (!cellMenu) return;
+    onQuickFilter?.(cellMenu.column, cellMenu.value, op);
+    setCellMenu(null);
+    showToast(t("preview.filterStaged"));
   };
 
   // 십자 하이라이트의 열 축 — React 상태로 두면 호버마다 500행 × N열이 리렌더된다.
@@ -416,7 +455,11 @@ export function PreviewTable({
                       + (column === highlightColumn ? " preview-col-pin" : "")}
                     style={cellStyle(column)}
                     title={String(row[column] ?? "")}
-                    onDoubleClick={() => onQuickFilter?.(column, row[column])}>
+                    onDoubleClick={() => onQuickFilter?.(column, row[column])}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setCellMenu({ column, value: row[column], x: e.clientX, y: e.clientY });
+                    }}>
                   <span className="block" style={contentStyle(column)}>
                     {String(row[column] ?? "")}
                   </span>
@@ -489,6 +532,34 @@ export function PreviewTable({
                   data-testid="PreviewTable-copyColumnItem">
             <CopyIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.copyColumn")}
           </button>
+        </div>
+      )}
+
+      {/* 셀 우클릭 메뉴 — 고유값 모달의 값 메뉴와 같은 세 행동을 표에서 바로 / cell context menu */}
+      {cellMenu && (
+        <div ref={cellMenuRef} className="erd-menu !fixed" style={{ left: cellMenu.x, top: cellMenu.y }}
+             data-testid="PreviewTable-cellMenu">
+          <div className="erd-menu__label max-w-56 truncate font-mono">
+            {cellMenu.column} = {String(cellMenu.value ?? "") || "∅"}
+          </div>
+          <button className="pressable erd-menu__item" onClick={copyCell}
+                  data-testid="PreviewTable-cellCopyItem">
+            <CopyIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.copyValue")}
+          </button>
+          {onQuickFilter && (
+            <>
+              <button className="pressable erd-menu__item"
+                      onClick={() => stageCellFilter("eq")}
+                      data-testid="PreviewTable-cellOnlyValueItem">
+                <FilterIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.onlyThisValue")}
+              </button>
+              <button className="pressable erd-menu__item"
+                      onClick={() => stageCellFilter("neq")}
+                      data-testid="PreviewTable-cellExcludeValueItem">
+                <BanIcon size={12} className="mr-1.5 inline-block align-middle" />{t("preview.excludeThisValue")}
+              </button>
+            </>
+          )}
         </div>
       )}
 

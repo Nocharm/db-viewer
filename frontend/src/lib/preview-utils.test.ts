@@ -114,6 +114,40 @@ describe("tokenizeSql", () => {
     const keywords = tokens.filter((t) => t.type === "keyword").map((t) => t.text);
     expect(keywords).toEqual(["WHERE", "NOT", "LIKE", "AND", "IS", "NULL"]);
   });
+
+  it("reads whole words so IS inside EQUIS and NULL inside ISNULL are not keywords", () => {
+    const tokens = tokenizeSql("SELECT EQUIS, ISNULL(QTY, 0) FROM T WHERE B IS NULL");
+    const byType = (type: string) =>
+      tokens.filter((t) => t.type === type).map((t) => t.text);
+    expect(byType("keyword")).toEqual(["SELECT", "FROM", "WHERE", "IS", "NULL"]);
+    expect(byType("function")).toEqual(["ISNULL"]);
+    expect(byType("identifier")).toEqual(["EQUIS", "QTY", "T", "B"]);
+  });
+
+  it("treats a function name as an identifier unless a call follows", () => {
+    const tokens = tokenizeSql("SELECT ISNULL FROM T");
+    expect(tokens.find((t) => t.text === "ISNULL")?.type).toBe("identifier");
+  });
+
+  it("keeps line and block comments as single comment tokens", () => {
+    const sql = "-- note\nSELECT 1 /* multi\nline */ FROM T";
+    const tokens = tokenizeSql(sql);
+    expect(tokens.filter((t) => t.type === "comment").map((t) => t.text))
+      .toEqual(["-- note", "/* multi\nline */"]);
+    expect(tokens.map((t) => t.text).join("")).toBe(sql);
+  });
+
+  it("classifies T-SQL view keywords and quoted identifiers", () => {
+    const sql = 'CREATE VIEW dbo.V AS SELECT CASE WHEN a."Cd" IS NULL THEN 0 ELSE 1 END'
+      + " FROM dbo.T a LEFT JOIN dbo.U u ON a.ID = u.ID";
+    const tokens = tokenizeSql(sql);
+    expect(tokens.filter((t) => t.type === "keyword").map((t) => t.text)).toEqual([
+      "CREATE", "VIEW", "AS", "SELECT", "CASE", "WHEN", "IS", "NULL", "THEN", "ELSE", "END",
+      "FROM", "LEFT", "JOIN", "ON",
+    ]);
+    expect(tokens.filter((t) => t.type === "identifier").map((t) => t.text)).toContain('"Cd"');
+    expect(tokens.map((t) => t.text).join("")).toBe(sql);
+  });
 });
 
 describe("buildCsv", () => {

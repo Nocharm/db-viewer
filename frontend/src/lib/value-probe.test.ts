@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { SchemaCategoryItem, SkippedRelatedView, ValueProbeHit } from "./api";
+import type {
+  SchemaCategoryItem, SkippedRelatedView, ValueProbeHit, ValueProbeJob,
+} from "./api";
 import type { MessageKey } from "./i18n";
 import {
-  buildPreviewHref, describeSkippedView, findButtonLabel, formatMatchCount, parseFiltersParam,
-  remainingSchemas, selectableSchemas, shouldKeepPolling, takeSkippedForDisplay, validateProbeRequest,
+  buildPreviewHref, describeSkippedView, findButtonLabel, formatMatchCount, getProbeStepStates,
+  parseFiltersParam, remainingSchemas, selectableSchemas, shouldKeepPolling, takeSkippedForDisplay,
+  validateProbeRequest,
 } from "./value-probe";
 
 const hit: ValueProbeHit = {
@@ -135,6 +138,38 @@ describe("takeSkippedForDisplay", () => {
     const { shown, rest } = takeSkippedForDisplay(makeItems(3));
     expect(shown).toHaveLength(3);
     expect(rest).toBe(0);
+  });
+});
+
+describe("getProbeStepStates", () => {
+  const job: ValueProbeJob = {
+    job_id: 1, status: "running", progress: { done: 0, total: 3 }, error: null, current_qname: null,
+    value: "x", mode: "normalized", schemas: ["SAP"], source_id: 1, include_related_views: false,
+    related_schemas: [], related_view_skipped: [], hits: [], heavy: [], failed_targets: [],
+  };
+  const heavy = { target_id: 9, qname: "SAP.BIG", reason: "rows" as const, est_rows: 3_000_000 };
+
+  it("starts on the conditions step with everything else locked", () => {
+    expect(getProbeStepStates(null)).toEqual(["current", "locked", "locked", "locked"]);
+  });
+
+  it("marks progress and matches as current while the job runs", () => {
+    expect(getProbeStepStates({ ...job, status: "queued" }))
+      .toEqual(["done", "current", "current", "locked"]);
+    expect(getProbeStepStates({ ...job, status: "running" }))
+      .toEqual(["done", "current", "current", "locked"]);
+  });
+
+  it("opens the heavy step only when heavy objects were skipped", () => {
+    expect(getProbeStepStates({ ...job, status: "done" }))
+      .toEqual(["done", "done", "done", "locked"]);
+    expect(getProbeStepStates({ ...job, status: "done", heavy: [heavy] }))
+      .toEqual(["done", "done", "done", "current"]);
+  });
+
+  it("shows a failed run as blocked progress", () => {
+    expect(getProbeStepStates({ ...job, status: "failed" }))
+      .toEqual(["done", "blocked", "done", "locked"]);
   });
 });
 

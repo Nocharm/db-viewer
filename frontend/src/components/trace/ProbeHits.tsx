@@ -14,13 +14,15 @@ import type { ValueProbeJob } from "@/lib/api";
 import { buildPreviewHref, formatMatchCount, shouldKeepPolling } from "@/lib/value-probe";
 
 interface ProbeHitsProps {
+  /** 좌측 진행 순서가 스크롤해 오는 앵커 / anchor for the side navigator */
+  id?: string;
   job: ValueProbeJob;
   sourceId: number | null;
   canContinue: boolean;
   onContinue: () => void;
 }
 
-export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsProps) {
+export function ProbeHits({ id, job, sourceId, canContinue, onContinue }: ProbeHitsProps) {
   const { t } = useI18n();
   const finished = !shouldKeepPolling(job.status);
   // 히트마다 따로 접었다 편다 — 뷰가 여러 개 맞으면 정의를 나란히 놓고 비교한다
@@ -33,7 +35,7 @@ export function ProbeHits({ job, sourceId, canContinue, onContinue }: ProbeHitsP
   });
 
   return (
-    <section className="card p-4" data-testid="ProbeHits-root">
+    <section id={id} className="card p-4" data-testid="ProbeHits-root">
       <StepCardHeader no={3} icon={<ListIcon size={14} />} title={t("trace.hits.title")}
                       desc={t("trace.hits.desc")} />
       {job.hits.length === 0 ? (

@@ -313,6 +313,8 @@ export function TableDetail({
         </div>
       )}
 
+      {/* 값을 보는 버튼(미리보기·쿼리 보기)은 왼쪽에 모으고, 다른 화면으로 나가는 ERD는
+          오른쪽 끝에 떼어 둔다 / data actions left, the ERD exit pinned to the far right */}
       <div className="mb-7 flex flex-wrap gap-3">
         <button
           className="btn-primary"
@@ -322,13 +324,6 @@ export function TableDetail({
           data-testid="TableDetail-previewButton"
         >
           {previewLoading ? t("detail.loading") : t("detail.preview")}
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={onOpenErd}
-          data-testid="TableDetail-erdButton"
-        >
-          {t("detail.openErd")}
         </button>
         {/* 뷰의 정의 SQL — 숨김 스키마는 정의도 내려오지 않아 미리 잠근다(실제 차단은 서버) */}
         {detail.type === "view" && (
@@ -344,14 +339,21 @@ export function TableDetail({
             {t("viewdef.button")}
           </button>
         )}
-        {/* 잠금 사유는 버튼 그룹 뒤 — 버튼 사이에 끼우면 그룹이 시각적으로 끊긴다
-            / the lock reason trails the button group instead of splitting it */}
+        {/* 잠금 사유는 왼쪽 그룹 뒤 — 버튼 사이에 끼우면 그룹이 시각적으로 끊긴다
+            / the lock reason trails the left group instead of splitting it */}
         {!previewAllowed && (
           <span className="self-center text-xs" style={{ color: "var(--muted)" }}
                 data-testid="TableDetail-previewNotAllowed">
             {t("preview.notAllowed")}
           </span>
         )}
+        <button
+          className="btn-secondary ml-auto"
+          onClick={onOpenErd}
+          data-testid="TableDetail-erdButton"
+        >
+          {t("detail.openErd")}
+        </button>
       </div>
 
       {showDefinition && detail.type === "view" && (

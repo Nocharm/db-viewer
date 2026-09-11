@@ -59,6 +59,9 @@
   --rel-unresolved: #ef4444;
   --rel-lineage: #888888;
 
+  /* SQL 함수명 — 팔레트에 없는 앰버라 키워드(블루)·문자열(그린)·숫자(퍼플)와 갈린다 */
+  --code-fn: #e8a44a;
+
   /* 기존 컴포넌트가 참조하는 이름 — 실제 스택은 위 @theme이 단일 소스 */
   --font-body: var(--font-sans);
 }
@@ -95,6 +98,8 @@
   --rel-ai: #9b60aa;
   --rel-unresolved: #b30000;
   --rel-lineage: #93939f;
+
+  --code-fn: #b45309;
 }
 
 body {
@@ -1051,6 +1056,74 @@ input::placeholder {
 .choice-pill:has(input:disabled) {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* 값 추적 스키마 타일 — 아이콘 + 이름 + (카테고리 · 객체 수), 체크는 모서리에.
+   choice-pill과 같은 선택 문법(테두리·틴트)을 쓰되 그리드에 맞는 직사각형
+   / compact schema tiles for the value-probe form, same checked grammar as choice-pill */
+.schema-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 26px 6px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.12s ease-in-out, border-color 0.12s ease-in-out;
+}
+.schema-tile:hover {
+  background: var(--soft-stone);
+}
+.schema-tile:has(input:checked) {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface-card));
+}
+.schema-tile:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.schema-tile__check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.schema-tile__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--surface-elevated);
+  color: var(--muted);
+}
+.schema-tile:has(input:checked) .schema-tile__icon {
+  color: var(--ink);
+}
+.schema-tile__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.schema-tile__name,
+.schema-tile__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schema-tile__name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.schema-tile__meta {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* 숫자 필 — 아이콘 + 라벨 + 숫자 / stat pill for plan counts */

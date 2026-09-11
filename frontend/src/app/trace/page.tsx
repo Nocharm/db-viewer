@@ -13,6 +13,7 @@ import { ProbeForm } from "@/components/trace/ProbeForm";
 import { ProbeHeavyList } from "@/components/trace/ProbeHeavyList";
 import { ProbeHits } from "@/components/trace/ProbeHits";
 import { ProbeProgress } from "@/components/trace/ProbeProgress";
+import { ProbeStepNav } from "@/components/trace/ProbeStepNav";
 import {
   cancelValueProbe, fetchSchemaCategories, fetchValueProbeJob, runValueProbeHeavy,
   startValueProbe, type SchemaCategoryItem, type ValueProbeJob, type ValueProbeStart,
@@ -152,35 +153,56 @@ function TracePageInner() {
     if (rest.length > 0) void start(rest);
   }, [rest, start]);
 
+  /** 좌측 진행 순서 → 해당 카드로 스크롤 + 테두리 한 번 깜빡 (/verify와 같은 동작).
+   * 잡이 없어 카드가 아직 없으면 조용히 무시한다 / jump and flash; no-op without a card. */
+  const navigateToStep = (no: number) => {
+    const el = document.getElementById(`trace-step-${no}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.remove("flash-attention");
+    void el.offsetWidth; // 같은 카드를 연속으로 눌러도 다시 돌게 리플로를 강제한다
+    el.classList.add("flash-attention");
+    window.setTimeout(() => el.classList.remove("flash-attention"), 2600);
+  };
+
   return (
     <div className="flex h-screen flex-col overflow-hidden" data-testid="ValueProbePage-root">
       <AppHeader sourceEngine={sourceEngine}>
         <SourceSelector value={sourceId} onChange={changeSource} />
       </AppHeader>
-      <main className="scroll-area scroll-area--y flex-1 px-4 py-4">
-        <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <div>
-            <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{t("trace.title")}</h1>
-            <p className="text-sm" style={{ color: "var(--slate)" }}>{t("trace.subtitle")}</p>
-          </div>
-          {error && (
-            <div className="text-sm" style={{ color: "var(--error)" }} data-testid="ValueProbePage-errorText">
-              {error}
+      {/* 조인 검증과 같은 2열 — 왼쪽은 제목·진행 순서(스크롤해도 붙어 있다), 오른쪽은 단계 카드
+          / two columns like /verify: sticky title + navigator on the left, step cards on the right */}
+      <main className="scroll-area scroll-area--y flex-1 p-3">
+        <div className="grid items-start gap-3" style={{ gridTemplateColumns: "20rem minmax(0, 1fr)" }}>
+          <div className="sticky top-0 flex flex-col gap-3">
+            <div>
+              <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{t("trace.title")}</h1>
+              <p className="text-sm" style={{ color: "var(--slate)" }}>{t("trace.subtitle")}</p>
             </div>
-          )}
-          {/* 시작 요청(starting) 동안에도 실행 상태다 — 응답 전 두 번 눌러 잡이 겹치지 않게 */}
-          <ProbeForm form={form} schemas={schemaOptions} running={starting || polling}
-                     progress={job && polling ? job.progress : null}
-                     onChange={setForm} onSubmit={() => void start(form.schemas)}
-                     onStop={() => void handleCancel()} />
-          {job && <ProbeProgress job={job} plan={plan} />}
-          {job && (
-            <ProbeHits job={job} sourceId={sourceId} canContinue={rest.length > 0}
-                       onContinue={handleContinue} />
-          )}
-          {job && job.heavy.length > 0 && (
-            <ProbeHeavyList job={job} busy={polling} onRun={(ids) => void handleRunHeavy(ids)} />
-          )}
+            <ProbeStepNav job={job} onNavigate={navigateToStep} />
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-4">
+            {error && (
+              <div className="text-sm" style={{ color: "var(--error)" }} data-testid="ValueProbePage-errorText">
+                {error}
+              </div>
+            )}
+            {/* 시작 요청(starting) 동안에도 실행 상태다 — 응답 전 두 번 눌러 잡이 겹치지 않게 */}
+            <ProbeForm id="trace-step-1" form={form} schemas={schemaOptions} running={starting || polling}
+                       progress={job && polling ? job.progress : null}
+                       onChange={setForm} onSubmit={() => void start(form.schemas)}
+                       onStop={() => void handleCancel()} />
+            {job && <ProbeProgress id="trace-step-2" job={job} plan={plan} />}
+            {job && (
+              <ProbeHits id="trace-step-3" job={job} sourceId={sourceId} canContinue={rest.length > 0}
+                         onContinue={handleContinue} />
+            )}
+            {job && job.heavy.length > 0 && (
+              <ProbeHeavyList id="trace-step-4" job={job} busy={polling}
+                              onRun={(ids) => void handleRunHeavy(ids)} />
+            )}
+          </div>
         </div>
       </main>
     </div>

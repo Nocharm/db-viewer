@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { SearchIcon, SpinnerIcon, StopIcon } from "@/components/icons";
+import { DatabaseIcon, SearchIcon, SpinnerIcon, StopIcon } from "@/components/icons";
 import { StepCardHeader } from "@/components/verify/StepCardHeader";
 import type { SchemaCategoryItem, ValueProbeMode } from "@/lib/api";
 import type { MessageKey } from "@/lib/i18n";
@@ -16,6 +16,8 @@ import {
 } from "@/lib/value-probe";
 
 interface ProbeFormProps {
+  /** 좌측 진행 순서가 스크롤해 오는 앵커 / anchor for the side navigator */
+  id?: string;
   form: ProbeFormState;
   /** 허용 목록 ∩ 숨김 아님 — 페이지가 걸러서 준다 / already filtered by the page */
   schemas: SchemaCategoryItem[];
@@ -44,7 +46,7 @@ const BUTTON_CLASS: Record<FindButtonMode, string> = {
 };
 
 export function ProbeForm({
-  form, schemas, running, progress, onChange, onSubmit, onStop,
+  id, form, schemas, running, progress, onChange, onSubmit, onStop,
 }: ProbeFormProps) {
   const { t } = useI18n();
   const [pointerOver, setPointerOver] = useState(false);
@@ -71,13 +73,6 @@ export function ProbeForm({
   };
   const toggleAll = () => setSchemas(new Set(allSelected ? [] : schemas.map((s) => s.schema)));
 
-  const groups = new Map<string, SchemaCategoryItem[]>();
-  for (const item of schemas) {
-    const list = groups.get(item.category) ?? [];
-    list.push(item);
-    groups.set(item.category, list);
-  }
-
   // 한 버튼이 세 얼굴 — 자리를 옮기지 않아야 눈이 따라간다. 같은 <button>을 유지해
   // 호버·포커스가 끊기지 않게 하고 class/type/testid만 바꾼다
   const { done, total } = progress ?? { done: 0, total: 0 };
@@ -87,7 +82,7 @@ export function ProbeForm({
   const percent = total === 0 ? 0 : Math.round((done / total) * 100);
 
   return (
-    <section className="card p-4" data-testid="ProbeForm-root">
+    <section id={id} className="card p-4" data-testid="ProbeForm-root">
       <StepCardHeader no={1} icon={<SearchIcon size={14} />}
                       title={t("trace.form.title")} desc={t("trace.form.desc")} />
       <form className="flex flex-col gap-3"
@@ -109,23 +104,30 @@ export function ProbeForm({
                        data-testid="ProbeForm-allSchemas" />
                 {t("trace.form.allSchemas")}
               </label>
-              {[...groups].map(([category, items]) => (
-                <div key={category} className="flex flex-col gap-1">
-                  <div className="text-xs" style={{ color: "var(--muted)" }}>{category}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {items.map((item) => (
-                      <label key={item.schema} className="choice-pill">
-                        <input type="checkbox" className="ctl-check"
-                               checked={form.schemas.includes(item.schema)}
-                               onChange={() => toggleSchema(item.schema)} disabled={running}
-                               data-testid={`ProbeForm-schema-${item.schema}`} />
-                        <span className="font-mono">{item.schema}</span>
-                        <span className="text-xs" style={{ color: "var(--muted)" }}>{item.object_count}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {/* 타일 그리드 — 카테고리별 세로 나열은 스키마 이름이 짧아 밀도가 떨어졌다.
+                  카테고리는 타일 안 보조 줄로 내려 한 화면에 모두 담는다
+                  / one dense grid; the category moves into each tile's second line */}
+              <div className="grid gap-1.5"
+                   style={{ gridTemplateColumns: "repeat(auto-fill, minmax(9.5rem, 1fr))" }}
+                   data-testid="ProbeForm-schemaGrid">
+                {schemas.map((item) => (
+                  <label key={item.schema} className="schema-tile">
+                    <input type="checkbox" className="ctl-check schema-tile__check"
+                           checked={form.schemas.includes(item.schema)}
+                           onChange={() => toggleSchema(item.schema)} disabled={running}
+                           data-testid={`ProbeForm-schema-${item.schema}`} />
+                    <span className="schema-tile__icon"><DatabaseIcon size={13} /></span>
+                    <span className="schema-tile__body">
+                      <span className="schema-tile__name">{item.schema}</span>
+                      <span className="schema-tile__meta">
+                        {/* 미지정 카테고리는 스키마명과 같다 — 같은 글자를 두 번 쓰지 않는다 */}
+                        {item.category !== item.schema && `${item.category} · `}
+                        {t("trace.form.objectCount").replace("{n}", String(item.object_count))}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <label className="choice-pill">
                   <input type="checkbox" className="ctl-switch" checked={form.includeRelatedViews}

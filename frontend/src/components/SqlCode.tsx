@@ -10,9 +10,11 @@ import { markHitTokens } from "@/lib/view-definition";
 // PreviewSqlButton과 같은 색 규칙 — 소비자가 둘이라 작은 표를 나눠 갖는다 / same palette as the preview SQL
 const TOKEN_STYLES: Record<SqlToken["type"], CSSProperties> = {
   keyword: { color: "var(--obj-view)", fontWeight: 600 },
+  function: { color: "var(--code-fn)", fontWeight: 500 },
   identifier: { color: "var(--ink)" },
   string: { color: "var(--rel-confirmed)" },
   number: { color: "var(--rel-ai)" },
+  comment: { color: "var(--muted)", fontStyle: "italic" },
   plain: { color: "var(--slate)" },
 };
 
