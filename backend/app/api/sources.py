@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, DisconnectionError, IntegrityError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import Session
@@ -14,7 +14,14 @@ from sqlalchemy.orm import Session
 from app.auth import require_preview_admin, require_sysadmin
 from app.db import get_db
 from app.auth import get_current_user
-from app.models import AuditLog, DataSource, PreviewAllowlist, SchemaCategory, Snapshot
+from app.models import (
+    AuditLog,
+    DataSource,
+    PreviewAllowlist,
+    SchemaCategory,
+    Snapshot,
+    ValueProbeJob,
+)
 from app.sources.connection import clear_sa_engine, get_sa_engine
 from app.sources.crypto import CryptoNotConfigured, encrypt_secret, is_crypto_configured
 from app.sources.registry import UnsupportedSource, get_source, list_sources
@@ -106,6 +113,28 @@ def _get_editable(db: Session, source_id: int) -> DataSource:
                        "cannot be edited here",
             "context": {"source_id": source_id, "name": source.name}})
     return source
+
+
+def _count_dependents(db: Session, source_id: int) -> dict[str, int]:
+    """소스를 지울 때 함께 사라지는 행의 개수 — 삭제 확인 화면과 409 컨텍스트가 같은 수를 본다.
+
+    snapshots는 FK CASCADE로 objects·columns·constraints·view_joins·view_deps·lineage를
+    끌고 내려간다. preview_allowlist·schema_categories·value_probe_jobs는 설계상
+    data_source_id가 FK가 아니라 여기서 직접 센다(value_probe_jobs의 targets·hits는
+    잡 FK CASCADE). collect_jobs는 소스 컬럼이 없어 대상이 아니다.
+    / rows that go away with the source; the confirm UI and the 409 context share this
+    """
+    def count(model, column) -> int:
+        return db.execute(
+            select(func.count()).select_from(model).where(column == source_id)
+        ).scalar_one()
+
+    return {
+        "snapshots": count(Snapshot, Snapshot.data_source_id),
+        "preview_allowlist": count(PreviewAllowlist, PreviewAllowlist.data_source_id),
+        "schema_categories": count(SchemaCategory, SchemaCategory.data_source_id),
+        "value_probe_jobs": count(ValueProbeJob, ValueProbeJob.data_source_id),
+    }
 
 
 @router.get("")
@@ -215,44 +244,57 @@ def update_data_source(
     return _serialize(source)
 
 
+@router.get("/{source_id}/dependents")
+def get_source_dependents(source_id: int, db: Session = Depends(get_db)) -> dict:
+    """삭제 확인 화면용 — 이 소스와 함께 지워질 행의 개수. 관리형 소스는 409(수정 불가)."""
+    _get_editable(db, source_id)
+    return _count_dependents(db, source_id)
+
+
 @router.delete("/{source_id}", dependencies=[Depends(require_preview_admin)])
 def delete_data_source(
-    source_id: int, db: Session = Depends(get_db),
+    source_id: int, cascade: bool = False, db: Session = Depends(get_db),
     admin: str = Depends(require_sysadmin),
 ) -> dict:
-    """스냅샷 또는 정책 행(허용목록·카테고리)이 있으면 거부한다 (이월 2).
+    """스냅샷·정책 행·값 추적 잡이 남아 있으면 `cascade=true`일 때만 함께 지운다.
 
-    preview_allowlist·schema_categories는 설계상 data_source_id가 FK가 아니다 — 지우면
-    고아 행이 남고, id가 재사용되는 환경(테스트의 SQLite 등)에서는 낡은 허용이 새
-    소스에 그대로 적용될 수 있다. 되돌릴 수 없는 삭제는 이 셋이 전부 비었을 때만.
+    preview_allowlist·schema_categories는 설계상 data_source_id가 FK가 아니다 — 소스만
+    지우면 고아 행이 남고, id가 재사용되는 환경(테스트의 SQLite 등)에서는 낡은 허용이 새
+    소스에 그대로 적용될 수 있다. 그래서 종속 행이 있으면 소스만 지우는 길은 없고, 화면이
+    "함께 삭제됨"을 보여주고 확인을 받은 뒤 cascade로 한 번에 정리한다. 플래그 없는 호출은
+    예전처럼 409 — 낡은 클라이언트나 curl 한 줄이 카탈로그를 통째로 날리지 않게 하는 문턱.
+    / with dependents the only path is cascade=true after the UI's explicit confirmation
     """
     source = _get_editable(db, source_id)
-    snapshots = db.execute(
-        select(func.count()).select_from(Snapshot)
-        .where(Snapshot.data_source_id == source_id)
-    ).scalar_one()
-    allowlist_rows = db.execute(
-        select(func.count()).select_from(PreviewAllowlist)
-        .where(PreviewAllowlist.data_source_id == source_id)
-    ).scalar_one()
-    category_rows = db.execute(
-        select(func.count()).select_from(SchemaCategory)
-        .where(SchemaCategory.data_source_id == source_id)
-    ).scalar_one()
-    if snapshots or allowlist_rows or category_rows:
+    dependents = _count_dependents(db, source_id)
+    has_dependents = any(dependents.values())
+    if has_dependents and not cascade:
         raise HTTPException(409, {
-            "message": "this source still has collected snapshots or schema policy "
-                       "rows (preview allowlist / category) — disable it instead of "
-                       "deleting, or remove those rows first",
-            "context": {"source_id": source_id, "snapshots": snapshots,
-                        "preview_allowlist": allowlist_rows,
-                        "schema_categories": category_rows}})
+            "message": "this source still has collected snapshots, schema policy rows "
+                       "(preview allowlist / category) or value-probe jobs — confirm "
+                       "the cascade delete (cascade=true) to remove them together, or "
+                       "disable the source instead",
+            "context": {"source_id": source_id, **dependents}})
+    if has_dependents:
+        # 부모→자식 순서는 무관하다(전부 소스 id로 필터) — 스냅샷 삭제는 FK CASCADE가
+        # 카탈로그 행을, 잡 삭제는 targets·hits를 각각 끌고 내려간다
+        for model, column in (
+            (ValueProbeJob, ValueProbeJob.data_source_id),
+            (Snapshot, Snapshot.data_source_id),
+            (PreviewAllowlist, PreviewAllowlist.data_source_id),
+            (SchemaCategory, SchemaCategory.data_source_id),
+        ):
+            db.execute(delete(model).where(column == source_id))
     name = source.name
     db.delete(source)
     clear_sa_engine(source_id)  # 이월 4 — 낡은 캐시가 삭제된 소스를 계속 서빙하지 않게
-    db.add(AuditLog(action="source_delete", detail=name, requested_by=admin,
+    # 감사에는 무엇이 얼마나 같이 사라졌는지 남긴다 — 나중에 "스냅샷이 왜 없어졌나"의 답
+    detail = name if not has_dependents else (
+        f"{name} [cascade: " + ", ".join(f"{k}={v}" for k, v in dependents.items()) + "]"
+    )
+    db.add(AuditLog(action="source_delete", detail=detail, requested_by=admin,
                     requested_at=datetime.now(UTC)))
-    return {"id": source_id, "removed": True}
+    return {"id": source_id, "removed": True, "removed_dependents": dependents}
 
 
 @router.post("/{source_id}/test")

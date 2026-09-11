@@ -86,6 +86,8 @@ def test_managed_source_cannot_be_edited_or_deleted(client, monkeypatch):
     assert client.patch("/api/sources/1", headers=HEADERS,
                         json={"name": "x"}).status_code == 409
     assert client.delete("/api/sources/1", headers=HEADERS).status_code == 409
+    # cascade 플래그도 관리형 보호를 우회하지 못한다 / cascade never bypasses the managed guard
+    assert client.delete("/api/sources/1?cascade=true", headers=HEADERS).status_code == 409
     get_settings.cache_clear()
 
 
@@ -170,8 +172,11 @@ def test_delete_refused_when_snapshot_exists(client, monkeypatch, migrated_engin
     # Act
     res = client.delete(f"/api/sources/{created['id']}", headers=HEADERS)
 
-    # Assert
+    # Assert: 플래그 없는 삭제는 예전처럼 409 — 컨텍스트가 확인 화면과 같은 네 개수를 싣는다
     assert res.status_code == 409
+    context = res.json()["error"]["context"]
+    assert context["snapshots"] == 1
+    assert {"preview_allowlist", "schema_categories", "value_probe_jobs"} <= set(context)
     get_settings.cache_clear()
 
 
@@ -236,7 +241,10 @@ def test_delete_succeeds_without_snapshots_or_policy_rows(client, monkeypatch):
 
     # Assert
     assert res.status_code == 200
-    assert res.json() == {"id": created["id"], "removed": True}
+    # 종속 행이 없어도 응답 모양은 같다 — 클라이언트가 분기하지 않게 / stable shape
+    assert res.json() == {"id": created["id"], "removed": True, "removed_dependents": {
+        "snapshots": 0, "preview_allowlist": 0, "schema_categories": 0,
+        "value_probe_jobs": 0}}
     get_settings.cache_clear()
 
 
@@ -279,6 +287,123 @@ def test_delete_clears_cached_connection_engine(client, monkeypatch, tmp_path):
 
     # Assert
     assert sid not in _engines
+    get_settings.cache_clear()
+
+
+def _seed_dependents(engine, source_id: int) -> dict[str, int]:
+    """소스 하나에 스냅샷(+객체)·허용목록·카테고리·값 추적 잡(+대상)을 한 건씩 단다.
+    반환값은 자식 행 확인용 id / seed one row of every dependent kind, return child ids."""
+    from app.models import (
+        CatalogObject, PreviewAllowlist, SchemaCategory, Snapshot,
+        ValueProbeJob, ValueProbeTarget,
+    )
+
+    now = datetime.now(UTC)
+    with sessionmaker(bind=engine)() as db:
+        snapshot = Snapshot(collected_at=now, source_db="x", status="ready",
+                            data_source_id=source_id)
+        db.add(snapshot)
+        db.flush()
+        obj = CatalogObject(snapshot_id=snapshot.id, schema="public", name="t",
+                            type="table", object_id=1)
+        db.add(obj)
+        db.add(PreviewAllowlist(data_source_id=source_id, schema="public", note=None,
+                                added_by="test", created_at=now))
+        db.add(SchemaCategory(data_source_id=source_id, schema_name="public",
+                              category="ATM", updated_by="test", updated_at=now))
+        job = ValueProbeJob(data_source_id=source_id, snapshot_id=snapshot.id, value="v",
+                            mode="exact", schemas='["public"]', status="done",
+                            progress_total=1, progress_done=1, triggered_by="test",
+                            created_at=now)
+        db.add(job)
+        db.flush()
+        target = ValueProbeTarget(job_id=job.id, object_id=1, qname="public.t",
+                                  object_type="table", columns="[]", tier="auto",
+                                  rank=0, status="done")
+        db.add(target)
+        db.commit()
+        return {"snapshot": snapshot.id, "object": obj.id, "job": job.id,
+                "target": target.id}
+
+
+def test_dependents_endpoint_counts_every_kind(client, monkeypatch, migrated_engine):
+    # Arrange
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svck", "engine": "sqlite", "file_path": "/tmp/k.db"}).json()
+    _seed_dependents(migrated_engine, created["id"])
+
+    # Act
+    res = client.get(f"/api/sources/{created['id']}/dependents", headers=HEADERS)
+
+    # Assert
+    assert res.status_code == 200
+    assert res.json() == {"snapshots": 1, "preview_allowlist": 1,
+                          "schema_categories": 1, "value_probe_jobs": 1}
+    # 관리형 소스는 수정 불가와 같은 409 / the managed source answers like any edit
+    assert client.get("/api/sources/1/dependents", headers=HEADERS).status_code == 409
+    get_settings.cache_clear()
+
+
+def test_delete_with_cascade_removes_dependents_and_children(
+    client, monkeypatch, migrated_engine,
+):
+    # Arrange
+    from app.models import (
+        AuditLog, CatalogObject, DataSource, PreviewAllowlist, SchemaCategory, Snapshot,
+        ValueProbeJob, ValueProbeTarget,
+    )
+
+    _configure(monkeypatch)
+    created = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcl", "engine": "sqlite", "file_path": "/tmp/l.db"}).json()
+    sid = created["id"]
+    ids = _seed_dependents(migrated_engine, sid)
+
+    # Act
+    res = client.delete(f"/api/sources/{sid}?cascade=true", headers=HEADERS)
+
+    # Assert: 소스·직접 종속 행·FK CASCADE 자식(객체·대상)까지 전부 사라진다
+    assert res.status_code == 200
+    assert res.json() == {"id": sid, "removed": True, "removed_dependents": {
+        "snapshots": 1, "preview_allowlist": 1, "schema_categories": 1,
+        "value_probe_jobs": 1}}
+    with sessionmaker(bind=migrated_engine)() as db:
+        assert db.get(DataSource, sid) is None
+        assert db.get(Snapshot, ids["snapshot"]) is None
+        assert db.get(CatalogObject, ids["object"]) is None
+        assert db.get(ValueProbeJob, ids["job"]) is None
+        assert db.get(ValueProbeTarget, ids["target"]) is None
+        assert db.query(PreviewAllowlist).filter_by(data_source_id=sid).count() == 0
+        assert db.query(SchemaCategory).filter_by(data_source_id=sid).count() == 0
+        audit = db.query(AuditLog).filter_by(action="source_delete").one()
+        assert audit.detail == ("svcl [cascade: snapshots=1, preview_allowlist=1, "
+                                "schema_categories=1, value_probe_jobs=1]")
+    get_settings.cache_clear()
+
+
+def test_delete_with_cascade_leaves_other_sources_alone(client, monkeypatch, migrated_engine):
+    # Arrange: 같은 종류의 행을 가진 이웃 소스는 한 건도 줄지 않아야 한다
+    from app.models import Snapshot
+
+    _configure(monkeypatch)
+    victim = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcm", "engine": "sqlite", "file_path": "/tmp/m.db"}).json()
+    neighbour = client.post("/api/sources", headers=HEADERS, json={
+        "name": "svcn", "engine": "sqlite", "file_path": "/tmp/n.db"}).json()
+    _seed_dependents(migrated_engine, victim["id"])
+    _seed_dependents(migrated_engine, neighbour["id"])
+
+    # Act
+    res = client.delete(f"/api/sources/{victim['id']}?cascade=true", headers=HEADERS)
+
+    # Assert
+    assert res.status_code == 200
+    with sessionmaker(bind=migrated_engine)() as db:
+        assert db.query(Snapshot).filter_by(data_source_id=neighbour["id"]).count() == 1
+    dep = client.get(f"/api/sources/{neighbour['id']}/dependents", headers=HEADERS).json()
+    assert dep == {"snapshots": 1, "preview_allowlist": 1,
+                   "schema_categories": 1, "value_probe_jobs": 1}
     get_settings.cache_clear()
 
 

@@ -44,7 +44,7 @@ Claude Code에 그대로 붙여넣으면 된다.
 |---|---|---|
 | 서비스 키 | `<서비스키>` | 소문자·영숫자. 예: `svca` |
 | 네트워크 이름 | `dbv-<서비스키>` | db-viewer 운영자가 **미리 만들어 둔다** |
-| 네트워크 서브넷 | `172.50.<n>.0/24` | 서비스마다 다른 `<n>` (0, 1, 2, …) |
+| 네트워크 서브넷 | `10.203.<n>.0/24` | 서비스마다 다른 `<n>` (1, 2, 3, …) — `10.203.1.0/24`는 첫 연결이 이미 사용 |
 | DB 컨테이너의 compose 서비스명 | `<compose서비스명>` | 예: `postgres`, `db` |
 | 네트워크 별칭 | `<서비스키>-db` | db-viewer가 이 이름으로 접속한다 |
 | DB 엔진 | PostgreSQL / SQLite | |
@@ -53,12 +53,13 @@ Claude Code에 그대로 붙여넣으면 된다.
 **db-viewer 운영자가 먼저 할 일** (담당자에게 보내기 전):
 
 ```bash
-docker network create --subnet 172.50.<n>.0/24 dbv-<서비스키>
+docker network create --subnet 10.203.<n>.0/24 dbv-<서비스키>
 ```
 
 > `docker network ls`로 기존 이름과 겹치지 않는지, `docker network inspect`로 서브넷이
-> 기존 서비스 대역(172.36~46)과 db-viewer 자신의 대역(172.48.0.0/16)에 겹치지 않는지
-> 확인한다.
+> 기존 서비스 대역(172.36~46)과 db-viewer 자신의 대역(172.48.0.0/16)에 겹치지 않는지,
+> 그리고 다른 `dbv-*` 네트워크가 이미 쓰는 `10.203.<n>`과 겹치지 않는지 확인한다
+> (`docs/connect-sources.md` §1의 조회 명령).
 
 **아직 안 했다면 `SOURCE_SECRET_KEY`도 미리 준비한다** (db-viewer `.env`, 소스 등록 API가
 이 키 없이는 503) — 최초 1회만 생성하고 이후 안 바꾼다(키를 바꾸면 이미 등록된 소스의
@@ -219,7 +220,7 @@ DB명:                 <DB명>
 
 ## ⑥ (db-viewer 운영자) 회신받은 정보 등록하기
 
-담당자의 ⑤ 회신을 받으면 `/admin` → 소스 패널에서 등록한다. 절차와 상세 트러블슈팅은
+담당자의 ⑤ 회신을 받으면 `/admin` → *소스·수집* 탭에서 등록한다. 절차와 상세 트러블슈팅은
 `docs/connect-sources.md` §7 — 여기서는 요점만.
 
 1. **등록** — 이름·엔진(PostgreSQL/SQLite)·host(네트워크 별칭, 예: `svca-db`)·port·
@@ -241,6 +242,6 @@ DB명:                 <DB명>
 |---|---|
 | `network dbv-<서비스키> not found` | db-viewer 운영자가 아직 네트워크를 안 만들었다. ①의 `docker network create`부터 |
 | 재기동 후 서비스가 서로 못 찾음 | `networks:`를 명시하면서 `default:`를 빠뜨렸다. ③의 2번 주의사항 참조 |
-| `Pool overlaps with other one on this address space` | 서브넷 `172.50.<n>.0/24`가 이미 쓰이고 있다. db-viewer 운영자에게 다른 `<n>`을 요청 |
+| `Pool overlaps with other one on this address space` | 서브넷 `10.203.<n>.0/24`가 이미 쓰이고 있다. db-viewer 운영자에게 다른 `<n>`을 요청 |
 | db-viewer 연결 테스트가 엉뚱한 DB를 회신 | 여러 서비스가 `postgres` 같은 흔한 컨테이너명을 쓴다. 별칭(`<서비스키>-db`)이 제대로 붙었는지 확인 |
 | DB 컨테이너에 볼륨이 없다 | **작업 중단.** 볼륨부터 붙이는 게 먼저다 (②) |

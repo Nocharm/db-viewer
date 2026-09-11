@@ -2,9 +2,11 @@
 
 /** 데이터 소스 등록부 — 등록·수정·활성화 전환·삭제·연결 테스트. 미리보기 허용 목록과 같은
  * 비밀번호 게이트(X-Preview-Password)를 쓴다. 소스가 없으면 나머지 관리 기능이 전부 무의미
- * 하므로 관리 콘솔의 첫 자리에 둔다.
+ * 하므로 관리 콘솔의 첫 탭에 둔다. 삭제는 함께 사라질 행(스냅샷·정책·값 추적 잡)을 먼저
+ * 보여주고 체크를 받은 뒤 cascade로 한 번에 지운다.
  * Data source registry: create/edit/enable-toggle/delete/test, gated by the preview-admin
- * password — placed first in the admin console since nothing else works without a source. */
+ * password — first tab of the admin console since nothing else works without a source.
+ * Delete lists the dependents, requires an explicit acknowledgement, then cascades. */
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -12,13 +14,23 @@ import {
   createDataSource,
   deleteDataSource,
   fetchDataSources,
+  fetchSourceDependents,
   testDataSource,
   triggerCollectCatalog,
   updateDataSource,
   type DataSourceInput,
   type DataSourceItem,
+  type SourceDependents,
 } from "@/lib/api";
-import { DownloadIcon } from "@/components/icons";
+import {
+  BanIcon,
+  CheckCircleIcon,
+  DatabaseIcon,
+  DownloadIcon,
+  PencilIcon,
+  PlugIcon,
+  TrashIcon,
+} from "@/components/icons";
 
 export interface SourceFormState {
   name: string;
@@ -90,6 +102,40 @@ function buildEditForm(item: DataSourceItem): SourceFormState {
   };
 }
 
+export interface DependentLine {
+  key: keyof SourceDependents;
+  label: string;
+  count: number;
+}
+
+/** 삭제 확인 상자에 나열할 "함께 삭제되는 것" — 백엔드 개수를 사람 말로. 순서 고정(스냅샷이
+ * 가장 크고 되돌리기 어려워 맨 앞). / the dependents list for the confirm box, fixed order */
+export function buildDependentLines(dependents: SourceDependents): DependentLine[] {
+  return [
+    { key: "snapshots", label: "수집 스냅샷 (카탈로그·컬럼·뷰 조인 포함)",
+      count: dependents.snapshots },
+    { key: "preview_allowlist", label: "미리보기 허용 스키마", count: dependents.preview_allowlist },
+    { key: "schema_categories", label: "스키마 카테고리", count: dependents.schema_categories },
+    { key: "value_probe_jobs", label: "값 추적 잡 (대상·히트 포함)",
+      count: dependents.value_probe_jobs },
+  ];
+}
+
+/** 삭제 완료 메시지의 꼬리 — 무엇이 얼마나 같이 지워졌는지 한 줄로. 없으면 그 사실을 말한다. */
+export function formatCascadeSummary(dependents: SourceDependents): string {
+  const parts = buildDependentLines(dependents)
+    .filter((line) => line.count > 0)
+    .map((line) => `${line.label.split(" (")[0]} ${line.count.toLocaleString()}건`);
+  return parts.length ? `${parts.join("·")} 함께 삭제` : "함께 삭제된 정보 없음";
+}
+
+/** 삭제 확인 진행 상태 — 개수 조회 중(null)·조회 실패(error)·조회 완료(dependents) */
+interface DeleteConfirmState {
+  id: number;
+  dependents: SourceDependents | null;
+  error: string | null;
+}
+
 export function DataSourcePanel() {
   const [password, setPassword] = useState("");
   const [items, setItems] = useState<DataSourceItem[]>([]);
@@ -97,6 +143,9 @@ export function DataSourcePanel() {
   const [createForm, setCreateForm] = useState<SourceFormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<SourceFormState>(EMPTY_FORM);
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
+  // 체크박스 — 함께 삭제되는 내용을 읽었다는 표시. 대상이 바뀌면 다시 받는다
+  const [cascadeAcknowledged, setCascadeAcknowledged] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +191,7 @@ export function DataSourcePanel() {
   const startEdit = (item: DataSourceItem) => {
     setMessage(null);
     setError(null);
+    setDeleteConfirm(null);
     setEditingId(item.id);
     setEditForm(buildEditForm(item));
   };
@@ -161,8 +211,37 @@ export function DataSourcePanel() {
     );
   };
 
-  const handleDelete = (item: DataSourceItem) => {
-    void run(() => deleteDataSource(item.id, password), "삭제했습니다");
+  /** 삭제 1단계 — 확인 상자를 열고 함께 사라질 행의 개수를 읽어 온다. 개수는 비동기라
+   * 응답이 도착했을 때 여전히 같은 소스를 확인 중인지 검사한다(다른 카드로 옮겼으면 버림). */
+  const startDelete = (item: DataSourceItem) => {
+    setMessage(null);
+    setError(null);
+    setEditingId(null);
+    setCascadeAcknowledged(false);
+    setDeleteConfirm({ id: item.id, dependents: null, error: null });
+    fetchSourceDependents(item.id)
+      .then((dependents) => setDeleteConfirm((current) =>
+        current?.id === item.id ? { ...current, dependents } : current))
+      .catch((e: unknown) => setDeleteConfirm((current) => {
+        const text = e instanceof Error ? e.message : String(e);
+        return current?.id === item.id ? { ...current, error: text } : current;
+      }));
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirm(null);
+    setCascadeAcknowledged(false);
+  };
+
+  /** 삭제 2단계 — 체크를 받은 뒤 cascade로 소스와 종속 행을 한 번에 지운다. */
+  const confirmDelete = (item: DataSourceItem) => {
+    void run(
+      () => deleteDataSource(item.id, password, { cascade: true }).then((res) => {
+        cancelDelete();
+        return `삭제했습니다 — ${formatCascadeSummary(res.removed_dependents)}`;
+      }),
+      "삭제했습니다",
+    );
   };
 
   /** 새로 등록한 소스의 카탈로그를 수집한다 — sysadmin이면 되고 관리 비밀번호는 필요 없다
@@ -240,7 +319,7 @@ export function DataSourcePanel() {
 
       <ul className="mb-4 space-y-2" data-testid="DataSourcePanel-list">
         {items.map((item) => (
-          <li key={item.id} className="card flex flex-col gap-2 p-3 text-sm"
+          <li key={item.id} className="card reveal-host flex flex-col gap-2 p-3 text-sm"
               data-testid={`DataSourcePanel-item-${item.id}`}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{item.name}</span>
@@ -281,50 +360,126 @@ export function DataSourcePanel() {
                   항상 400으로 거부한다 — 눌러도 절대 성공 못 하는 버튼을 아예 안 보여준다. */}
               {!item.is_managed && (
                 <button
-                  className="icon-button"
+                  className="icon-button inline-flex items-center gap-1.5"
                   onClick={() => handleTest(item)}
                   data-testid={`DataSourcePanel-testButton-${item.id}`}
                 >
+                  <PlugIcon size={13} />
                   연결 테스트
                 </button>
               )}
-              {!item.is_managed && editingId !== item.id && (
+              {!item.is_managed && editingId !== item.id && deleteConfirm?.id !== item.id && (
                 <>
                   <button
-                    className="icon-button"
+                    className="icon-button inline-flex items-center gap-1.5"
                     onClick={() => handleCollect(item)}
                     data-testid={`DataSourcePanel-collectButton-${item.id}`}
                   >
+                    <DatabaseIcon size={13} />
                     카탈로그 수집
                   </button>
+                  {/* 부수 조작은 카드 hover·포커스에서만 드러난다(.reveal-action) — 목록을
+                      훑을 때는 이름·상태·연결 테스트·수집만 보인다 */}
                   <button
-                    className="icon-button"
+                    className="icon-button reveal-action inline-flex items-center gap-1.5"
                     onClick={() => startEdit(item)}
                     data-testid={`DataSourcePanel-editButton-${item.id}`}
                   >
+                    <PencilIcon size={13} />
                     수정
                   </button>
                   <button
-                    className="icon-button"
+                    className="icon-button reveal-action inline-flex items-center gap-1.5"
                     disabled={!canMutate}
                     title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
                     onClick={() => handleToggleEnabled(item)}
                     data-testid={`DataSourcePanel-toggleButton-${item.id}`}
                   >
+                    {item.is_enabled ? <BanIcon size={13} /> : <CheckCircleIcon size={13} />}
                     {item.is_enabled ? "비활성화" : "활성화"}
                   </button>
                   <button
-                    className="icon-button"
+                    className="icon-button reveal-action inline-flex items-center gap-1.5"
                     disabled={!canMutate}
                     title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
-                    onClick={() => handleDelete(item)}
+                    onClick={() => startDelete(item)}
                     data-testid={`DataSourcePanel-deleteButton-${item.id}`}
                   >
+                    <TrashIcon size={13} />
                     삭제
                   </button>
                 </>
               )}
             </div>
+
+            {deleteConfirm?.id === item.id && (
+              <div className="danger-box flex flex-col gap-2"
+                   data-testid={`DataSourcePanel-deleteConfirm-${item.id}`}>
+                <p className="flex items-center gap-1.5 font-medium" style={{ color: "var(--error)" }}>
+                  <TrashIcon size={14} />
+                  ‘{item.name}’ 소스를 삭제합니다 — 되돌릴 수 없습니다.
+                </p>
+                <p className="text-xs" style={{ color: "var(--body-text)" }}>
+                  아래 정보가 <strong>함께 삭제</strong>됩니다. 접속만 끊고 기록은 남기려면
+                  삭제 대신 비활성화를 쓰세요.
+                </p>
+                {deleteConfirm.error && (
+                  <p className="text-xs" style={{ color: "var(--error)" }}
+                     data-testid={`DataSourcePanel-dependentsError-${item.id}`}>
+                    함께 삭제되는 항목을 확인하지 못했습니다 — {deleteConfirm.error}
+                  </p>
+                )}
+                {!deleteConfirm.dependents && !deleteConfirm.error && (
+                  <p className="text-xs" style={{ color: "var(--muted)" }}
+                     data-testid={`DataSourcePanel-dependentsLoading-${item.id}`}>
+                    함께 삭제되는 항목을 확인하는 중…
+                  </p>
+                )}
+                {deleteConfirm.dependents && (
+                  <ul className="flex flex-wrap gap-1.5"
+                      data-testid={`DataSourcePanel-dependents-${item.id}`}>
+                    {buildDependentLines(deleteConfirm.dependents).map((line) => (
+                      <li key={line.key} className="stat-pill"
+                          style={line.count === 0 ? { opacity: 0.55 } : undefined}
+                          data-testid={`DataSourcePanel-dependent-${line.key}-${item.id}`}>
+                        {line.label} <b>{line.count.toLocaleString()}건</b>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <label className="flex items-center gap-2 text-xs" style={{ color: "var(--ink)" }}>
+                  <input
+                    type="checkbox"
+                    className="ctl-check"
+                    checked={cascadeAcknowledged}
+                    // 개수를 못 읽었으면 무엇이 지워지는지 모른 채 체크하게 되므로 잠근다
+                    disabled={!deleteConfirm.dependents}
+                    onChange={(e) => setCascadeAcknowledged(e.target.checked)}
+                    data-testid={`DataSourcePanel-cascadeCheck-${item.id}`}
+                  />
+                  위 정보가 함께 삭제되는 것을 확인했습니다
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn-secondary btn-danger"
+                    disabled={!cascadeAcknowledged || !canMutate}
+                    title={canMutate ? undefined : "관리 비밀번호를 입력하세요"}
+                    onClick={() => confirmDelete(item)}
+                    data-testid={`DataSourcePanel-confirmDeleteButton-${item.id}`}
+                  >
+                    <TrashIcon size={13} />
+                    함께 삭제
+                  </button>
+                  <button
+                    className="icon-button"
+                    onClick={cancelDelete}
+                    data-testid={`DataSourcePanel-cancelDeleteButton-${item.id}`}
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            )}
 
             {editingId === item.id && (
               <div className="flex flex-wrap items-end gap-2 border-t pt-2"

@@ -380,3 +380,64 @@ export function ViewIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 쓰레기통 — 되돌릴 수 없는 삭제 버튼에만 쓴다 / reserved for irreversible deletes */}
+      <path d="M4 7h16M10 3.5h4M6.5 7l.9 12.2A1.5 1.5 0 0 0 8.9 20.5h6.2a1.5 1.5 0 0 0 1.5-1.3L17.5 7" />
+      <path d="M10 11v6M14 11v6" />
+    </Svg>
+  );
+}
+
+export function PlugIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 플러그 — 소스 연결 테스트 / the connection test glyph */}
+      <path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8z" />
+      <path d="M12 17v4" />
+    </Svg>
+  );
+}
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 두 사람 — 로그인·화이트리스트 탭 / people for the login-access tab */}
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 5a3.5 3.5 0 0 1 0 6.5M18.5 13.5a6 6 0 0 1 3 5.5" />
+    </Svg>
+  );
+}
+
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 방패 — 공개 범위(허용·비공개 스키마) 탭 / disclosure-policy tab */}
+      <path d="M12 3l7.5 3v6c0 4.6-3.2 7.9-7.5 9.5C7.7 19.9 4.5 16.6 4.5 12V6L12 3z" />
+      <path d="M9 12l2 2 4-4" />
+    </Svg>
+  );
+}
+
+export function SparklesIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 반짝임 — AI 색인 탭 / the AI-index tab */}
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
+      <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z" />
+    </Svg>
+  );
+}
+
+export function ClipboardIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 클립보드 — 감사 로그 링크 / the audit-log link */}
+      <rect x="5" y="4.5" width="14" height="16.5" rx="2" />
+      <path d="M9 4.5V3h6v1.5M8.5 11h7M8.5 15h5" />
+    </Svg>
+  );
+}
