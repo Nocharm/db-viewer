@@ -428,6 +428,10 @@ function PreviewPane({ tab, wrapCells, onRefetch, onPatch }: {
           <span className="hint-pill">{t("preview.quickFilterHintKey")}</span>
           {t("preview.quickFilterHintPost")}
         </span>
+        <span data-testid="PreviewSection-cellMenuHint">
+          <span className="hint-pill">{t("preview.cellMenuHintKey")}</span>
+          {t("preview.cellMenuHintPost")}
+        </span>
       </div>
 
       <div className="scroll-area rounded-lg border"

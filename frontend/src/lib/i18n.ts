@@ -113,6 +113,8 @@ export const MESSAGES = {
   },
   "preview.quickFilterHintKey": { ko: "셀 더블클릭", en: "Double-click a cell" },
   "preview.quickFilterHintPost": { ko: " = 그 값으로 필터", en: " to filter by its value" },
+  "preview.cellMenuHintKey": { ko: "셀 우클릭", en: "Right-click a cell" },
+  "preview.cellMenuHintPost": { ko: " = 복사 · 이 값만 · 제외", en: " for copy / only / exclude" },
   "preview.clear": { ko: "필터 해제", en: "Clear filters" },
   "preview.empty": {
     ko: "조건에 맞는 행 없음 — 필터를 완화해 보세요",
