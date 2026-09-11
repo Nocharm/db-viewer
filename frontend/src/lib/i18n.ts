@@ -504,6 +504,8 @@ export const MESSAGES = {
   },
   "admin.tab.audit": { ko: "감사 로그", en: "Audit log" },
 
+  "source.pickerLabel": { ko: "데이터 소스", en: "Data source" },
+
   "ai.generateSummary": { ko: "AI 요약 생성", en: "Generate AI summary" },
   "ai.explainView": { ko: "AI 설명", en: "AI explanation" },
   "ai.working": { ko: "생성 중…", en: "Generating…" },

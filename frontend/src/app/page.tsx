@@ -334,7 +334,6 @@ function HomeInner() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <AppHeader sourceEngine={sourceEngine}>
-        <SourceSelector value={sourceId} onChange={changeSource} />
         {error && (
           <span className="text-sm" style={{ color: "var(--error)" }}
                 data-testid="Home-errorText">
@@ -349,7 +348,14 @@ function HomeInner() {
             상세 패널도 예전처럼 자기 안에서 스크롤된다
             / the join-key bar scrolls away with the content instead of holding the top */}
         <div className="flex h-full flex-col">
-          <JoinKeyBar items={joinKeys} selected={selectedKey} onSelect={setSelectedKey} />
+          {/* 소스 선택기는 헤더가 아니라 조인키 바 왼쪽 — 고른 소스가 곧 아래 목록·조인키의
+              범위라서 그 바로 옆에 둔다 / the picker sits beside what it scopes */}
+          <JoinKeyBar
+            items={joinKeys}
+            selected={selectedKey}
+            onSelect={setSelectedKey}
+            leading={<SourceSelector value={sourceId} onChange={changeSource} />}
+          />
           {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
           <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:min-h-0 lg:flex-1 lg:flex-nowrap">
             <CategoryList

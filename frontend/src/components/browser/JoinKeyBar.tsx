@@ -2,7 +2,7 @@
 
 /** 상단 조인키 필터 바 — 상위만 노출, 나머지는 접기 / top join keys, rest folded. */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
@@ -15,9 +15,12 @@ interface Props {
   items: JoinKeyItem[];
   selected: JoinKeyItem | null;
   onSelect: (item: JoinKeyItem | null) => void;
+  /** JOIN KEYS 라벨 왼쪽 슬롯 — 소스 선택기가 들어온다. 비면(선택기가 null을 그리면)
+   * 슬롯째 사라진다(`:empty`) / leading slot for the source picker; hides itself when empty */
+  leading?: ReactNode;
 }
 
-export function JoinKeyBar({ items, selected, onSelect }: Props) {
+export function JoinKeyBar({ items, selected, onSelect, leading }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, VISIBLE_KEYS);
@@ -31,6 +34,7 @@ export function JoinKeyBar({ items, selected, onSelect }: Props) {
       className="flex shrink-0 items-start gap-3 px-5 py-3"
       data-testid="JoinKeyBar-root"
     >
+      <div className="join-key-bar__leading" data-testid="JoinKeyBar-leading">{leading}</div>
       <span className="mt-1.5 flex shrink-0 items-center gap-1.5">
         <span className="erd-node__type">JOIN KEYS</span>
         <InfoTip text={t("tip.joinKeys")} align="right" />
