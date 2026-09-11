@@ -12,11 +12,17 @@ describe("normalizeIdentifier", () => {
 });
 
 describe("markHitTokens", () => {
-  it("flags identifier tokens equal to the hit column, case-insensitively", () => {
+  it("flags only the column segment of a qualified name, case-insensitively", () => {
     const tokens = tokenizeSql("SELECT a.APRVCD AS related_cd, b.ItemCd FROM dbo.APV_APRV a");
     const marked = markHitTokens(tokens, "aprvcd");
     const hits = marked.filter((tk) => tk.hit).map((tk) => tk.text);
-    expect(hits).toEqual(["a.APRVCD"]);
+    expect(hits).toEqual(["APRVCD"]);
+  });
+
+  it("ignores keywords and function calls that share the column name", () => {
+    const tokens = tokenizeSql("SELECT COUNT(*) AS COUNT FROM T GROUP BY [COUNT]");
+    const hits = markHitTokens(tokens, "count").filter((tk) => tk.hit).map((tk) => tk.text);
+    expect(hits).toEqual(["COUNT", "[COUNT]"]);
   });
 
   it("marks nothing without a column", () => {
@@ -28,6 +34,6 @@ describe("markHitTokens", () => {
     const sql = "SELECT a.ADDR1, [b].[ADDR1] FROM dbo.T1 a JOIN dbo.T2 b ON a.ID = b.ID";
     const marked = markHitTokens(tokenizeSql(sql), "ADDR1");
     expect(marked.map((tk) => tk.text).join("")).toBe(sql);
-    expect(marked.filter((tk) => tk.hit).map((tk) => tk.text)).toEqual(["a.ADDR1", "[ADDR1]"]);
+    expect(marked.filter((tk) => tk.hit).map((tk) => tk.text)).toEqual(["ADDR1", "[ADDR1]"]);
   });
 });

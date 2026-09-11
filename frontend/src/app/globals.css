@@ -59,6 +59,9 @@
   --rel-unresolved: #ef4444;
   --rel-lineage: #888888;
 
+  /* SQL 함수명 — 팔레트에 없는 앰버라 키워드(블루)·문자열(그린)·숫자(퍼플)와 갈린다 */
+  --code-fn: #e8a44a;
+
   /* 기존 컴포넌트가 참조하는 이름 — 실제 스택은 위 @theme이 단일 소스 */
   --font-body: var(--font-sans);
 }
@@ -95,6 +98,8 @@
   --rel-ai: #9b60aa;
   --rel-unresolved: #b30000;
   --rel-lineage: #93939f;
+
+  --code-fn: #b45309;
 }
 
 body {

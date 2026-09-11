@@ -19,9 +19,11 @@ import {
 // 토큰 타입별 색 — 두 테마에서 유효한 시맨틱 토큰만 사용 / theme-safe token colors
 const TOKEN_STYLES: Record<SqlToken["type"], React.CSSProperties> = {
   keyword: { color: "var(--obj-view)", fontWeight: 600 },
+  function: { color: "var(--code-fn)", fontWeight: 500 },
   identifier: { color: "var(--ink)" },
   string: { color: "var(--rel-confirmed)" },
   number: { color: "var(--rel-ai)" },
+  comment: { color: "var(--muted)", fontStyle: "italic" },
   plain: { color: "var(--slate)" },
 };
 

@@ -146,32 +146,88 @@ export function buildPreviewSql(
 }
 
 export interface SqlToken {
-  type: "keyword" | "identifier" | "string" | "number" | "plain";
+  type: "keyword" | "function" | "identifier" | "string" | "number" | "comment" | "plain";
   text: string;
 }
 
-const SQL_TOKEN_PATTERNS: [SqlToken["type"], RegExp][] = [
+/** T-SQL 예약어 — 뷰 정의에 흔한 것만. STATUS·DATE·NAME처럼 컬럼명으로 쓰이는 비예약어는
+ * 넣지 않는다(예약어는 T-SQL에서 대괄호 없이 컬럼명이 될 수 없다) / reserved words only */
+const SQL_KEYWORDS: ReadonlySet<string> = new Set([
+  "SELECT", "FROM", "WHERE", "TOP", "DISTINCT", "AS", "ON", "AND", "OR", "NOT", "IN", "IS",
+  "NULL", "LIKE", "BETWEEN", "EXISTS", "ANY", "SOME",
+  "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS", "APPLY",
+  "CASE", "WHEN", "THEN", "ELSE", "END",
+  "GROUP", "BY", "ORDER", "HAVING", "ASC", "DESC", "UNION", "ALL", "EXCEPT", "INTERSECT",
+  "WITH", "OVER", "PARTITION", "PIVOT", "UNPIVOT",
+  "CREATE", "ALTER", "VIEW", "INSERT", "UPDATE", "DELETE", "SET", "INTO", "VALUES",
+  "DECLARE", "BEGIN", "IF", "RETURN", "EXEC", "NOLOCK",
+]);
+
+/** 함수로 칠하는 이름 — 바로 뒤에 `(`가 올 때만. 같은 이름의 맨 식별자는 컬럼일 수 있다
+ * (`ISNULL`이 컬럼명인 뷰도 있다). LEFT·RIGHT는 JOIN 예약어와 겹치므로 호출형만 함수다 */
+const SQL_FUNCTIONS: ReadonlySet<string> = new Set([
+  "ISNULL", "COALESCE", "NULLIF", "IIF", "CAST", "CONVERT", "TRY_CAST", "TRY_CONVERT",
+  "COUNT", "COUNT_BIG", "SUM", "AVG", "MIN", "MAX", "STRING_AGG",
+  "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE",
+  "GETDATE", "SYSDATETIME", "DATEADD", "DATEDIFF", "DATEPART", "DATENAME", "EOMONTH",
+  "YEAR", "MONTH", "DAY", "FORMAT",
+  "LEN", "DATALENGTH", "SUBSTRING", "LEFT", "RIGHT", "LTRIM", "RTRIM", "TRIM", "UPPER", "LOWER",
+  "REPLACE", "REPLICATE", "REVERSE", "CHARINDEX", "PATINDEX", "STUFF", "CONCAT", "CONCAT_WS",
+  "STR", "QUOTENAME", "STRING_SPLIT",
+  "ABS", "ROUND", "FLOOR", "CEILING", "POWER", "SQRT", "SIGN",
+  "ISNUMERIC", "ISDATE", "NEWID", "CHECKSUM", "HASHBYTES", "OBJECT_NAME", "OPENQUERY",
+]);
+
+/** 단어 앞의 고정 패턴 — 문자열이 단어보다 먼저인 이유는 N'…' 접두의 N이 단어로 잡히기 때문 */
+const SQL_FIXED_PATTERNS: [SqlToken["type"], RegExp][] = [
+  ["comment", /^--[^\n]*/],
+  ["comment", /^\/\*[\s\S]*?(?:\*\/|$)/],
   ["string", /^N?'(?:[^']|'')*'/],
   ["identifier", /^\[(?:[^\]]|\]\])*\]/],
-  ["keyword", /^(?:SELECT|TOP|FROM|WHERE|NOT|LIKE|AND|IS|NULL|ORDER|BY|ASC|DESC)\b/i],
-  ["number", /^\d+(?:\.\d+)?/],
+  ["identifier", /^"[^"]*"/],
 ];
+/** 단어 = 식별자·예약어·함수명 후보. 변수(@)·임시 테이블(#)도 한 단어 / one whole word */
+const SQL_WORD = /^[A-Za-z_@#][\w$@#]*/;
+const SQL_NUMBER = /^\d+(?:\.\d+)?/;
+/** 단어 뒤에 여는 괄호가 따르는가 — 함수 호출 판정 / does a call follow the word */
+const CALL_AHEAD = /^\s*\(/;
 
-/** 자체 생성 SQL 전용 경량 토크나이저 — 하이라이트 렌더용 (라이브러리 무추가).
- * Tiny tokenizer for our own generated SQL, used for syntax highlighting. */
+function classifyWord(word: string, rest: string): SqlToken["type"] {
+  const upper = word.toUpperCase();
+  if (SQL_FUNCTIONS.has(upper) && CALL_AHEAD.test(rest)) return "function";
+  if (SQL_KEYWORDS.has(upper)) return "keyword";
+  return "identifier";
+}
+
+/** 하이라이트용 경량 T-SQL 토크나이저 — 단어를 통째로 읽은 뒤 분류하므로 `EQUIS`의 IS,
+ * `ISNULL`의 NULL처럼 단어 안 조각이 예약어로 물들지 않는다 (라이브러리 무추가).
+ * Word-level T-SQL tokenizer for syntax highlighting; no partial-word keyword hits. */
 export function tokenizeSql(sql: string): SqlToken[] {
   const tokens: SqlToken[] = [];
   let rest = sql;
   while (rest.length > 0) {
-    const match = SQL_TOKEN_PATTERNS
-      .map(([type, pattern]) => ({ type, hit: pattern.exec(rest)?.[0] }))
-      .find((m): m is { type: SqlToken["type"]; hit: string } => Boolean(m.hit));
-    if (match) {
-      tokens.push({ type: match.type, text: match.hit });
-      rest = rest.slice(match.hit.length);
+    let matched: SqlToken | null = null;
+    for (const [type, pattern] of SQL_FIXED_PATTERNS) {
+      const hit = pattern.exec(rest)?.[0];
+      if (hit) {
+        matched = { type, text: hit };
+        break;
+      }
+    }
+    if (matched === null) {
+      const word = SQL_WORD.exec(rest)?.[0];
+      if (word) matched = { type: classifyWord(word, rest.slice(word.length)), text: word };
+    }
+    if (matched === null) {
+      const number = SQL_NUMBER.exec(rest)?.[0];
+      if (number) matched = { type: "number", text: number };
+    }
+    if (matched !== null) {
+      tokens.push(matched);
+      rest = rest.slice(matched.text.length);
       continue;
     }
-    // 매칭 안 되는 구간은 다음 토큰 시작 전까지 plain으로 병합
+    // 매칭 안 되는 구간(공백·연산자·구두점)은 다음 토큰 시작 전까지 plain으로 병합
     const last = tokens[tokens.length - 1];
     if (last?.type === "plain") last.text += rest[0];
     else tokens.push({ type: "plain", text: rest[0] });
