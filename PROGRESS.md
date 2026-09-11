@@ -8,29 +8,7 @@
 
 ## 2026-09-10
 
-- **값 추적(value probe) 설계 스펙** (feature/value-probe). 화면에 보인 값 하나로 어느 `스키마.객체.컬럼`에 있는지 찾되 소스 DB 쿼리를 후보 객체당 1개로 묶는 기능. 핵심 결정: 스키마(=시스템)를 명시적으로 고르고 자동 확장 없음, 카탈로그(타입·길이·마스킹·저카디널리티·뷰 direct lineage)만으로 후보를 잘라낸 뒤 `TOP 1 … WHERE c1 IN (…) OR c2 IN (…)` 한 방, `row_count` 임계값 초과·미상·복잡한 뷰는 heavy로 분리해 선택 실행, 일치 모드는 표기 변형(기본)·정확·부분(후보 20개 이하만), 결과는 목록 + 미리보기 딥링크. 통계 사전 판정·값 지문 인덱스·다중값 공존 검색은 비목표. 스펙 `docs/superpowers/specs/2026-09-10-value-probe-design.md`.
-- **뷰 쿼리 보기 정책 기록** — 최종 리뷰 판정: 보이는 뷰의 정의가 숨김 스키마 객체·컬럼명을 담아도 그대로 노출(기존 lineage·AI 설명과 동일 수준)을 스펙 §8에 명시. 자격증명 리터럴 운영 점검 항목과 AI 뷰 설명 게이트 부재를 후속 과제로 기록.
-- **뷰 쿼리 보기 실측 6/6** — 헤드리스 Playwright로 테이블 상세(뷰)의 「쿼리 보기」→정의 SQL 패널·복사, 값 추적 뷰 히트의 「쿼리 보기」→히트 컬럼 강조(SqlCode-hit)·원본 표시, 정의 미수집 뷰의 안내 상태 확인. 연관 뷰 값 집합은 로컬 fixtures에만 추가(git-ignored).
-- **값 추적 폴리시 실측 13/13** — 헤드리스 Playwright로 토큰 컨트롤(appearance none)·찾기 버튼 3상태(스피너+진척 → 호버 시 중단 → 클릭 시 취소됨)·연관 뷰 토글과 제외 뷰 ⓘ 목록(허용 목록 밖 OTHER.V_RELATED)·스탯 필·heavy 사유 배지·히트 아이콘 확인. 실측 중 발견: 구현자가 dev 서버 실행 중 `npm run build`를 돌려 `.next`가 깨짐(500) → 캐시 삭제 후 재기동으로 해소, 코드 결함 아님.
-- **값 추적 폴리시 계획** — 사용자 피드백 4건(찾기 버튼 스피너·진척 바·호버 시 중단, 연관 뷰 포함 옵션과 제외 뷰 ⓘ 목록, 토큰 스타일 컨트롤, 명사형 문구·필·아이콘)을 태스크 3개로 계획. `docs/superpowers/plans/2026-09-11-value-probe-polish.md`.
-- **값 추적 브라우저 실측 18/18** — fixture 스택(SQLite 서비스 DB, FakeValueProber, 헤드리스 Playwright)에서 폼→진행(후보 422·컬럼 7156·heavy 9)→히트→미리보기 딥링크(필터 칩·URL 소진·리렌더 루프 없음)→빈 상태→heavy 선택 실행(확인됨)→contains 범위 오류→exact 히트→감사 라벨 확인. 실측이 잡은 결함 2건 수정: ① 히트 행 「미리보기 열기」가 `row-action`(tr:hover 전용)이라 목록(li)에서 영영 안 보임 → 상시 노출 버튼. ② 딥링크 필터로 연 탭은 첫 데이터 도착 전에 staged가 비어 칩이 안 뜸 → 첫 데이터 도착 시 1회 동기화(이후 재조회는 사용자 칩 보존). 감사 페이지는 sysadmin 전용이라 `DBV_SYSADMINS=dev.user`로 확인.
-- **값 추적 구현 계획** — 11개 태스크(도메인 플래너 → 모델·마이그레이션 → 직결 SQL·실행기 → W2 템플릿·n8n/Fake 실행기 → 서비스·러너 → API → 프론트 API·순수 로직 → 미리보기 딥링크 필터 → /trace 화면 → 브라우저 실측). 각 태스크에 실패 테스트→구현→검증→커밋 단계와 실제 코드를 담아 서브에이전트가 독립 실행할 수 있게 했다. `docs/superpowers/plans/2026-09-10-value-probe.md`.
-- **값 추적 플래너 도메인** (feature/value-probe). 값 해석(표기 변형·숫자·날짜·GUID), 엔진별 타입 패밀리, 카탈로그만으로 후보 컬럼 축소, 프로브 행의 컬럼 판정. 순수 함수, 쿼리 0개.
-- **값 추적 테이블·설정** — value_probe_jobs/targets/hits(0018), 튜닝값 3개(.env). 계획을 행으로 남겨 진행률·heavy·선택 실행·재시작 복원의 근거로 쓴다.
-- **직결 프로브 SQL·실행기** — build_probe_sql/build_count_sql(바운드 파라미터, 타입별 바인딩, LIKE 이스케이프)과 DirectValueProber. 실제 SQLite 파일로 테이블·뷰·건수 상한 왕복 검증.
-- **W2 value_probe/value_count + 실행기 3종** — n8n 템플릿(타입별 리터럴·숫자 검증·LIKE 이스케이프, node 실행 테스트), N8nValueProber(재시도 0), FakeValueProber(value_sets 조회), create_value_prober 팩토리. n8n README에 requestTimeout 배포 점검 항목.
-- **값 추적 서비스** — 카탈로그 적재(선택 스키마·숨김 제외·뷰 direct lineage·베이스 행 수), build_plan, 백그라운드 러너(동시 수 가드, 대상마다 커밋, 취소, 대상 오류 격리, heavy 건수 생략). 픽스처 값 집합으로 끝까지 실행 검증.
-- **값 추적 API** — POST 202(숨김→허용 목록→계획→contains 범위 검사→감사), GET 폴링(진행 중 hits·heavy·실패 대상·MSSQL lineage 접기), heavy 승격, 취소, 요청자 본인/sysadmin만 조회. 재기동 시 running 잡 failed 처리. README 화면 절.
-- **값 추적 프론트 API·순수 로직** — api.ts 타입·함수 4개, lib/value-probe.ts(폼 검증, 선택 가능 스키마, 미리보기 딥링크 href, 폴링 지속, 나머지 스키마, 건수 표기, filters 파라미터 검증) + vitest.
-- **미리보기 딥링크 필터** — usePreviewTabs.open에 첫 조회용 filters 추가, ?preview=1 효과가 ?filters= JSON을 검증(parseFiltersParam, useMemo 고정)해 넘긴다. 잘못된 값은 무필터로 연다.
-- **/trace 화면** — 조건(스키마 다중 선택=허용∩숨김아님·카테고리 묶음, 값, 라벨 힌트, 모드)·진행(배지·바·현재 대상·경과·취소)·결과(히트 즉시 표시, 미리보기 딥링크, 노출 뷰 접기, 파생 원본, 실패 대상, 빈 상태+나머지 스키마 계속)·무거운 객체(선택 실행) 카드 4개. 헤더 링크, i18n, 감사 라벨.
-- **값 추적 최종 리뷰 반영** — n8n 오류 기록에서 URL·드라이버 본문 제거(상태·kind만), "timed out" 타임아웃 분류, W2 숫자 리터럴을 문자열로 보내 16자리 이상 bigint 정밀도 보존(node 실행 테스트), 페이지 catch 2곳 toErrorMessage 통일, 직결 소수 딥링크 한계를 스펙에 명시.
-- **값 추적 연관 뷰 옵션(백엔드)** — `include_related_views`로 선택 스키마 밖에서 lineage로 읽는 뷰를 후보에 추가. 그 뷰의 스키마도 숨김·허용 목록 게이트를 통과해야 하며, 제외된 뷰는 사유(hidden/not_allowed)와 함께 응답·잡 행에 남긴다(0019). 실행 직전 게이트 재검사와 heavy 승격이 related_schemas까지 본다.
-- **/trace 폴리시** — 토큰으로 그린 체크박스·라디오·토글(choice-pill), 찾기 버튼이 실행 중 스피너+진척 바, 호버 시 「중단」으로 전환(진행 카드 취소 버튼 제거, 완료 중복 표시 제거), 연관 뷰 토글 + 제외 뷰 ⓘ 목록, 진행 카드 스탯 필, 테이블/뷰 아이콘, heavy 사유 색 배지, 설명 문구 명사형.
-- **값 추적 폴리시 최종 리뷰 반영** — 감사 로그에 실제로 읽은 연관 스키마 기록, ⓘ 제외 목록 10개+외 N개 표시와 스크롤 가능한 말풍선, 키보드 Enter로 시작한 뒤에도 중단 버튼 도달 가능(키 뗌으로 재무장), findButtonLabel 인자 정리, 제외 사유 문구를 MESSAGES로 이동.
-- **뷰 정의 SQL API** — `GET /api/views/{id}/definition`. 구조 정보라 허용 목록·감사 없이 숨김 스키마만 403, 권한 차단으로 미수집이면 definition null.
-- **찾기 버튼 포커스 복원** — 프로그램/보조기기 포커스 진입에서도 중단 면이 드러나도록 onFocus 재추가.
-- **뷰 쿼리 보기** — 값 추적 히트(뷰)와 테이블 상세(뷰)에 「쿼리 보기」. 공용 ViewDefinitionPanel이 정의 SQL을 토큰 색으로 보여주고 히트 컬럼을 강조, 복사 버튼, 미수집이면 안내. README 화면 절 갱신.
+- **값 추적(value probe) — feature/value-probe 머지** (09-10~11). 화면에 보인 값 하나로 어느 `스키마.객체.컬럼`에 저장돼 있는지 찾되 소스 DB 쿼리를 **객체당 1개**로 묶는 기능. 핵심 결정: 스키마(=시스템)를 명시적으로 고르고 자동 확장 없음, 카탈로그(타입·길이·마스킹·저카디널리티·뷰 direct lineage)만으로 후보를 자른 뒤 `TOP 1 … WHERE c1 IN (…) OR c2 IN (…)` 한 방, row_count 초과·미상·집계 뷰는 heavy로 미뤄 선택 실행, 일치 모드는 표기 변형(기본)·정확·부분(후보 20개 이하). 구성: 순수 플래너 → 테이블 3개(0018·0019) → 직결 SQL 빌더·DirectValueProber / W2 `value_probe`·`value_count` + N8nValueProber(재시도 0)·FakeValueProber → 러너(순차, 대상마다 커밋, 취소, 실행 직전 게이트 재검사) → `/api/value-probe` 202+폴링(숨김→허용 목록 게이트, 요청자 본인만 조회, 감사) → `/trace` 화면(토큰 컨트롤, 찾기 버튼 스피너·진척·호버 시 중단, 히트 즉시 표시, 미리보기 `?filters=` 딥링크, heavy 선택 실행) + 연관 뷰 옵션(다른 스키마의 뷰도 그 스키마가 게이트를 통과할 때만, 제외는 ⓘ 목록) + 뷰 「쿼리 보기」(정의 SQL 패널, 히트 컬럼 강조, 상세·히트 두 곳). 검증: 백엔드 565·프론트 178, 헤드리스 Playwright 실측 18/13/6 전부 통과. 리뷰·실측이 잡아 고친 것: heavy 승격의 게이트 누락(Critical), 실행 중 승격 유실(409), n8n 오류 문구의 URL·드라이버 본문, 16자리 bigint 정밀도, 보이지 않던 미리보기 링크, 딥링크 필터 칩 누락, 키보드 중단 도달. 정책 기록: 뷰 정의는 구조 정보(숨김 스키마만 403), 보이는 뷰 정의의 숨김 스키마 이름 노출은 기존 lineage·AI 설명과 같은 수준으로 수용(스펙 §8). 후속: AI 뷰 설명 숨김 게이트, 정의 내 자격증명 리터럴 점검, n8n 자격증명 `requestTimeout` 확인, 사소한 지적 40여 건(계획 문서·리뷰 참조). 스펙 `docs/superpowers/specs/2026-09-10-value-probe-design.md`, 계획 `docs/superpowers/plans/2026-09-10-value-probe.md`·`2026-09-11-value-probe-polish.md`·`2026-09-11-view-definition.md`.
 
 ## 2026-09-02
 
