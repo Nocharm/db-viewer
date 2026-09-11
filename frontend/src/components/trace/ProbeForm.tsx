@@ -188,6 +188,9 @@ export function ProbeForm({
                   onMouseMove={() => setPointerOver(true)}
                   onMouseLeave={() => setPointerOver(false)}
                   onBlur={() => setKeyFocus(false)}
+                  // 포커스가 어떤 경로로 오든(프로그램 이동·보조기기) 「중단」이 드러나게 한다 —
+                  // 제출 클릭/Enter가 남긴 포커스는 위 [running] 효과가 다시 지운다
+                  onFocus={() => setKeyFocus(true)}
                   // Enter로 「찾기」를 제출한 그 키의 keyup이 실행 중에 도착해 재무장한다 —
                   // 여기서 다시 Enter를 누르면(=키업) 그때는 「중단」이 뜬 뒤이므로 취소로 이어진다
                   onKeyUp={() => { if (running) setKeyFocus(true); }}
