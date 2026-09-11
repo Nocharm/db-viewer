@@ -1,7 +1,7 @@
 /** 관리 콘솔 탭 정의와 URL(?tab=) 해석 — 순수 함수라 화면 없이 테스트한다.
  * Admin console tab ids plus the ?tab= parsing, kept pure so it is testable without React. */
 
-export const ADMIN_TAB_IDS = ["sources", "access", "ai", "users"] as const;
+export const ADMIN_TAB_IDS = ["sources", "access", "ai", "users", "audit"] as const;
 
 export type AdminTabId = (typeof ADMIN_TAB_IDS)[number];
 

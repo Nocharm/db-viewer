@@ -478,10 +478,7 @@ export const MESSAGES = {
   "admin.embedIndexFailed": { ko: "인덱싱 실패", en: "Indexing failed" },
 
   "admin.tabs.label": { ko: "관리 영역", en: "Admin areas" },
-  "admin.tabs.hint": {
-    ko: "탭을 고르세요 — ←/→ 키로도 이동합니다",
-    en: "Pick a tab — ←/→ keys move between them",
-  },
+  "admin.tabs.kbdHint": { ko: "탭 이동", en: "switch tabs" },
   "admin.tab.sources": { ko: "소스·수집", en: "Sources & collection" },
   "admin.tab.sourcesDesc": {
     ko: "연결할 DB를 등록·테스트하고 카탈로그를 수집합니다",
@@ -503,6 +500,10 @@ export const MESSAGES = {
     en: "Login whitelist and AD user sync",
   },
   "admin.tab.audit": { ko: "감사 로그", en: "Audit log" },
+  "admin.tab.auditDesc": {
+    ko: "누가 언제 실제 값을 봤고 무엇을 바꿨는지 — 지울 수 없는 장부",
+    en: "Who saw real values and who changed what — an append-only ledger",
+  },
 
   "source.pickerLabel": { ko: "데이터 소스", en: "Data source" },
 

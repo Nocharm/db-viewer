@@ -35,11 +35,12 @@ describe("buildAdminTabUrl", () => {
 describe("getNeighbourTab", () => {
   it("moves right and wraps at the end", () => {
     expect(getNeighbourTab("sources", 1)).toBe("access");
-    expect(getNeighbourTab("users", 1)).toBe("sources");
+    expect(getNeighbourTab("users", 1)).toBe("audit");
+    expect(getNeighbourTab("audit", 1)).toBe("sources");
   });
 
   it("moves left and wraps at the start", () => {
     expect(getNeighbourTab("access", -1)).toBe("sources");
-    expect(getNeighbourTab("sources", -1)).toBe("users");
+    expect(getNeighbourTab("sources", -1)).toBe("audit");
   });
 });
