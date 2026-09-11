@@ -25,20 +25,21 @@ router = APIRouter(tags=["me"])
 _last_sync_at: dict[str, float] = {}
 
 
-def _record_login(db: Session, login_id: str) -> None:
-    """로그인 기록 — KST 기준 하루 1건 중복 제거 (bpm 패턴) / one audit row per day."""
+def _record_daily(db: Session, action: str, login_id: str) -> None:
+    """하루 1건 기록 — KST 자정 경계 (bpm 패턴). 로그인과 접근 거부가 같은 규칙을 쓴다.
+    / one audit row per action per KST day; login and access_denied share the rule."""
     now = datetime.now(UTC)
     kst_midnight = now.astimezone(_KST).replace(hour=0, minute=0, second=0, microsecond=0)
     today_start = kst_midnight.astimezone(UTC)
     existing = db.execute(
         select(AuditLog.id).where(
-            AuditLog.action == "login",
+            AuditLog.action == action,
             AuditLog.detail == login_id,
             AuditLog.requested_at >= today_start,
         ).limit(1)
     ).first()
     if existing is None:
-        db.add(AuditLog(action="login", detail=login_id,
+        db.add(AuditLog(action=action, target=login_id, detail=login_id,
                         requested_by=login_id, requested_at=now))
 
 
@@ -67,7 +68,8 @@ def get_me(
         except Exception:  # LDAP 장애 격리 / isolate LDAP outages
             logger.exception("login-time AD sync failed for %s", login_id)
 
-    _record_login(db, login_id)
+    # 화이트리스트 밖 계정이 문을 두드린 것도 남긴다 — 관리자가 누구를 등록해야 하는지 본다
+    _record_daily(db, "login" if whitelisted else "access_denied", login_id)
 
     user = db.get(AppUser, login_id)
     return {

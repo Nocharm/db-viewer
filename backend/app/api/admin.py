@@ -192,7 +192,8 @@ def add_preview_allow(
         row.note = req.note
     # 소스까지 남긴다 — 허용 키가 (소스, 스키마)라 스키마명만으로는 "어느 DB를 열었나"에
     # 답할 수 없다. 실값 반출의 유일한 출구를 남기는 기록이라 모호하면 안 된다
-    db.add(AuditLog(action="preview_allow_add", detail=f"source={source_id} {schema}",
+    db.add(AuditLog(action="preview_allow_add", target=schema,
+                    detail=f"source={source_id} {schema}",
                     requested_by=admin, requested_at=now))
     return {"schema": schema, "created": row is None}
 
@@ -322,7 +323,8 @@ def set_hidden_schema_render(
         row.value = req.render
         row.updated_by = admin
         row.updated_at = now
-    db.add(AuditLog(action="hidden_schema_render_set", detail=str(req.render).lower(),
+    db.add(AuditLog(action="hidden_schema_render_set", target="hidden_schema_render",
+                    detail=str(req.render).lower(),
                     requested_by=admin, requested_at=now))
     return {"render": req.render}
 
@@ -340,7 +342,8 @@ def remove_preview_allow(
         raise HTTPException(404, {"message": "not in the preview allowlist",
                                   "context": {"schema": schema, "source_id": source_id}})
     db.delete(row)
-    db.add(AuditLog(action="preview_allow_remove", detail=f"source={source_id} {schema}",
+    db.add(AuditLog(action="preview_allow_remove", target=schema,
+                    detail=f"source={source_id} {schema}",
                     requested_by=admin, requested_at=datetime.now(UTC)))
     return {"schema": schema, "removed": True}
 
@@ -361,7 +364,7 @@ def sync_users(db: Session = Depends(get_db), admin: str = Depends(require_sysad
     summary = ad_service.sync_all(db)
     # purge는 접근 주체 목록을 줄이는 조작 — 몇 명이 사라졌는지까지 감사에 남긴다
     db.add(AuditLog(
-        action="ad_sync_all",
+        action="ad_sync_all", target="ad_sync",
         detail=f"scanned={summary.scanned} upserted={summary.upserted} "
                f"excluded={summary.excluded} purged={summary.purged}",
         requested_by=admin, requested_at=datetime.now(UTC),

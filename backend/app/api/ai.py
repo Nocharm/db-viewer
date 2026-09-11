@@ -32,6 +32,7 @@ from app.domain.confidence import Observation, compute_confidence
 from app.models import (
     AiJob,
     AiSummary,
+    AuditLog,
     CatalogColumn,
     CatalogObject,
     JoinValidationHistory,
@@ -158,6 +159,7 @@ def start_embed_index_job(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
     session_factory: sessionmaker = Depends(get_ai_session_factory),
+    admin: str = Depends(require_sysadmin),
 ) -> dict:
     """임베딩 인덱싱 — 관리 작업, 상한·배치·대기로 부하 관리 (사이클2 §3)."""
     settings = get_settings()
@@ -169,9 +171,12 @@ def start_embed_index_job(
     if has_active_job(db, "embed_index"):
         raise HTTPException(409, {"message": "embed index job already running", "context": {}})
     job = AiJob(kind="embed_index", status="queued", progress_done=0, progress_total=0,
-                triggered_by="admin", created_at=datetime.now(UTC))
+                triggered_by=admin, created_at=datetime.now(UTC))
     db.add(job)
     db.flush()
+    # 값은 안 나가지만 임베딩 서버를 오래 점유하는 관리 조작 — 누가 시작했는지 남긴다
+    db.add(AuditLog(action="embed_index_trigger", target="embed_index",
+                    detail=f"job=#{job.id}", requested_by=admin, requested_at=job.created_at))
     background.add_task(run_ai_job, session_factory, job.id, create_ai_client(), settings)
     return {"job_id": job.id, "status": job.status}
 
