@@ -434,7 +434,7 @@ docker network ls --filter name=dbv- --format '{{.Name}}' \
 
 <span class="cm"># [전용] 비어 있는 &lt;n&gt;으로 만들기 (예: 두 번째 서비스 → 10.203.2.0/24)</span>
 docker network create --subnet 10.203.&lt;n&gt;.0/24 dbv-&lt;서비스키&gt;</pre></div>
-    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code>, 개발 스택 <code>172.49/16</code> 어디와도 겹치지 않습니다. <code>0</code>은 공유 복도 몫입니다.</div>
+    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code> 어디와도 겹치지 않습니다. <code>0</code>은 공유 복도 몫입니다.</div>
   </li>
 
   <li data-role="dbv">
