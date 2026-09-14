@@ -39,8 +39,9 @@ db-viewer backend가 대상 DB 컨테이너에 닿으려면 둘이 같은 브리
 docker network create --subnet 10.203.0.0/24 dbv-shared
 ```
 
-만든 뒤 `docker-compose.yml`의 backend `networks`에 `dbv-shared`를 넣고 재기동한다(6.2).
-**이후 공유 방식 서비스는 이 단계를 건너뛴다** — 서비스 쪽이 3~4로 문을 내면 db-viewer는
+**71번 서버에서 이미 만들어 뒀다.** `docker-compose.yml`의 backend `networks`에도
+`dbv-shared`(external)가 들어가 있으므로 이 저장소를 배포하면 자동으로 합류한다.
+**공유 방식 서비스는 이 단계를 건너뛴다** — 서비스 쪽이 3~4로 문을 내면 db-viewer는
 이미 그 네트워크에 있다.
 
 ### 1.2 전용 네트워크 — 서비스마다
@@ -54,7 +55,7 @@ docker network create --subnet 10.203.<n>.0/24 dbv-<서비스키>
 공유 네트워크, `10.203.1.0/24`는 첫 연결이 이미 쓰고 있으므로** 다음 서비스는
 `10.203.2.0/24`부터. `10.203.x.0/24`는 RFC1918 사설 대역이고, 기존 서비스
 대역(172.36~172.46)·db-viewer 자신의 대역(`172.48.0.0/16`, `docker-compose.yml`
-`networks.dbviewer` 참고)·개발 스택(`172.49.0.0/16`)과 겹치지 않는다.
+`networks.dbviewer` 참고)과 겹치지 않는다.
 이미 쓰인 `<n>`은 아래로 확인한다:
 
 ```bash
@@ -222,9 +223,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### 6.2 compose에 네트워크 추가 — 전용 서비스마다, 공유는 처음 한 번
 
-**공유 방식 서비스는 이 단계가 없다** — `dbv-shared`는 1.1에서 이미 backend에 붙어 있다.
-전용 방식 서비스(또는 공유 네트워크를 방금 처음 만든 경우)만 `docker-compose.yml`의
-`backend` 서비스에 네트워크를 추가한다(SQLite면 볼륨 마운트도). `docker-compose.yml`
+**공유 방식 서비스는 이 단계가 없다** — `dbv-shared`는 `docker-compose.yml`에 이미
+반영돼 있다. 전용 방식 서비스만 `docker-compose.yml`의 `backend` 서비스에 네트워크를
+추가한다(SQLite면 볼륨 마운트도). `docker-compose.yml`
 하단의 안내 주석을 참고해 실제 네트워크명·볼륨명으로 채운다:
 
 ```yaml
