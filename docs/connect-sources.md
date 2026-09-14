@@ -154,8 +154,11 @@ docker inspect -f '{{json .NetworkSettings.Networks}}' <DB컨테이너명>
 
 ## 5. 읽기전용 계정 발급 (PostgreSQL)
 
+> 서비스 담당자는 이 SQL을 직접 치지 않는다 — `docs/handoff/service-owner-prompt.md` ②·④의
+> 변수 블록이 비밀번호(`openssl`)까지 만들어 `psql` 히어독으로 흘려보낸다. 아래는 그 내용.
+
 ```sql
--- <강력한 비밀번호>는 직접 생성한다 (예: openssl rand -base64 24)
+-- 비밀번호는 openssl rand -base64 24 로 만든 값 ($RO_PASS)
 CREATE ROLE dbviewer_ro LOGIN PASSWORD '<강력한 비밀번호>';
 
 GRANT CONNECT ON DATABASE <DB명> TO dbviewer_ro;
