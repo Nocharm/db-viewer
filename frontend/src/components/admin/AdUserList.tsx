@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchUsers, type AppUserEntry } from "@/lib/api";
+import { useI18n } from "@/components/i18n";
 import { CheckIcon, PlusIcon, SearchIcon, UsersIcon, WarningIcon } from "@/components/icons";
 
 // 한 번에 받아오는 인원 수 — 백엔드 기본값과 맞춘다 / page size, mirrors the backend default
@@ -27,6 +28,7 @@ export function getInitial(loginId: string): string {
 }
 
 export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<AppUserEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -79,28 +81,26 @@ export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps
     <section className="mb-6" data-testid="AdminPage-adUsersSection">
       <div className="sec-head">
         <span className="sec-head__tile"><SearchIcon size={14} /></span>
-        <h2 className="sec-head__title">AD 사용자</h2>
+        <h2 className="sec-head__title">{t("aduser.title")}</h2>
         <span className="cnt-pill" data-testid="AdminPage-adUserCount">
           {users.length.toLocaleString()} / {total.toLocaleString()}
         </span>
         <div className="sec-head__right">
           <input
             className="ctl-field w-56"
-            placeholder="이름·ID·부서 검색"
+            placeholder={t("aduser.searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             data-testid="AdminPage-userFilterInput"
           />
         </div>
       </div>
-      <p className="sec-desc">
-        검색은 동기화된 전체 인원을 대상으로 합니다. 로그인 허용은 위 화이트리스트가 결정합니다.
-      </p>
+      <p className="sec-desc">{t("aduser.desc")}</p>
 
       {isEmpty ? (
         <div className="empty-state" data-testid="AdminPage-adUsersEmptyState">
           <UsersIcon size={22} />
-          <span>{query.trim() ? "검색 결과 없음" : "동기화된 사용자 없음 — [AD 전체 동기화]를 실행하세요"}</span>
+          <span>{t(query.trim() ? "aduser.emptySearch" : "aduser.empty")}</span>
         </div>
       ) : (
         <div className="card">
@@ -108,10 +108,13 @@ export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps
             <table className="data-table" data-testid="AdminPage-adUsersTable">
               <colgroup>
                 <col style={{ width: "28%" }} /><col style={{ width: "16%" }} />
-                <col style={{ width: "18%" }} /><col /><col style={{ width: "96px" }} />
+                <col style={{ width: "18%" }} /><col /><col style={{ width: "126px" }} />
               </colgroup>
               <thead>
-                <tr><th>login_id</th><th>이름</th><th>부서</th><th>이메일</th><th></th></tr>
+                <tr>
+                  <th>login_id</th><th>{t("aduser.colName")}</th>
+                  <th>{t("aduser.colDept")}</th><th>{t("aduser.colEmail")}</th><th></th>
+                </tr>
               </thead>
               <tbody>
                 {users.map((user) => (
@@ -126,19 +129,20 @@ export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps
                     <td className="text-xs" style={{ color: "var(--slate)" }}>{user.email ?? "—"}</td>
                     <td className="text-right">
                       {whitelisted.has(user.login_id) ? (
-                        <span className="badge badge--ok badge--plain" title="로그인 허용됨">
-                          <CheckIcon size={11} />허용됨
+                        <span className="badge badge--ok badge--plain row-act"
+                              title={t("aduser.allowedTitle")}>
+                          <CheckIcon size={11} />{t("aduser.allowed")}
                         </span>
                       ) : (
                         // 평소엔 숨고 행 호버·키보드 포커스에서만 보인다 / hover- and focus-revealed
                         <button
-                          className="icon-button reveal-action"
-                          title={`${user.login_id} 로그인 허용 추가`}
-                          aria-label={`${user.login_id} 로그인 허용 추가`}
+                          className="icon-button row-act reveal-action"
+                          title={t("aduser.allowTitle").replace("{id}", user.login_id)}
+                          aria-label={t("aduser.allowTitle").replace("{id}", user.login_id)}
                           onClick={() => onAllow(user)}
                           data-testid={`AdminPage-allowButton-${user.login_id}`}
                         >
-                          <PlusIcon size={13} />허용
+                          <PlusIcon size={13} />{t("aduser.allow")}
                         </button>
                       )}
                     </td>
@@ -149,7 +153,7 @@ export function AdUserList({ whitelisted, onAllow, refreshKey }: AdUserListProps
             {/* 바닥에 닿으면 다음 페이지를 부른다 / next page loads when this scrolls into view */}
             <div ref={sentinelRef} className="h-6 text-center text-xs"
                  style={{ color: "var(--muted)" }} data-testid="AdminPage-adUsersSentinel">
-              {loading ? "불러오는 중…" : hasMore ? "" : null}
+              {loading ? t("common.loading") : hasMore ? "" : null}
             </div>
           </div>
         </div>

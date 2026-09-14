@@ -1,47 +1,51 @@
-/** 감사 로그 화면의 순수 로직 — 동작 라벨·분류·기간·요약. 화면 없이 테스트한다.
- * Pure helpers for the audit panel: labels, categories, period ranges, summaries. */
+/** 감사 로그 화면의 순수 로직 — 동작 라벨 키·분류·기간·요약. 화면 없이 테스트한다.
+ * 라벨은 문자열이 아니라 사전 키로 들고 있다 — UI 언어 토글이 이 표에도 닿아야 한다.
+ * Pure helpers for the audit panel: label keys, categories, period ranges, summaries.
+ * Labels are dictionary keys, not literals, so the language toggle reaches this table too. */
+
+import type { MessageKey } from "@/lib/i18n";
 
 export type AuditCategory = "exposure" | "policy" | "ops" | "login";
 
 // 코드 그대로는 무슨 조작인지 안 읽힌다 — 목록에 없는 action은 코드를 그대로 보여준다
 // (새 action이 생겨도 화면이 비지 않게) / unknown actions fall back to the raw code
-export const ACTION_LABELS: Record<string, string> = {
-  table_preview: "테이블 미리보기",
-  join_preview: "조인 미리보기",
-  preview: "조인 검증 미리보기",
-  value_probe: "값 추적",
-  value_probe_heavy: "값 추적 — 무거운 객체",
-  whitelist_add: "화이트리스트 등록",
-  whitelist_remove: "화이트리스트 해제",
-  preview_allow_add: "미리보기 허용 등록",
-  preview_allow_remove: "미리보기 허용 해제",
-  hidden_schema_render_set: "감춘 스키마 표시 토글",
-  confirm: "관계 확정",
-  category_set: "스키마 카테고리 변경",
-  source_create: "데이터 소스 등록",
-  source_update: "데이터 소스 수정",
-  source_delete: "데이터 소스 삭제",
-  source_test: "소스 연결 테스트",
-  collect_trigger: "카탈로그 수집",
-  collect_cancel: "카탈로그 수집 중단",
-  ad_sync_all: "AD 전체 동기화",
-  embed_index_trigger: "AI 색인 시작",
-  login: "로그인 (Keycloak)",
-  ldap_login: "로그인 (LDAP)",
-  access_denied: "접근 거부 (화이트리스트 밖)",
+export const ACTION_LABEL_KEYS: Record<string, MessageKey> = {
+  table_preview: "audit.action.table_preview",
+  join_preview: "audit.action.join_preview",
+  preview: "audit.action.preview",
+  value_probe: "audit.action.value_probe",
+  value_probe_heavy: "audit.action.value_probe_heavy",
+  whitelist_add: "audit.action.whitelist_add",
+  whitelist_remove: "audit.action.whitelist_remove",
+  preview_allow_add: "audit.action.preview_allow_add",
+  preview_allow_remove: "audit.action.preview_allow_remove",
+  hidden_schema_render_set: "audit.action.hidden_schema_render_set",
+  confirm: "audit.action.confirm",
+  category_set: "audit.action.category_set",
+  source_create: "audit.action.source_create",
+  source_update: "audit.action.source_update",
+  source_delete: "audit.action.source_delete",
+  source_test: "audit.action.source_test",
+  collect_trigger: "audit.action.collect_trigger",
+  collect_cancel: "audit.action.collect_cancel",
+  ad_sync_all: "audit.action.ad_sync_all",
+  embed_index_trigger: "audit.action.embed_index_trigger",
+  login: "audit.action.login",
+  ldap_login: "audit.action.ldap_login",
+  access_denied: "audit.action.access_denied",
 };
 
 /** 동작 분류 — 필터 드롭다운의 optgroup과 행의 pill 색이 이 순서를 따른다 */
-export const ACTION_GROUPS: { category: AuditCategory; label: string; actions: string[] }[] = [
-  { category: "exposure", label: "실값 반출",
+export const ACTION_GROUPS: { category: AuditCategory; labelKey: MessageKey; actions: string[] }[] = [
+  { category: "exposure", labelKey: "audit.group.exposure",
     actions: ["table_preview", "join_preview", "preview", "value_probe", "value_probe_heavy"] },
-  { category: "policy", label: "권한·설정",
+  { category: "policy", labelKey: "audit.group.policy",
     actions: ["preview_allow_add", "preview_allow_remove", "whitelist_add", "whitelist_remove",
       "hidden_schema_render_set", "confirm", "category_set"] },
-  { category: "ops", label: "소스·수집",
+  { category: "ops", labelKey: "audit.group.ops",
     actions: ["source_create", "source_update", "source_delete", "source_test",
       "collect_trigger", "collect_cancel", "ad_sync_all", "embed_index_trigger"] },
-  { category: "login", label: "로그인", actions: ["login", "ldap_login", "access_denied"] },
+  { category: "login", labelKey: "audit.group.login", actions: ["login", "ldap_login", "access_denied"] },
 ];
 
 const CATEGORY_BY_ACTION = new Map<string, AuditCategory>(
@@ -60,8 +64,9 @@ export function isFailedEntry(action: string, detail: string): boolean {
 
 export type AuditPeriod = "today" | "7d" | "30d" | "all";
 
-export const PERIOD_LABELS: Record<AuditPeriod, string> = {
-  today: "오늘", "7d": "7일", "30d": "30일", all: "전체",
+export const PERIOD_LABEL_KEYS: Record<AuditPeriod, MessageKey> = {
+  today: "audit.period.today", "7d": "audit.period.7d",
+  "30d": "audit.period.30d", all: "audit.period.all",
 };
 
 // 오늘을 포함해 며칠을 거슬러 볼지 — 7일은 오늘 포함 7일 / days back, today inclusive

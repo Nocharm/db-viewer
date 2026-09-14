@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { getMessage, type MessageKey } from "@/lib/i18n";
 import {
   buildCreateInput,
   buildDependentLines,
@@ -8,6 +9,10 @@ import {
   isSourceFormValid,
   type SourceFormState,
 } from "./DataSourcePanel";
+
+// 사전을 그대로 써서 확인한다 — 키만 맞추는 테스트는 오탈자 키를 통과시킨다
+const ko = (key: MessageKey) => getMessage(key, "ko");
+const en = (key: MessageKey) => getMessage(key, "en");
 
 describe("buildDependentLines", () => {
   it("lists every dependent kind in a fixed order with its count", () => {
@@ -18,21 +23,28 @@ describe("buildDependentLines", () => {
       "snapshots", "preview_allowlist", "schema_categories", "value_probe_jobs",
     ]);
     expect(lines.map((line) => line.count)).toEqual([2, 0, 3, 1]);
-    expect(lines[0].label).toContain("스냅샷");
+    expect(ko(lines[0].labelKey)).toContain("스냅샷");
+    expect(en(lines[0].labelKey)).toContain("snapshot");
   });
 });
 
 describe("formatCascadeSummary", () => {
-  it("names only the nonzero kinds, without the parenthetical detail", () => {
+  it("names only the nonzero kinds, using the short label", () => {
     expect(formatCascadeSummary({
       snapshots: 2, preview_allowlist: 0, schema_categories: 1, value_probe_jobs: 0,
-    })).toBe("수집 스냅샷 2건·스키마 카테고리 1건 함께 삭제");
+    }, ko)).toBe("수집 스냅샷 2건·스키마 카테고리 1건 함께 삭제");
+  });
+
+  it("follows the UI language", () => {
+    expect(formatCascadeSummary({
+      snapshots: 2, preview_allowlist: 0, schema_categories: 1, value_probe_jobs: 0,
+    }, en)).toBe("Collection snapshots 2·Schema categories 1 deleted alongside");
   });
 
   it("says so when nothing else was removed", () => {
     expect(formatCascadeSummary({
       snapshots: 0, preview_allowlist: 0, schema_categories: 0, value_probe_jobs: 0,
-    })).toBe("함께 삭제된 정보 없음");
+    }, ko)).toBe("함께 삭제된 정보 없음");
   });
 });
 
