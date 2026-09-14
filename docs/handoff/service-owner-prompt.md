@@ -1,8 +1,8 @@
 # 서비스 담당자 전달용 — db-viewer 조회 연결 요청
 
 각 서비스 담당자에게 보내는 작업 요청서. **db-viewer 담당자가 아래 ① 표를 채운 뒤**
-문서 전체를 담당자에게 전달한다. 담당자는 ②를 눈으로 확인하고, ③을 자기 저장소에서
-Claude Code에 그대로 붙여넣으면 된다.
+문서 전체를 담당자에게 전달한다. 담당자는 ②를 터미널에서 실행해 ✅를 확인하고, ③ 블록을
+터미널에서 돌려 나온 출력을 자기 저장소의 Claude Code에 붙여넣으면 된다.
 
 관련 문서: 설계 `docs/superpowers/specs/2026-08-25-multi-source-db-design.md` /
 배포 절차 `docs/connect-sources.md`
@@ -30,8 +30,8 @@ Claude Code에 그대로 붙여넣으면 된다.
 |---|---|
 | 기존 subnet(172.36~46)이 바뀌나 | **안 바뀝니다.** 기존 `default` 네트워크 정의는 한 줄도 손대지 않습니다. 새 네트워크를 *추가로* 붙일 뿐입니다 |
 | 데이터가 날아가나 | 데이터는 볼륨에 있고 건드리지 않습니다. 단 컨테이너를 1회 재생성하므로 **②에서 볼륨 여부를 반드시 확인**합니다 |
-| 서비스가 오래 멈추나 | `docker compose up -d`로 in-place 재생성 — 해당 컨테이너만 수 초 |
-| DB에 쓰기가 일어나나 | db-viewer는 `SELECT`만 실행합니다. 읽기전용 계정으로 이중으로 막습니다 |
+| 서비스가 오래 멈추나 | `docker compose up -d`로 in-place 재생성 — 해당 컨테이너만 수 초. 다만 **그 순간 앱의 DB 커넥션은 끊긴다**(재접속을 스스로 안 하는 앱이면 앱도 한 번 재기동). 한산한 시간대에 한다 |
+| DB에 쓰기가 일어나나 | db-viewer는 `SELECT`만 실행합니다. 읽기전용 계정으로 이중으로 막습니다 — 여러분 테이블의 `INSERT`·`UPDATE`·`DELETE`는 DB가 거부합니다(`CREATE`는 PostgreSQL 15+ 기본에서 거부, 그 이하는 ④에서 확인) |
 | 다른 서비스 DB와 서로 보이게 되나 | ①의 **네트워크 방식**에 따릅니다. *전용*이면 아니요 — 그 네트워크에는 db-viewer와 여러분 DB **둘만**. *공유*(`dbv-shared`)면 같은 네트워크의 다른 서비스 DB 컨테이너와 포트 수준에서 서로 닿습니다(각자 계정으로 보호). 닿으면 안 되는 DB라면 전용을 요청하세요 |
 
 ---
@@ -101,6 +101,10 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## ② 값 확인 → 변수 선언 → 볼륨 확인 (필수 — 건너뛰지 말 것)
 
+> **이 절차가 다루는 범위** — 같은 서버의 **docker compose로 떠 있는 PostgreSQL/SQLite**다.
+> DB가 다른 서버에 있거나(RDS 등) MySQL·Oracle이면 자동 감지가 실패한다. 그 경우 여기서 멈추고
+> db-viewer 담당자와 방식을 먼저 정한다.
+
 **이 문서의 모든 명령은 여기서 만든 변수를 쓴다.** 명령 중간에 이름을 바꿔 넣을 곳이
 없으니 블록째 복사해 붙여넣으면 된다. **한 터미널에서 이어서** 실행한다.
 
@@ -131,7 +135,7 @@ export SVC_KEY=svca           # 별칭 이름의 재료 — 받은 값 그대로
 
 ```bash
 export DB_CONTAINER=$(docker compose ps --format '{{.Name}} {{.Image}}' \
-  | awk '/postgres|postgis/{print $1; exit}')
+  | awk '/postgres|postgis|timescale|pgvector/{print $1; exit}')
 export DB_SERVICE=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$DB_CONTAINER")
 env_of() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$DB_CONTAINER" | sed -n "s/^$1=//p"; }
 export DB_SUPER=$(env_of POSTGRES_USER); export DB_SUPER=${DB_SUPER:-postgres}
@@ -144,35 +148,57 @@ export RO_PASS=$(openssl rand -base64 24)
 **값이 맞는지 기계가 확인한다.** 안 고쳤거나 잘못 잡혔으면 여기서 ❌로 드러난다.
 
 ```bash
-ok(){ printf '✅ %s\n' "$1"; }; ng(){ printf '❌ %s\n' "$1"; }
+ok(){ printf '✅ %s\n' "$1"; }; ng(){ printf '❌ %s\n' "$1"; }; wn(){ printf '⚠️ %s\n' "$1"; }
 [ -n "$DB_CONTAINER" ] && ok "DB 컨테이너  $DB_CONTAINER ($DB_SERVICE)" \
   || ng "DB 컨테이너를 못 찾았습니다 — docker compose ps 로 보고 아래처럼 직접 지정"
 docker compose exec -T "$DB_SERVICE" psql -U "$DB_SUPER" -d "$DB_NAME" -Atc 'select 1' >/dev/null 2>&1 \
   && ok "DB 접속     $DB_SUPER@$DB_NAME" || ng "psql 접속 실패 — DB_SUPER / DB_NAME 을 직접 지정"
 docker network inspect "$DBV_NET" >/dev/null 2>&1 \
   && ok "복도        $DBV_NET" || ng "네트워크 $DBV_NET 이 없습니다 — db-viewer 담당자에게 확인"
-case "$SVC_KEY" in ''|svca) ng "서비스 키가 예시값($SVC_KEY) 그대로입니다 — 받은 값으로 바꾸세요";;
-  *) ok "서비스 키   $SVC_KEY → 별칭 $DB_ALIAS";; esac
+case "$SVC_KEY" in
+  ''|svca)      ng "서비스 키가 예시값($SVC_KEY) 그대로입니다 — 받은 값으로 바꾸세요" ;;
+  *[!a-z0-9-]*) ng "서비스 키에 소문자·숫자·- 외의 글자가 있습니다 ($SVC_KEY) — 별칭으로 못 씁니다" ;;
+  *) ok "서비스 키   $SVC_KEY → 별칭 $DB_ALIAS" ;;
+esac
+n=$(docker compose ps --format '{{.Image}}' 2>/dev/null | grep -cE 'postgres|postgis|timescale|pgvector')
+[ "${n:-0}" -le 1 ] && ok "DB 후보      1개" \
+  || wn "DB 후보가 ${n}개입니다 — 위 ✅의 이름이 맞는지 확인하고, 아니면 아래 덮어쓰기로 고르세요"
+docker compose up -d --dry-run "$DB_SERVICE" 2>&1 | grep -q Recreate \
+  && ng "compose 파일과 실행 중인 컨테이너가 이미 다릅니다 — 아래 경고 참고" \
+  || ok "재생성 영향  이번 변경분만"
 printf '비밀번호     %s\n' "$RO_PASS"
 ```
+
+> **「compose 파일과 실행 중인 컨테이너가 다르다」가 뜨면 멈춘다.** `docker compose up -d`는
+> 네트워크 한 줄만 반영하는 게 아니라 **그 파일에 쌓여 있던 변경을 전부** 적용한다 — 파일에는
+> `postgres:16`인데 실제로는 14가 돌고 있으면 그 순간 메이저 업그레이드가 걸려 DB가 안 뜬다.
+> 어떤 파일 조합으로 떠 있는지 확인하고 같은 `-f` 조합으로 작업한다:
+> `docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$DB_CONTAINER"`
 
 **SQLite 서비스라면** DB 컨테이너가 따로 없다 — `export DB_SERVICE=<앱 컨테이너의 compose 서비스명>`으로
 지정하고 `DB_CONTAINER`는 아래 덮어쓰기 블록으로 채운 뒤, **DB 접속·네트워크 두 줄의 ❌는 무시한다**
 (네트워크도 계정도 쓰지 않는다). ② 볼륨 확인과 ⑤ SQLite 회신만 하면 된다.
 
-**✅ 네 줄이 다 떠야 다음으로 간다.** ❌를 안고 진행하면 엉뚱한 DB에 계정을 만들게 된다.
+**❌가 하나도 없어야 다음으로 간다.** ❌를 안고 진행하면 엉뚱한 DB에 계정을 만들게 된다.
+⚠️는 멈추라는 뜻이 아니라 눈으로 한 번 확인하라는 표시다(예: DB 후보가 여럿일 때 고른 이름이 맞는지).
 자동 감지가 틀렸다면(DB가 여럿이거나 이미지 이름이 특이할 때) 그 값만 덮어쓰고 확인을 다시 돌린다:
 
 ```bash
 docker compose ps                 # SERVICE 열에서 DB를 고른다
-export DB_SERVICE='여기에 SERVICE 값'
+export DB_SERVICE='여기에 SERVICE 값'   # ← 이 한 줄만 고치면 된다
+
+# 나머지는 다시 자동 — 고른 서비스 기준으로 컨테이너·계정·DB명을 새로 읽는다
 export DB_CONTAINER=$(docker compose ps -q "$DB_SERVICE" | head -1 \
   | xargs docker inspect -f '{{.Name}}' | sed 's|^/||')
-export DB_NAME='여기에 DB명' DB_SUPER='여기에 관리자 계정'
+export DB_SUPER=$(env_of POSTGRES_USER); export DB_SUPER=${DB_SUPER:-postgres}
+export DB_NAME=$(env_of POSTGRES_DB);    export DB_NAME=${DB_NAME:-$DB_SUPER}
+
+# 그래도 비면(엔진이 달라 env 이름이 다를 때) 그 둘만 직접
+# export DB_SUPER='관리자 계정'; export DB_NAME='DB명'
 ```
 
 변수는 이 터미널에서만 산다. 창을 닫았다면 위 세 블록을 다시 실행한다 — 단 계정을 이미
-만든 뒤라면 `RO_PASS`는 새로 뽑지 말고 `export RO_PASS='아까 그 값'`으로 되살리고,
+만든 뒤라면 `RO_PASS`는 새로 뽑지 말고 `read -s RO_PASS`(붙여넣고 Enter — 히스토리에 안 남는다)로 되살리고,
 ④의 `PROBE_TABLE` 한 줄도 다시 실행해야 ⑤ 회신의 읽기 확인이 제대로 찍힌다.
 
 **볼륨 확인.** 작업은 **DB 컨테이너를 1회 재생성**한다. 데이터가 named volume에 있으면
@@ -182,9 +208,14 @@ export DB_NAME='여기에 DB명' DB_SUPER='여기에 관리자 계정'
 docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{"\n"}}{{end}}' "$DB_CONTAINER"
 ```
 
-- **출력에 DB 데이터 경로가 보이면** (예: `volume pgdata -> /var/lib/postgresql/data`) → ③으로 진행
-- **출력이 비어 있으면** → **작업을 중단하고 db-viewer 담당자에게 알린다.** 그 서비스는
-  지금 재기동만 해도 데이터가 사라지는 상태이므로, 연결보다 볼륨을 붙이는 게 먼저다
+| 출력 | 뜻 |
+|---|---|
+| `volume pgdata -> /var/lib/postgresql/data` (사람이 읽을 수 있는 이름) | ✅ 이름 붙은 볼륨 — ③으로 진행 |
+| `volume 1fd6b73f…959cd -> …` (64자 16진수) | ⚠ **익명 볼륨**. 이번 `up -d`로는 살아남지만 누군가 `docker compose down -v`를 치면 사라지는 상태다. 진행하되 **이 사실을 ⑤ 회신에 함께 적는다** |
+| DB 데이터 경로가 아예 안 보임 | ❌ **작업 중단**, db-viewer 담당자에게 알린다. 연결보다 볼륨을 붙이는 게 먼저다 |
+
+공식 postgres 이미지는 볼륨을 안 붙여도 익명 볼륨이 자동 생성되므로 "출력이 비는" 경우는
+드물다 — **64자 해시 이름이 위험 신호**다.
 
 ---
 
@@ -260,7 +291,7 @@ CREATE ROLE $RO_USER LOGIN PASSWORD '$RO_PASS';
 -- 이미 있던 계정이어도 ⑤ 회신에 적히는 비밀번호와 실제를 맞춘다 (두 번 실행해도 안전)
 ALTER ROLE $RO_USER LOGIN PASSWORD '$RO_PASS';
 
-GRANT CONNECT ON DATABASE $DB_NAME TO $RO_USER;
+GRANT CONNECT ON DATABASE "$DB_NAME" TO $RO_USER;
 GRANT USAGE ON SCHEMA public TO $RO_USER;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO $RO_USER;
 
@@ -268,6 +299,9 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO $RO_USER;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO $RO_USER;
 SQL
 ```
+
+이 계정이 이미 있어서 `CREATE ROLE`이 실패하면 그 문장이 **PostgreSQL 서버 로그에 비밀번호째
+남을 수 있다**(`ALTER ROLE`로 비밀번호 자체는 정상 반영된다).
 
 DB가 compose 밖이면 앞부분만 `psql "postgresql://$DB_SUPER@호스트:5432/$DB_NAME" <<SQL … SQL`
 으로 바꾼다.
@@ -290,9 +324,10 @@ export PROBE_TABLE=$(docker compose exec -T "$DB_SERVICE" psql -U "$DB_SUPER" -d
   "SELECT quote_ident(table_name) FROM information_schema.tables
      WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name LIMIT 1")
 
-# 읽기 — 숫자가 나와야 정상
+# 읽기 — 1이 나와야 정상 (행 수를 세지 않아 큰 테이블에도 부담이 없다)
 docker compose exec -T -e PGPASSWORD="$RO_PASS" "$DB_SERVICE" \
-  psql -U "$RO_USER" -d "$DB_NAME" -Atc "SELECT count(*) FROM public.$PROBE_TABLE"
+  psql -U "$RO_USER" -d "$DB_NAME" \
+  -Atc "SELECT count(*) FROM (SELECT 1 FROM public.$PROBE_TABLE LIMIT 1) s"
 
 # 쓰기 — 실제로 시도하되 ROLLBACK이라 아무것도 남지 않는다
 docker compose exec -T -e PGPASSWORD="$RO_PASS" "$DB_SERVICE" \
@@ -335,18 +370,25 @@ NETS=$(docker inspect "$DB_CONTAINER" \
 ALIAS_OK=$(docker inspect "$DB_CONTAINER" \
   -f "{{(index .NetworkSettings.Networks \"$DBV_NET\").Aliases}}" 2>/dev/null)
 ALIAS_OK=${ALIAS_OK:-"❌ 아직 $DBV_NET 에 안 붙었습니다 (③)"}
+# compose가 stderr로 찍는 경고(time=…/WARN…)는 판정에서 걸러 낸다
+noise(){ grep -vE '^time=|^WARN'; }
 READ_OK=$([ -n "$PROBE_TABLE" ] && docker compose exec -T -e PGPASSWORD="$RO_PASS" "$DB_SERVICE" \
-  psql -U "$RO_USER" -d "$DB_NAME" -Atc "SELECT count(*) FROM public.$PROBE_TABLE" 2>&1 | tail -1 \
+  psql -U "$RO_USER" -d "$DB_NAME" \
+  -Atc "SELECT count(*) FROM (SELECT 1 FROM public.$PROBE_TABLE LIMIT 1) s" 2>&1 | noise | tail -1 \
   || echo "(public에 테이블이 없어 건너뜀)")
 WRITE_OUT=$(docker compose exec -T -e PGPASSWORD="$RO_PASS" "$DB_SERVICE" \
   psql -U "$RO_USER" -d "$DB_NAME" -q -v ON_ERROR_STOP=1 \
-  -Atc 'BEGIN; CREATE TABLE zzz_probe(id int); ROLLBACK;' 2>&1)
+  -Atc 'BEGIN; CREATE TABLE zzz_probe(id int); ROLLBACK;' 2>&1 | noise)
 case "$WRITE_OUT" in
   "") WRITE_BLOCKED="⚠ 쓰기가 허용돼 있습니다 (롤백해서 남진 않음 · PG14 이하 public 기본값일 수 있음)" ;;
   *"permission denied"*|*"must be owner"*|*"read-only"*)
-      WRITE_BLOCKED="차단됨 — $(printf '%s' "$WRITE_OUT" | head -1)" ;;
+      WRITE_BLOCKED="✅ 차단됨 — $(printf '%s' "$WRITE_OUT" | head -1)" ;;
   *)  WRITE_BLOCKED="❓ 확인 실패 — $(printf '%s' "$WRITE_OUT" | head -1)" ;;
 esac
+SVC_STATUS=$(docker compose ps --format '{{.Service}} {{.Status}}' 2>/dev/null | noise | tr '\n' ' ')
+SCHEMAS=$(docker compose exec -T "$DB_SERVICE" psql -U "$DB_SUPER" -d "$DB_NAME" -Atc \
+  "SELECT string_agg(DISTINCT table_schema, ', ') FROM information_schema.role_table_grants
+     WHERE grantee='$RO_USER'" 2>/dev/null | noise | tail -1)
 
 cat <<EOF
 ──── db-viewer 연동 회신 ────────────────────────
@@ -358,14 +400,14 @@ host (별칭):      $DB_ALIAS
 DB명:             $DB_NAME
 계정:             $RO_USER
 비밀번호:          $RO_PASS
-조회 대상 스키마:   public
+조회 대상 스키마:   ${SCHEMAS:-public}
 
 검증
 - 붙어 있는 네트워크: $NETS
 - 별칭:             $ALIAS_OK
-- 읽기 (행 수):      $READ_OK
+- 읽기 (1이면 정상):  $READ_OK
 - 쓰기 차단 확인:    $WRITE_BLOCKED
-- 서비스 정상 동작:  (헬스체크/앱 로그 확인함)
+- 서비스 상태:      ${SVC_STATUS:-(docker compose ps 로 직접 확인해 적어 주세요)}
 ─────────────────────────────────────────────
 EOF
 ```
@@ -373,10 +415,14 @@ EOF
 **SQLite**라면 네트워크·계정이 없으니 이것으로 대신한다:
 
 ```bash
-export SQLITE_DIR=/app/data                  # 파일이 든 디렉터리 (= 볼륨 마운트 지점)
-export SQLITE_PATH="$SQLITE_DIR/app.db"      # 컨테이너 안 파일 경로
+# 아래 두 줄은 예시다 — 실제 경로로 바꾼다
+export SQLITE_DIR=/app/data                  # 볼륨이 마운트된 디렉터리
+export SQLITE_PATH="$SQLITE_DIR/app.db"      # 그 안의 DB 파일
 export SQLITE_VOL=$(docker inspect "$DB_CONTAINER" \
   -f "{{range .Mounts}}{{if eq .Destination \"$SQLITE_DIR\"}}{{.Name}}{{end}}{{end}}")
+
+[ -n "$SQLITE_VOL" ] || echo "⚠ 볼륨을 못 찾았습니다 — SQLITE_DIR이 실제 마운트 지점인지 확인"
+JOURNAL=$(docker compose exec -T "$DB_SERVICE" sqlite3 "$SQLITE_PATH" 'PRAGMA journal_mode;' 2>/dev/null)
 
 cat <<EOF
 ──── db-viewer 연동 회신 (SQLite) ───────────────
@@ -384,7 +430,7 @@ cat <<EOF
 엔진:             SQLite
 볼륨 이름:         $SQLITE_VOL
 컨테이너 내부 경로: $SQLITE_PATH
-저널 모드:         $(docker compose exec -T "$DB_SERVICE" sqlite3 "$SQLITE_PATH" 'PRAGMA journal_mode;')
+저널 모드:         ${JOURNAL:-(확인 못 함 — 컨테이너에 sqlite3가 없으면 공란)}
 ─────────────────────────────────────────────
 EOF
 ```
