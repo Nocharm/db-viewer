@@ -5,9 +5,11 @@
 
 import { useEffect, useRef } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { CloseIcon } from "@/components/icons";
-import { ACTION_LABELS, getActionCategory, isFailedEntry, type AuditCategory } from "@/lib/audit";
+import { ACTION_LABEL_KEYS, getActionCategory, isFailedEntry, type AuditCategory } from "@/lib/audit";
 import type { AuditEntry } from "@/lib/api";
+import type { MessageKey } from "@/lib/i18n";
 
 export const CATEGORY_BADGE: Record<AuditCategory, string> = {
   exposure: "badge--warn", policy: "badge--view", ops: "badge--muted", login: "badge--login",
@@ -20,12 +22,19 @@ export function getAuditBadgeClass(entry: Pick<AuditEntry, "action" | "detail">)
     : CATEGORY_BADGE[getActionCategory(entry.action)];
 }
 
+/** 동작 라벨 — 사전에 없는 새 action은 코드를 그대로 보여준다 / unknown actions show raw */
+export function getActionLabel(action: string, t: (key: MessageKey) => string): string {
+  const key = ACTION_LABEL_KEYS[action];
+  return key ? t(key) : action;
+}
+
 interface AuditDetailModalProps {
   entry: AuditEntry | null;
   onClose: () => void;
 }
 
 export function AuditDetailModal({ entry, onClose }: AuditDetailModalProps) {
+  const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -49,27 +58,29 @@ export function AuditDetailModal({ entry, onClose }: AuditDetailModalProps) {
       >
         <div className="modal__head">
           <span className={`badge badge--plain ${getAuditBadgeClass(entry)}`}>
-            {ACTION_LABELS[entry.action] ?? entry.action}
+            {getActionLabel(entry.action, t)}
           </span>
-          <h3 id="audit-detail-title" className="modal__title">감사 기록 #{entry.id}</h3>
+          <h3 id="audit-detail-title" className="modal__title">
+            {t("audit.detailTitle").replace("{id}", String(entry.id))}
+          </h3>
           <button
             ref={closeRef}
             className="icon-button modal__close"
             onClick={onClose}
-            aria-label="닫기"
+            aria-label={t("common.close")}
             data-testid="AuditDetailModal-closeButton"
           >
             <CloseIcon size={13} />
           </button>
         </div>
         <div className="modal__grid">
-          <span className="modal__key">시각</span>
+          <span className="modal__key">{t("audit.fWhen")}</span>
           <span>{new Date(entry.requested_at).toLocaleString()}</span>
-          <span className="modal__key">동작</span>
+          <span className="modal__key">{t("audit.fAction")}</span>
           <span><code>{entry.action}</code></span>
-          <span className="modal__key">요청자</span>
+          <span className="modal__key">{t("audit.fRequester")}</span>
           <span className="font-mono">{entry.requested_by}</span>
-          <span className="modal__key">대상</span>
+          <span className="modal__key">{t("audit.fTarget")}</span>
           <span className="font-mono">{entry.target ?? "—"}</span>
         </div>
         <pre className="modal__pre" data-testid="AuditDetailModal-detail">{entry.detail}</pre>

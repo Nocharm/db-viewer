@@ -169,7 +169,7 @@ function AdminConsole() {
       <div className="flex h-screen flex-col overflow-hidden">
         <AppHeader />
         <p className="p-6" style={{ color: "var(--error)" }} data-testid="AdminPage-forbidden">
-          시스템 관리자 전용 화면입니다.
+          {t("admin.forbidden")}
         </p>
       </div>
     );
@@ -207,7 +207,7 @@ function AdminConsole() {
       <div className="scroll-area min-h-0 flex-1">
         <div className="mx-auto max-w-3xl p-6" data-testid="AdminPage-root">
           <h1 className="mb-4 text-2xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-            관리 콘솔
+            {t("admin.title")}
           </h1>
 
           <AdminTabs
@@ -217,7 +217,8 @@ function AdminConsole() {
               sources: sourceCount,
               access: allowCount,
               users: items.length,
-              audit: auditToday === null ? undefined : `오늘 ${auditToday.toLocaleString()}`,
+              audit: auditToday === null ? undefined
+                : t("admin.auditToday").replace("{n}", auditToday.toLocaleString()),
             }}
             dots={{ ai: embedStatus === "running" ? "running" : embedStatus === "ok" ? "ok" : undefined }}
           />
@@ -228,7 +229,7 @@ function AdminConsole() {
               value={adminPassword}
               onChange={setAdminPassword}
               configured={passwordConfigured}
-              hint="관리 비밀번호를 넣으면 이 탭의 등록·수정·삭제 조작이 풀립니다. 소스 접속 비밀번호와 다른 값입니다."
+              hint={t("lock.hintSources")}
             />
             <DataSourcePanel
               password={adminPassword}
@@ -243,7 +244,7 @@ function AdminConsole() {
               value={adminPassword}
               onChange={setAdminPassword}
               configured={passwordConfigured}
-              hint="관리 비밀번호를 넣으면 허용 스키마 추가·해제와 비공개 스키마 표시 스위치가 풀립니다."
+              hint={t("lock.hintAccess")}
             />
             <SourceChips value={previewSourceId} onChange={setPreviewSourceId} />
             <PreviewAllowlistPanel
@@ -264,7 +265,7 @@ function AdminConsole() {
                   <span className="badge badge--warn badge--plain"><span className="badge__dot" />{t("admin.embedIndexRunning")}</span>
                 )}
                 {embedStatus === "ok" && (
-                  <span className="badge badge--ok badge--plain"><span className="badge__dot" />완료</span>
+                  <span className="badge badge--ok badge--plain"><span className="badge__dot" />{t("admin.embedIndexOk")}</span>
                 )}
                 {embedStatus === "failed" && (
                   <span className="badge badge--err badge--plain"><span className="badge__dot" />{t("admin.embedIndexFailed")}</span>
@@ -274,19 +275,19 @@ function AdminConsole() {
 
               <div className="stat-tiles">
                 <div className="card stat-tile" data-testid="AdminPage-embedTile-done">
-                  <div className="stat-tile__k">색인 완료</div>
+                  <div className="stat-tile__k">{t("admin.embedTileDone")}</div>
                   <div className="stat-tile__v">{embedStats.done}</div>
-                  <div className="stat-tile__sub">이번 실행에서 처리한 객체</div>
+                  <div className="stat-tile__sub">{t("admin.embedTileDoneSub")}</div>
                 </div>
                 <div className="card stat-tile" data-testid="AdminPage-embedTile-total">
-                  <div className="stat-tile__k">대상 객체</div>
+                  <div className="stat-tile__k">{t("admin.embedTileTotal")}</div>
                   <div className="stat-tile__v stat-tile__v--plain">{embedStats.total}</div>
-                  <div className="stat-tile__sub">테이블·뷰 전체</div>
+                  <div className="stat-tile__sub">{t("admin.embedTileTotalSub")}</div>
                 </div>
                 <div className="card stat-tile" data-testid="AdminPage-embedTile-remaining">
-                  <div className="stat-tile__k">남은 객체</div>
+                  <div className="stat-tile__k">{t("admin.embedTileRemaining")}</div>
                   <div className="stat-tile__v stat-tile__v--plain">{embedStats.remaining}</div>
-                  <div className="stat-tile__sub">재실행하면 이어서 처리</div>
+                  <div className="stat-tile__sub">{t("admin.embedTileRemainingSub")}</div>
                 </div>
               </div>
 
@@ -346,7 +347,7 @@ function AdminConsole() {
             <section className="mb-6">
               <div className="sec-head">
                 <span className="sec-head__tile"><UsersIcon size={14} /></span>
-                <h2 className="sec-head__title">로그인 화이트리스트</h2>
+                <h2 className="sec-head__title">{t("whitelist.title")}</h2>
                 <span className="cnt-pill" data-testid="AdminPage-whitelistCount">
                   {items.length.toLocaleString()}
                 </span>
@@ -359,36 +360,38 @@ function AdminConsole() {
                       run(async () => {
                         try {
                           const summary = await syncUsers();
-                          return `AD 동기화 — 스캔 ${summary.scanned} / 반영 ${summary.upserted} / `
-                            + `제외 ${summary.excluded} / 정리 ${summary.purged}`;
+                          return t("whitelist.syncSummary")
+                            .replace("{scanned}", String(summary.scanned))
+                            .replace("{upserted}", String(summary.upserted))
+                            .replace("{excluded}", String(summary.excluded))
+                            .replace("{purged}", String(summary.purged));
                         } finally {
                           setSyncing(false);
                         }
-                      }, "AD 동기화 완료");
+                      }, t("whitelist.syncDone"));
                     }}
                     data-testid="AdminPage-syncButton"
                   >
                     <SyncIcon size={13} />
-                    {syncing ? `동기화 중… ${syncElapsed}초` : "AD 전체 동기화"}
+                    {syncing
+                      ? t("whitelist.syncing").replace("{n}", String(syncElapsed))
+                      : t("whitelist.syncAll")}
                   </button>
                 </div>
               </div>
-              <p className="sec-desc">
-                여기 없는 계정은 로그인해도 “접근 권한이 없습니다”를 봅니다. AD 사용자 목록의
-                [허용]으로도 바로 등록할 수 있습니다.
-              </p>
+              <p className="sec-desc">{t("whitelist.desc")}</p>
 
               <div className="mb-3 flex gap-2">
                 <input
                   className="ctl-field w-56"
-                  placeholder="login_id (예: hong.gil)"
+                  placeholder={t("whitelist.loginIdPlaceholder")}
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
                   data-testid="AdminPage-loginIdInput"
                 />
                 <input
                   className="ctl-field flex-1"
-                  placeholder="메모 (선택)"
+                  placeholder={t("whitelist.notePlaceholder")}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   data-testid="AdminPage-noteInput"
@@ -396,11 +399,12 @@ function AdminConsole() {
                 <button
                   className="btn-primary inline-flex items-center gap-1.5"
                   onClick={() =>
-                    run(() => addWhitelist(loginId.trim(), note || undefined), "추가 완료")}
+                    run(() => addWhitelist(loginId.trim(), note || undefined),
+                      t("whitelist.addDone"))}
                   disabled={!loginId.trim()}
                   data-testid="AdminPage-addButton"
                 >
-                  <PlusIcon size={13} />추가
+                  <PlusIcon size={13} />{t("whitelist.add")}
                 </button>
               </div>
 
@@ -408,10 +412,13 @@ function AdminConsole() {
                 <table className="data-table" data-testid="AdminPage-whitelistTable">
                   <colgroup>
                     <col style={{ width: "30%" }} /><col style={{ width: "22%" }} />
-                    <col /><col style={{ width: "18%" }} /><col style={{ width: "80px" }} />
+                    <col /><col style={{ width: "18%" }} /><col style={{ width: "126px" }} />
                   </colgroup>
                   <thead>
-                    <tr><th>login_id</th><th>이름</th><th>메모</th><th>등록자</th><th></th></tr>
+                    <tr>
+                      <th>login_id</th><th>{t("whitelist.colName")}</th>
+                      <th>{t("whitelist.colNote")}</th><th>{t("whitelist.colAddedBy")}</th><th></th>
+                    </tr>
                   </thead>
                   <tbody>
                     {items.map((item) => (
@@ -426,17 +433,18 @@ function AdminConsole() {
                         <td className="text-xs" style={{ color: "var(--muted)" }}>{item.added_by}</td>
                         <td className="text-right">
                           <button
-                            className="icon-button reveal-action ctl-field--danger"
-                            onClick={() => run(() => removeWhitelist(item.login_id), "삭제 완료")}
+                            className="icon-button row-act reveal-action ctl-field--danger"
+                            onClick={() => run(() => removeWhitelist(item.login_id),
+                              t("whitelist.removeDone"))}
                             data-testid={`AdminPage-removeButton-${item.login_id}`}
                           >
-                            <TrashIcon size={13} />삭제
+                            <TrashIcon size={13} />{t("whitelist.remove")}
                           </button>
                         </td>
                       </tr>
                     ))}
                     {items.length === 0 && (
-                      <tr><td colSpan={5} style={{ color: "var(--muted)" }}>등록된 항목 없음</td></tr>
+                      <tr><td colSpan={5} style={{ color: "var(--muted)" }}>{t("whitelist.empty")}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -448,7 +456,7 @@ function AdminConsole() {
               refreshKey={adRefreshKey}
               onAllow={(user) => run(
                 () => addWhitelist(user.login_id, user.department ?? undefined),
-                `${user.login_id} 허용 추가`,
+                t("whitelist.allowAdded").replace("{id}", user.login_id),
               )}
             />
 

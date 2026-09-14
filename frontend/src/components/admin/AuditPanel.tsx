@@ -6,14 +6,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { AuditDetailModal, getAuditBadgeClass } from "@/components/admin/AuditDetailModal";
+import { AuditDetailModal, getActionLabel, getAuditBadgeClass } from "@/components/admin/AuditDetailModal";
 import { getInitial } from "@/components/admin/AdUserList";
+import { useI18n } from "@/components/i18n";
 import { BanIcon, ClipboardIcon, SyncIcon, WarningIcon } from "@/components/icons";
 import { fetchAuditLog, type AuditEntry } from "@/lib/api";
 import {
   ACTION_GROUPS,
-  ACTION_LABELS,
-  PERIOD_LABELS,
+  PERIOD_LABEL_KEYS,
   buildPeriodRange,
   summarizeCounts,
   toIsoRange,
@@ -32,12 +32,15 @@ function formatClock(iso: string): string {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
-/** 날짜 꼬리표 — 오늘/어제는 말로, 그 외는 MM-DD / day label under the clock */
-function formatDayLabel(iso: string, now: Date = new Date()): string {
+/** 날짜 꼬리표 — 오늘/어제는 말로, 그 외는 MM-DD. 두 낱말은 호출부가 번역해 넘긴다
+ * / day label under the clock; the caller supplies the translated today/yesterday words. */
+function formatDayLabel(
+  iso: string, words: { today: string; yesterday: string }, now: Date = new Date(),
+): string {
   const at = new Date(iso);
-  if (at.toDateString() === now.toDateString()) return "오늘";
+  if (at.toDateString() === now.toDateString()) return words.today;
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (at.toDateString() === yesterday.toDateString()) return "어제";
+  if (at.toDateString() === yesterday.toDateString()) return words.yesterday;
   return `${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 }
 
@@ -47,6 +50,7 @@ interface AuditPanelProps {
 }
 
 export function AuditPanel({ onTodayCount }: AuditPanelProps) {
+  const { t } = useI18n();
   const [period, setPeriod] = useState<AuditPeriod>("7d");
   const [action, setAction] = useState("");
   const [requestedBy, setRequestedBy] = useState("");
@@ -116,16 +120,17 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
 
   const summary = summarizeCounts(counts);
   const knownActions = new Set(ACTION_GROUPS.flatMap((group) => group.actions));
-  const periodLabel = customRange ? "선택 기간" : PERIOD_LABELS[period];
+  const periodLabel = t(customRange ? "audit.customRange" : PERIOD_LABEL_KEYS[period]);
+  const dayWords = { today: t("audit.today"), yesterday: t("audit.yesterday") };
 
   return (
     <section data-testid="AuditPanel-root">
       <div className="sec-head">
         <span className="sec-head__tile"><ClipboardIcon size={14} /></span>
-        <h2 className="sec-head__title">감사 로그</h2>
+        <h2 className="sec-head__title">{t("admin.tab.audit")}</h2>
         <span className="cnt-pill" data-testid="AuditPanel-total">{total.toLocaleString()}</span>
         <div className="sec-head__right">
-          <span className="period-chips" role="group" aria-label="기간">
+          <span className="period-chips" role="group" aria-label={t("audit.periodGroupLabel")}>
             {PERIODS.map((p) => (
               <button
                 key={p}
@@ -135,42 +140,39 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
                 onClick={() => { setPeriod(p); setDateFrom(""); setDateTo(""); resetPage(); }}
                 data-testid={`AuditPanel-period-${p}`}
               >
-                {PERIOD_LABELS[p]}
+                {t(PERIOD_LABEL_KEYS[p])}
               </button>
             ))}
           </span>
           <button className="icon-button ctl-field" onClick={load} disabled={loading}
                   data-testid="AuditPanel-refreshButton">
-            <SyncIcon size={13} />{loading ? "불러오는 중…" : "새로고침"}
+            <SyncIcon size={13} />{t(loading ? "common.loading" : "audit.refresh")}
           </button>
         </div>
       </div>
-      <p className="sec-desc">
-        실제 값을 본 기록(미리보기·조인 샘플·값 추적)과 권한·설정 변경, 로그인이 최신순으로 남습니다.
-        수정·삭제는 없습니다. 행을 누르면 전문이 열립니다.
-      </p>
+      <p className="sec-desc">{t("audit.desc")}</p>
 
       <div className="stat-tiles stat-tiles--4">
         <div className="card stat-tile" data-testid="AuditPanel-tile-total">
-          <div className="stat-tile__k">{periodLabel} 전체</div>
+          <div className="stat-tile__k">{t("audit.tileTotal").replace("{period}", periodLabel)}</div>
           <div className="stat-tile__v stat-tile__v--plain">{summary.total.toLocaleString()}</div>
         </div>
         <div className="card stat-tile" data-testid="AuditPanel-tile-exposure">
-          <div className="stat-tile__k">실값 반출</div>
+          <div className="stat-tile__k">{t("audit.tileExposure")}</div>
           <div className="stat-tile__v">{summary.exposure.toLocaleString()}</div>
-          <div className="stat-tile__sub">미리보기 · 조인 샘플 · 값 추적</div>
+          <div className="stat-tile__sub">{t("audit.tileExposureSub")}</div>
         </div>
         <div className="card stat-tile" data-testid="AuditPanel-tile-policy">
-          <div className="stat-tile__k">권한·설정 변경</div>
+          <div className="stat-tile__k">{t("audit.tilePolicy")}</div>
           <div className="stat-tile__v stat-tile__v--plain">{summary.policy.toLocaleString()}</div>
-          <div className="stat-tile__sub">허용 스키마 · 화이트리스트 · 관계 확정</div>
+          <div className="stat-tile__sub">{t("audit.tilePolicySub")}</div>
         </div>
         <div className="card stat-tile" data-testid="AuditPanel-tile-loginFail">
-          <div className="stat-tile__k">로그인 실패·거부</div>
+          <div className="stat-tile__k">{t("audit.tileLoginFail")}</div>
           <div className={`stat-tile__v ${failedLogins > 0 ? "stat-tile__v--danger" : "stat-tile__v--plain"}`}>
             {failedLogins.toLocaleString()}
           </div>
-          <div className="stat-tile__sub">LDAP 실패 · 화이트리스트 밖 접근</div>
+          <div className="stat-tile__sub">{t("audit.tileLoginFailSub")}</div>
         </div>
       </div>
 
@@ -181,12 +183,12 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
           onChange={(e) => { setAction(e.target.value); resetPage(); }}
           data-testid="AuditPanel-actionFilter"
         >
-          <option value="">동작: 전체</option>
+          <option value="">{t("audit.filterActionAll")}</option>
           {ACTION_GROUPS.map((group) => {
             const present = group.actions.filter((a) => actions.includes(a));
             return present.length === 0 ? null : (
-              <optgroup key={group.category} label={group.label}>
-                {present.map((a) => <option key={a} value={a}>{ACTION_LABELS[a] ?? a}</option>)}
+              <optgroup key={group.category} label={t(group.labelKey)}>
+                {present.map((a) => <option key={a} value={a}>{getActionLabel(a, t)}</option>)}
               </optgroup>
             );
           })}
@@ -201,13 +203,13 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
           onChange={(e) => { setRequestedBy(e.target.value); resetPage(); }}
           data-testid="AuditPanel-requesterFilter"
         >
-          <option value="">요청자: 전체</option>
+          <option value="">{t("audit.filterRequesterAll")}</option>
           {requesters.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <input
           className="ctl-field"
           list="AuditPanel-targets"
-          placeholder="대상 (선택 또는 입력)"
+          placeholder={t("audit.filterTarget")}
           value={target}
           onChange={(e) => { setTarget(e.target.value); resetPage(); }}
           data-testid="AuditPanel-targetFilter"
@@ -218,7 +220,7 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
         <input
           className="ctl-field"
           style={{ minWidth: 160 }}
-          placeholder="내용 검색"
+          placeholder={t("audit.filterDetail")}
           value={q}
           onChange={(e) => { setQ(e.target.value); resetPage(); }}
           data-testid="AuditPanel-detailFilter"
@@ -234,15 +236,15 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
         </span>
         <button className="icon-button ctl-field audit-filters__clear" disabled={!hasFilters}
                 onClick={clearFilters} data-testid="AuditPanel-clearFilters">
-          <BanIcon size={13} />필터 해제
+          <BanIcon size={13} />{t("audit.clearFilters")}
         </button>
       </div>
       <div className="audit-legend" aria-hidden>
-        <span className="badge badge--warn badge--plain"><span className="badge__dot" />실값 반출</span>
-        <span className="badge badge--view badge--plain"><span className="badge__dot" />권한·설정</span>
-        <span className="badge badge--muted badge--plain"><span className="badge__dot" />소스·수집</span>
-        <span className="badge badge--login badge--plain"><span className="badge__dot" />로그인</span>
-        <span className="badge badge--err badge--plain"><span className="badge__dot" />실패·거부</span>
+        <span className="badge badge--warn badge--plain"><span className="badge__dot" />{t("audit.group.exposure")}</span>
+        <span className="badge badge--view badge--plain"><span className="badge__dot" />{t("audit.group.policy")}</span>
+        <span className="badge badge--muted badge--plain"><span className="badge__dot" />{t("audit.group.ops")}</span>
+        <span className="badge badge--login badge--plain"><span className="badge__dot" />{t("audit.group.login")}</span>
+        <span className="badge badge--err badge--plain"><span className="badge__dot" />{t("audit.tileLoginFail")}</span>
       </div>
 
       <div className="card">
@@ -251,7 +253,10 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
             <col style={{ width: 100 }} /><col style={{ width: 200 }} /><col /><col style={{ width: 150 }} />
           </colgroup>
           <thead>
-            <tr><th>시각</th><th>동작</th><th>대상</th><th>요청자</th></tr>
+            <tr>
+              <th>{t("audit.colWhen")}</th><th>{t("audit.colAction")}</th>
+              <th>{t("audit.colTarget")}</th><th>{t("audit.colRequester")}</th>
+            </tr>
           </thead>
           <tbody>
             {items.map((item) => (
@@ -260,7 +265,7 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
                 className="audit-row reveal-host"
                 tabIndex={0}
                 role="button"
-                aria-label={`감사 기록 #${item.id} 상세 열기`}
+                aria-label={t("audit.rowAria").replace("{id}", String(item.id))}
                 onClick={() => setSelected(item)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(item); }
@@ -269,11 +274,11 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
               >
                 <td className="audit-when">
                   {formatClock(item.requested_at)}
-                  <small>{formatDayLabel(item.requested_at)}</small>
+                  <small>{formatDayLabel(item.requested_at, dayWords)}</small>
                 </td>
                 <td>
                   <span className={`badge badge--plain ${getAuditBadgeClass(item)}`}>
-                    {ACTION_LABELS[item.action] ?? item.action}
+                    {getActionLabel(item.action, t)}
                   </span>
                 </td>
                 <td className="audit-target" title={item.detail}>{item.detail}</td>
@@ -285,7 +290,7 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
             ))}
             {items.length === 0 && !loading && (
               <tr><td colSpan={4} style={{ color: "var(--muted)" }} data-testid="AuditPanel-emptyState">
-                기록 없음
+                {t("audit.empty")}
               </td></tr>
             )}
           </tbody>
@@ -294,7 +299,7 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
           <span className="pager__range" data-testid="AuditPanel-range">
             {total === 0 ? "0" : `${offset + 1}–${Math.min(offset + pageSize, total)}`}
           </span>
-          <span>/ {total.toLocaleString()}건</span>
+          <span>{t("audit.totalSuffix").replace("{n}", total.toLocaleString())}</span>
           <span className="pager__spacer" />
           <select
             className="ctl-field"
@@ -302,17 +307,21 @@ export function AuditPanel({ onTodayCount }: AuditPanelProps) {
             onChange={(e) => { setPageSize(Number(e.target.value)); resetPage(); }}
             data-testid="AuditPanel-pageSize"
           >
-            {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}건씩</option>)}
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {t("audit.pageSize").replace("{n}", String(size))}
+              </option>
+            ))}
           </select>
           <button className="icon-button ctl-field" disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - pageSize))}
                   data-testid="AuditPanel-prevButton">
-            ‹ 이전
+            {t("audit.prev")}
           </button>
           <button className="icon-button ctl-field" disabled={offset + pageSize >= total}
                   onClick={() => setOffset(offset + pageSize)}
                   data-testid="AuditPanel-nextButton">
-            다음 ›
+            {t("audit.next")}
           </button>
         </div>
       </div>

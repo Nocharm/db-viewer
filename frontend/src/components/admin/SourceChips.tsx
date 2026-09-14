@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchDataSources, type DataSourceItem } from "@/lib/api";
+import { useI18n } from "@/components/i18n";
 import { DatabaseIcon, FileIcon } from "@/components/icons";
 
 interface SourceChipsProps {
@@ -16,6 +17,7 @@ interface SourceChipsProps {
 }
 
 export function SourceChips({ value, onChange }: SourceChipsProps) {
+  const { t } = useI18n();
   const [items, setItems] = useState<DataSourceItem[]>([]);
 
   useEffect(() => {
@@ -28,7 +30,7 @@ export function SourceChips({ value, onChange }: SourceChipsProps) {
 
   return (
     <div className="chip-row" data-testid="SourceChips-root">
-      대상 소스
+      {t("sourceChips.label")}
       {items.map((item) => {
         const id = item.is_managed ? null : item.id;
         const on = id === value;
