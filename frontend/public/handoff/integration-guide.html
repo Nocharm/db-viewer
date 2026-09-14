@@ -41,7 +41,7 @@
   }
   main { max-width: 920px; margin: 0 auto; padding: 40px 24px 96px; }
   h1 { font-size: 38px; line-height: 1.2; letter-spacing: -0.02em; margin: 8px 0 14px; }
-  h2 { font-size: 26px; letter-spacing: -0.01em; margin: 72px 0 14px; }
+  h2 { font-size: 26px; letter-spacing: -0.01em; margin: 60px 0 14px; }
   h3 { font-size: 19px; margin: 0 0 6px; }
   p { margin: 0 0 12px; }
   code { font-family: var(--mono); font-size: 0.92em; background: var(--surface-dim); padding: 1px 6px; border-radius: 4px; }
@@ -129,14 +129,6 @@
   .card > svg { width: 100%; height: auto; display: block; margin-bottom: 10px; }
   .card.pick { border: 2px solid var(--dbv); }
 
-  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
-  .role { border-radius: 14px; padding: 18px 20px; border: 1.5px solid; }
-  .role.svc { border-color: var(--svc); background: var(--svc-bg); }
-  .role.dbv { border-color: var(--dbv); background: var(--dbv-bg); }
-  .role h3 { display: flex; align-items: center; gap: 8px; }
-  .role ul { margin: 8px 0 0; padding-left: 20px; font-size: 15.5px; }
-  .role li { margin: 4px 0; }
-
   /* 핑퐁 타임라인 — 번호 원은 역할 색, 세로선이 흐름을 잇는다 */
   ol.steps { list-style: none; padding: 0; margin: 20px 0 0; counter-reset: step; }
   ol.steps > li { counter-increment: step; position: relative; padding: 0 0 36px 64px; }
@@ -157,25 +149,90 @@
   ol.steps ul { margin: 6px 0 10px; padding-left: 20px; }
   ol.steps .figure { margin-top: 10px; }
 
-  .codeblock { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 14px 16px; margin: 10px 0 14px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px; line-height: 1.55; }
-  .codeblock .cm { color: #8fb3a6; }
+  /* 코드 블록 — 정확히 옮겨 적어야 하는 글이므로 본문보다 작지 않게(16px). 상단 띠에 라벨과 복사 버튼을 두어 첫 줄을 가리지 않는다 */
+  .codeblock { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 12px; padding: 46px 18px 18px; margin: 12px 0 16px; overflow: hidden; font-family: var(--mono); font-size: 16px; line-height: 1.65; }
+  /* 스크롤은 pre 가 맡는다 — 띠와 복사 버튼이 스크롤을 따라 사라지지 않게 */
+  .codeblock pre { overflow: auto; }
+  .codeblock::before {
+    content: attr(data-lang); position: absolute; top: 0; left: 0; right: 0; height: 36px;
+    background: rgba(255,255,255,.06); border-bottom: 1px solid rgba(255,255,255,.08);
+    padding: 0 18px; line-height: 36px; font-size: 12px; letter-spacing: .08em; color: #9fb8ae; font-family: var(--sans); font-weight: 600;
+  }
+  .codeblock:not([data-lang])::before { content: "$ 터미널 — 블록째 붙여넣기"; }
+  .codeblock.plain { padding-top: 16px; }
+  .codeblock.plain::before { content: none; }
+  .codeblock .cm { color: #b3d6c8; }
   .codeblock .hl { color: #ffd166; }
   .copy-btn {
-    position: absolute; top: 8px; right: 8px; font: inherit; font-size: 12px; font-weight: 600;
-    background: rgba(255,255,255,.12); color: var(--code-ink); border: 1px solid rgba(255,255,255,.25);
-    border-radius: 6px; padding: 4px 9px; cursor: pointer;
+    position: absolute; top: 5px; right: 8px; font: inherit; font-family: var(--sans); font-size: 13px; font-weight: 700;
+    background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.3);
+    border-radius: 7px; padding: 4px 12px; cursor: pointer; line-height: 1.4;
   }
-  .copy-btn:hover { background: rgba(255,255,255,.22); }
-  .scroll-tall { max-height: 460px; overflow: auto; }
+  .copy-btn:hover { background: rgba(255,255,255,.26); }
+  .scroll-tall pre { max-height: 500px; }
 
-  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-ink); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; font-size: 15px; }
-  .danger { background: var(--danger-bg); border: 1px solid #f1b3b3; color: var(--danger); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; font-size: 15px; }
-  .tip { background: var(--surface-dim); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; font-size: 15px; }
+  .warn, .danger, .tip { border-radius: 12px; padding: 12px 14px 12px 44px; margin: 10px 0 14px; font-size: 15.5px; position: relative; }
+  .warn::before, .danger::before, .tip::before { position: absolute; left: 14px; top: 11px; width: 20px; height: 20px; border-radius: 50%; font-size: 13px; font-weight: 800; display: grid; place-items: center; color: #fff; }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-ink); }
+  .warn::before { content: "!"; background: #d98a1f; }
+  .danger { background: var(--danger-bg); border: 1px solid #f1b3b3; color: var(--danger); }
+  .danger::before { content: "✕"; background: var(--danger); }
+  .tip { background: var(--surface-dim); color: var(--ink); }
+  .tip::before { content: "i"; background: var(--muted); font-family: Georgia, serif; font-style: italic; }
+  .warn ul, .tip ul { margin: 8px 0 0; padding-left: 18px; }
+
+  /* 접기 — 읽지 않아도 진행되는 배경 설명. 인쇄 시 스크립트가 전부 연다 */
+  details { border: 1px solid var(--hairline); background: var(--surface); border-radius: 12px; margin: 10px 0 14px; padding: 0 14px; font-size: 15.5px; }
+  details summary { cursor: pointer; padding: 11px 0; font-weight: 700; color: var(--muted); list-style: none; display: flex; align-items: center; gap: 8px; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▸"; color: var(--accent); font-size: 14px; transition: transform .15s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  details[open] summary { border-bottom: 1px dashed var(--hairline); margin-bottom: 8px; color: var(--ink); }
+  details > :last-child { margin-bottom: 12px; }
+  details .codeblock { font-size: 15.5px; }
+
+  /* pill — 걸음 머리에 붙는 시간·결과물 표시 */
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 12px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted); }
+  .pill svg { width: 14px; height: 14px; flex: none; }
+  .pill.out { color: var(--ink); border-color: var(--dbv); background: var(--dbv-bg); }
+  .pill.out b { color: var(--dbv); font-weight: 700; }
+  .pill.skip { border-style: dashed; }
+
+  /* 걸음 제목 아이콘 — 번호 원은 담당 색, 아이콘은 그 걸음의 비유(복도·열쇠·창고…) */
+  ol.steps h3 .ico { width: 30px; height: 30px; border-radius: 9px; background: var(--surface); border: 1px solid var(--hairline); display: grid; place-items: center; color: var(--muted); flex: none; }
+  ol.steps h3 .ico svg { width: 18px; height: 18px; }
+  ol.steps > li[data-role="svc"] h3 .ico { color: var(--svc); border-color: var(--svc); }
+  ol.steps > li[data-role="dbv"] h3 .ico { color: var(--dbv); border-color: var(--dbv); }
+
+  /* 판정 목록 — "이 출력이 나오면 이런 뜻" 을 표 대신 색 띠로 */
+  .verdicts { display: grid; gap: 8px; margin: 12px 0 16px; }
+  .verdict { display: grid; grid-template-columns: 34px 1fr; gap: 10px; background: var(--surface); border: 1px solid var(--hairline); border-left-width: 5px; border-radius: 10px; padding: 10px 14px; font-size: 15px; align-items: start; }
+  .verdict .mark { font-size: 18px; line-height: 1.3; }
+  .verdict .out { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; display: block; margin-bottom: 4px; }
+  .verdict .mean { color: var(--muted); }
+  .verdict .mean strong { color: var(--ink); }
+  .verdict.ok { border-left-color: var(--dbv); }
+  .verdict.ng { border-left-color: var(--danger); }
+  .verdict.wn { border-left-color: #d98a1f; }
+  .verdict.q { border-left-color: var(--muted); }
+
+  /* 흐름 요약 — 열 걸음을 한 줄로. 번호 색이 담당, 필터를 누르면 상대 걸음은 흐려진다 */
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0 10px; }
+  .flow a { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 10px 10px 10px 8px; font-size: 13.5px; line-height: 1.35; }
+  .flow a .n { width: 26px; height: 26px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; background: var(--muted); }
+  .flow a[data-role="svc"] { border-color: var(--svc); } .flow a[data-role="svc"] .n { background: var(--svc); }
+  .flow a[data-role="dbv"] { border-color: var(--dbv); } .flow a[data-role="dbv"] .n { background: var(--dbv); }
+  .flow a b { display: block; font-weight: 700; }
+  .flow a small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .flow-sum { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 15px; color: var(--muted); margin: 0 0 8px; }
+  .flow-sum .badge { margin-right: 2px; }
 
   table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; font-size: 15px; margin: 12px 0 18px; }
   th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
-  th { font-size: 13px; letter-spacing: .05em; color: var(--muted); font-weight: 600; background: var(--surface-dim); }
+  th { font-size: 13px; letter-spacing: .05em; color: var(--ink); font-weight: 700; background: var(--surface-dim); }
+  td code { font-size: 0.95em; }
   td:first-child { white-space: nowrap; font-weight: 600; }
   td code { white-space: nowrap; }
   /* 결과 문자열처럼 긴 값이 든 표는 줄바꿈을 허용해 가로 스크롤을 막는다 */
@@ -196,18 +253,23 @@
   @media (max-width: 720px) {
     body { font-size: 16px; }
     h1 { font-size: 30px; }
-    .roles, .two { grid-template-columns: 1fr; }
+    .two { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr 1fr; }
     .form-mock .row { grid-template-columns: 30px 1fr; }
     .form-mock .field { grid-column: 2; }
     .form-mock .note { grid-column: 2; }
     ol.steps > li { padding-left: 56px; }
     .figure { overflow-x: auto; }
     .figure svg { min-width: 560px; }
+    /* 좁은 화면에서는 표 셀이 줄바꿈돼야 본문이 옆으로 밀리지 않는다 */
+    td, td:first-child, td code { white-space: normal; overflow-wrap: anywhere; }
+    .codeblock { font-size: 15px; padding-left: 14px; padding-right: 14px; }
   }
   @media print {
     body { background: #fff; }
     .role-filter, .copy-btn { display: none; }
-    .scroll-tall { max-height: none; }
+    .scroll-tall pre { max-height: none; }
+    .codeblock pre { white-space: pre-wrap; }
   }
 </style>
 </head>
@@ -228,6 +290,44 @@
   </div>
   <p class="sub">버튼을 누르면 내 차례가 아닌 단계는 흐려집니다. 흐름은 그대로 보이니 상대가 무엇을 하는지도 알 수 있습니다.</p>
 </header>
+
+<!-- 아이콘 심볼 — 걸음 제목·pill 에서 <use> 로 재사용 (외부 파일 없음) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h13l-3 4 3 4H5"/></symbol>
+    <symbol id="i-road" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7h18M3 17h18M12 7v2M12 11.5v2M12 15v2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4v9l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v9"/></symbol>
+    <symbol id="i-door" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1.5"/><circle cx="15" cy="12" r="1" fill="currentColor"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+    <symbol id="i-join" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="10" height="16" rx="1.5"/><path d="M13 12h8M18 9l3 3-3 3"/></symbol>
+    <symbol id="i-form" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+  </defs>
+</svg>
+
+<!-- ───────────────────────── 0. 흐름 요약 ───────────────────────── -->
+<h2 style="margin-top:44px">한눈에 — 열 걸음</h2>
+<p class="sub">번호를 누르면 그 걸음으로 갑니다. 시간은 처음 하는 분 기준의 대략치입니다.</p>
+<div class="flow-sum">
+  <span><span class="badge dbv">db-viewer 담당자</span> 5걸음 · 약 20분 (2·8은 조건부)</span>
+  <span><span class="badge svc">서비스 담당자</span> 5걸음 · 약 25분 (터미널 하나에서 이어서)</span>
+</div>
+<nav class="flow" aria-label="열 걸음 요약">
+  <a href="#s1" data-role="dbv"><span class="n">1</span><span><b>복도 고르기</b><small>공유/전용 · 값 표 전달</small></span></a>
+  <a href="#s2" data-role="dbv"><span class="n">2</span><span><b>금고 열쇠</b><small>처음 한 번만</small></span></a>
+  <a href="#s3" data-role="svc"><span class="n">3</span><span><b>값 선언·자가진단</b><small>손으로 두 줄, 나머지 자동</small></span></a>
+  <a href="#s4" data-role="svc"><span class="n">4</span><span><b>창고 확인</b><small>볼륨이 붙어 있나</small></span></a>
+  <a href="#s5" data-role="svc"><span class="n">5</span><span><b>복도 문 내기</b><small>compose 한 곳 · DB만 재기동</small></span></a>
+  <a href="#s6" data-role="svc"><span class="n">6</span><span><b>읽기 전용 열쇠</b><small>계정 + 읽기/쓰기 확인</small></span></a>
+  <a href="#s7" data-role="svc"><span class="n">7</span><span><b>회신</b><small>명령 한 번 → 출력 그대로 메일</small></span></a>
+  <a href="#s8" data-role="dbv"><span class="n">8</span><span><b>db-viewer 합류</b><small>전용 복도일 때만</small></span></a>
+  <a href="#s9" data-role="dbv"><span class="n">9</span><span><b>콘솔 등록</b><small>회신값을 폼에</small></span></a>
+  <a href="#s10" data-role="dbv"><span class="n">10</span><span><b>테스트·수집·공개</b><small>여기까지 오면 끝</small></span></a>
+</nav>
 
 <!-- ───────────────────────── 0. 낱말 ───────────────────────── -->
 <h2>이 안내서의 낱말</h2>
@@ -340,36 +440,14 @@
   </div>
 </div>
 
-<!-- ───────────────────────── 3. 역할 ───────────────────────── -->
-<h2>누가 무엇을 하나</h2>
-<div class="roles">
-  <div class="role svc" data-role="svc">
-    <h3><span class="badge svc">서비스 담당자</span> 여러분 쪽에서</h3>
-    <ul>
-      <li>DB 방에 창고(볼륨)가 붙어 있는지 확인 (30초)</li>
-      <li>DB 방에 복도 문 하나 내기 (Claude Code가 diff를 만들어 줌)</li>
-      <li>읽기 전용 열쇠 <code>dbviewer_ro</code> 만들기</li>
-      <li>회신 명령 한 번 → 출력 그대로 보내기</li>
-    </ul>
-  </div>
-  <div class="role dbv" data-role="dbv">
-    <h3><span class="badge dbv">db-viewer 담당자</span> 우리 쪽에서</h3>
-    <ul>
-      <li>복도 고르기(공유/전용) — 전용이면 복도 짓기</li>
-      <li>금고 열쇠 <code>SOURCE_SECRET_KEY</code> 준비 (처음 한 번)</li>
-      <li>전용일 때만: db-viewer도 그 복도에 문 내고 backend 재기동</li>
-      <li>관리 콘솔에 등록 → 연결 테스트 → 수집 → 공개 범위</li>
-    </ul>
-  </div>
-</div>
-
 <!-- ───────────────────────── 4. 순서 ───────────────────────── -->
 <h2>순서대로 — 열 걸음</h2>
-<p class="sub">번호 색이 곧 담당입니다. 🟩 db-viewer 담당자 → 🟧 서비스 담당자 → 🟩 다시 db-viewer 담당자 순으로 공을 주고받습니다.</p>
+<p class="sub">번호 색이 곧 담당입니다. 🟩 db-viewer 담당자 → 🟧 서비스 담당자 → 🟩 다시 db-viewer 담당자 순으로 공을 주고받습니다. 걸음마다 <strong>결과물</strong>이 나오면 다음으로.</p>
 <ol class="steps">
 
-  <li data-role="dbv">
-    <h3>복도 고르고 값 정하기 <span class="badge dbv">db-viewer 담당자</span></h3>
+  <li data-role="dbv" id="s1">
+    <h3><span class="ico"><svg><use href="#i-road"/></svg></span>복도 고르고 값 정하기 <span class="badge dbv">db-viewer 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 5분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 복도(네트워크) + 서비스 담당자에게 보낼 값 표</span></div>
     <p>서비스마다 복도를 하나 고릅니다. 둘은 같이 쓸 수 있습니다.</p>
     <div class="two">
       <div class="card pick">
@@ -413,7 +491,7 @@
         <p class="a">이 서비스만을 위해 새로 내는 복도. 다른 서비스와 네트워크로 닿으면 안 되는 DB라면 이쪽.</p>
       </div>
     </div>
-    <p>고른 뒤 아래 표를 채워 서비스 담당자에게 보냅니다. 이름이 어긋나면 나머지가 전부 어긋납니다. 전용이면 복도를 <strong>미리</strong> 지어 둡니다.</p>
+    <p>고른 뒤 아래 표를 채워 서비스 담당자에게 보냅니다. <strong>이름이 어긋나면 나머지가 전부 어긋납니다.</strong> 전용이면 복도를 <strong>미리</strong> 지어 둡니다.</p>
     <table>
       <thead><tr><th>항목</th><th>값</th><th>설명</th></tr></thead>
       <tbody>
@@ -436,36 +514,46 @@ echo "── 사용 중인 dbv- 서브넷 끝 ──"</pre></div>
     <div class="codeblock"><button class="copy-btn" data-target="c-net-new">복사</button><pre id="c-net-new">SVC_KEY=svca
 N=2
 docker network create --subnet "10.203.$N.0/24" "dbv-$SVC_KEY" &amp;&amp; echo "✅ dbv-$SVC_KEY (10.203.$N.0/24) 생성"</pre></div>
-    <div class="tip">왜 <code>10.203.x</code>? 사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code> 어디와도 겹치지 않습니다. <code>0</code>은 공유 복도 몫입니다.</div>
+    <details><summary>왜 <code>10.203.x</code> 대역인가</summary><p>사설 대역(RFC1918)이면서 사내 서비스들의 <code>172.36~46</code>, db-viewer 자신의 <code>172.48/16</code> 어디와도 겹치지 않습니다. <code>0</code>은 공유 복도 몫입니다.</p></details>
   </li>
 
-  <li data-role="dbv">
-    <h3>금고 열쇠 준비 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">처음 한 번만</span></h3>
-    <p>db-viewer는 접속 비밀번호를 금고에 잠가 둡니다. 금고 열쇠가 <code>SOURCE_SECRET_KEY</code>. 없으면 소스 등록이 503으로 막힙니다.</p>
+  <li data-role="dbv" id="s2">
+    <h3><span class="ico"><svg><use href="#i-lock"/></svg></span>금고 열쇠 준비 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">처음 한 번만</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 2분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> db-viewer <code>.env</code>의 <code>SOURCE_SECRET_KEY</code></span><span class="pill skip">이미 있으면 건너뜀</span></div>
+    <p>db-viewer는 접속 비밀번호를 이 열쇠로 잠가 둡니다. 없으면 소스 등록이 503으로 막힙니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-key">복사</button><pre id="c-key">python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"</pre></div>
     <p>출력값을 db-viewer <code>.env</code>의 <code>SOURCE_SECRET_KEY=</code>에 넣고 backend를 재기동합니다.</p>
     <div class="warn"><strong>한 번 정하면 바꾸지 마세요.</strong> 열쇠를 바꾸면 금고 속 비밀번호를 전부 다시 넣어야 합니다.</div>
   </li>
 
-  <li data-role="svc">
-    <h3>값 확인하고 변수로 선언 <span class="badge svc">서비스 담당자</span> <span class="badge both">값 입력은 여기서만</span></h3>
-    <div class="tip"><strong>이 절차가 다루는 범위</strong> — 같은 서버의 <strong>docker compose로 떠 있는 PostgreSQL/SQLite</strong>입니다. DB가 다른 서버에 있거나(RDS 등) MySQL·Oracle이면 아래 자동 감지가 실패합니다. 그 경우 여기서 멈추고 db-viewer 담당자와 방식을 먼저 정하세요.</div>
-    <p>이 아래 명령은 <strong>전부 여기서 만든 변수를 씁니다.</strong> 명령 중간에 이름을 바꿔 넣을 일이 없습니다 — 블록째 복사해 붙여넣으면 됩니다. 한 터미널에서 이어서 실행하세요. 여러 줄짜리 로직은 <code>cat &gt; 파일 &lt;&lt;'SH' … SH</code>로 파일에 저장한 뒤 실행하는 모양입니다 — 붙여넣는 동안 아무것도 실행·치환되지 않아 SSH·tmux 어디서 붙여넣어도 안전합니다. <strong>블록마다 반드시 결과(✅/❌ 또는 값)가 찍힙니다</strong> — 아무 출력이 없다면 붙여넣기가 잘못된 것입니다.</p>
-    <p><strong>손으로 채우는 건 두 줄뿐입니다.</strong> 둘 다 db-viewer 담당자가 보낸 값을 그대로 옮겨 적습니다. <code>svca</code>는 예시라서 그대로 두면 아래 자가진단이 ❌를 냅니다.</p>
+  <li data-role="svc" id="s3">
+    <h3><span class="ico"><svg><use href="#i-term"/></svg></span>값 확인하고 변수로 선언 <span class="badge svc">서비스 담당자</span> <span class="badge both">값 입력은 여기서만</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 10분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 터미널에 <code>✅ 모두 통과</code> + 비밀번호 한 줄</span></div>
+    <div class="tip"><strong>범위</strong> — 같은 서버의 <strong>docker compose로 떠 있는 PostgreSQL/SQLite</strong>. DB가 다른 서버에 있거나(RDS 등) MySQL·Oracle이면 자동 감지가 실패하니, 여기서 멈추고 db-viewer 담당자와 방식을 먼저 정하세요.</div>
+    <p><strong>손으로 채우는 건 두 줄뿐입니다.</strong> db-viewer 담당자가 보낸 값을 그대로 옮겨 적습니다 (<code>svca</code>는 예시 — 그대로 두면 자가진단이 ❌). 이후 블록은 전부 이 변수를 쓰니 <strong>한 터미널에서 이어서</strong> 실행하세요.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-fill">복사</button><pre id="c-fill">export DBV_NET=dbv-shared
 export SVC_KEY=svca
 echo "DBV_NET=$DBV_NET SVC_KEY=$SVC_KEY"</pre></div>
-    <div class="tip"><strong>이 두 값이 어디에 쓰이나.</strong>
-      <ul style="margin:8px 0 0; padding-left:18px">
+    <details>
+      <summary>이 두 값이 무엇이고 어디까지 보이나</summary>
+      <ul>
         <li><code>DBV_NET</code> — DB 컨테이너를 <em>추가로</em> 합류시킬 도커 네트워크. <strong>그 네트워크에 든 컨테이너끼리만</strong> 서로 보입니다. 호스트 포트를 새로 여는 게 아니라서 사내망·인터넷 쪽 노출은 변하지 않습니다.</li>
-        <li><code>SVC_KEY</code> — 실제로 붙는 이름은 <code>$SVC_KEY-db</code>, 즉 그 네트워크 안의 <strong>별칭(문패)</strong>입니다. db-viewer는 IP가 아니라 이 이름으로 접속합니다.</li>
+        <li><code>SVC_KEY</code> — 실제로 붙는 이름은 <code>$SVC_KEY-db</code>, 즉 그 네트워크 안의 <strong>별칭(문패)</strong>입니다. db-viewer는 IP가 아니라 이 이름으로 접속합니다. 한 번 정하면 끝까지 같은 이름으로 따라갑니다:</li>
       </ul>
-    </div>
-    <p><strong>문패가 지나가는 길</strong> — 한 번 정하면 끝까지 같은 이름으로 따라갑니다.</p>
-    <div class="codeblock"><pre><span class="cm">SVC_KEY=shop  →  문패 shop-db  →  회신의 "host"  →  관리 콘솔 '호스트' 칸  →  db-viewer가 shop-db:5432로 접속</span></pre></div>
-    <div class="warn"><strong>보이는 범위.</strong> 문패는 그 복도(네트워크) 안에서만 통하는 이름입니다. 다만 <strong>공유 복도</strong>라면 같은 복도에 있는 다른 서비스의 컨테이너도 이 이름을 조회할 수 있습니다 — 접속은 각자 계정으로 막히지만, 이름이 겹치면 엉뚱한 DB에 붙으므로 <strong>서비스마다 다른 키</strong>여야 합니다. 이름이 노출되는 것 자체가 곤란한 DB라면 전용 복도를 요청하세요(1단계).</div>
-    <p><strong>나머지는 자동입니다 — 자가진단까지 한 번에.</strong> 아래 블록은 <code>dbv-setup.sh</code>를 저장하고 바로 실행합니다. 고칠 곳이 없고, <strong>어느 디렉터리에서 실행해도 됩니다</strong>: compose 파일이 있는 디렉터리면 그 프로젝트 안에서, 아니면 이 서버 전체에서 DB 컨테이너(postgres 계열 이미지)를 찾고, <strong>찾은 컨테이너의 compose 라벨에서 서비스명·프로젝트 이름·compose 파일 조합(<code>-f</code> 여러 개 포함)을 읽어 <code>COMPOSE_PROJECT_NAME</code>·<code>COMPOSE_FILE</code>로 export</strong> 합니다. 이후 이 터미널의 모든 <code>docker compose</code> 명령은 <code>-f</code>/<code>-p</code> 없이도 실제 떠 있는 조합을 그대로 씁니다 — 다른 파일 조합으로 컨테이너가 재생성되는 사고가 원천에서 막힙니다. 관리자 계정·DB명은 컨테이너 env(<code>POSTGRES_USER</code>·<code>POSTGRES_DB</code>)에서 읽고, 비밀번호는 <code>openssl</code>이 만듭니다. 마지막 줄이 <code>bash</code>가 아니라 <code>.</code>(source)인 이유는 변수를 이 터미널에 남기기 위해서입니다.</p>
-    <div class="codeblock scroll-tall"><button class="copy-btn" data-target="c-setup">복사</button><pre id="c-setup">cat &gt; dbv-setup.sh &lt;&lt;'SH'
+      <div class="codeblock plain"><pre><span class="cm">SVC_KEY=shop  →  문패 shop-db  →  회신의 "host"  →  관리 콘솔 '호스트' 칸  →  db-viewer가 shop-db:5432로 접속</span></pre></div>
+      <div class="warn"><strong>보이는 범위.</strong> 문패는 그 복도(네트워크) 안에서만 통하는 이름입니다. 다만 <strong>공유 복도</strong>라면 같은 복도에 있는 다른 서비스의 컨테이너도 이 이름을 조회할 수 있습니다 — 접속은 각자 계정으로 막히지만, 이름이 겹치면 엉뚱한 DB에 붙으므로 <strong>서비스마다 다른 키</strong>여야 합니다. 이름이 노출되는 것 자체가 곤란한 DB라면 전용 복도를 요청하세요(1단계).</div>
+    </details>
+    <p><strong>나머지는 자동 — 자가진단까지 한 번에.</strong> 아래 블록은 <code>dbv-setup.sh</code>를 저장하고 바로 실행합니다. 고칠 곳이 없고, 어느 디렉터리에서 실행해도 됩니다. <strong>블록마다 반드시 ✅/❌ 또는 값이 찍힙니다</strong> — 아무 출력이 없다면 붙여넣기가 잘못된 것입니다.</p>
+    <details>
+      <summary>스크립트가 자동으로 하는 일 — 읽지 않아도 진행됩니다</summary>
+      <ul>
+        <li><strong>DB 컨테이너 찾기</strong> — compose 파일이 있는 디렉터리면 그 프로젝트 안에서, 아니면 이 서버 전체에서 postgres 계열 이미지를 찾습니다.</li>
+        <li><strong>compose 조합 복원</strong> — 찾은 컨테이너의 compose 라벨에서 서비스명·프로젝트 이름·compose 파일 조합(<code>-f</code> 여러 개 포함)을 읽어 <code>COMPOSE_PROJECT_NAME</code>·<code>COMPOSE_FILE</code>로 export 합니다. 이후 이 터미널의 <code>docker compose</code> 명령은 <code>-f</code>/<code>-p</code> 없이도 실제 떠 있는 조합을 그대로 쓰므로, 다른 파일 조합으로 컨테이너가 재생성되는 사고가 원천에서 막힙니다.</li>
+        <li><strong>계정·비밀번호</strong> — 관리자 계정·DB명은 컨테이너 env(<code>POSTGRES_USER</code>·<code>POSTGRES_DB</code>)에서 읽고, 읽기 전용 비밀번호는 <code>openssl</code>이 만듭니다.</li>
+        <li><strong>붙여넣기 안전</strong> — <code>cat &gt; 파일 &lt;&lt;'SH' … SH</code> 모양이라 붙여넣는 동안 아무것도 실행·치환되지 않습니다(SSH·tmux 어디서든). 마지막 줄이 <code>bash</code>가 아니라 <code>.</code>(source)인 이유는 변수를 이 터미널에 남기기 위해서입니다.</li>
+      </ul>
+    </details>
+    <div class="codeblock scroll-tall" data-lang="$ 터미널 — 복사해서 붙여넣기만 (안을 읽을 필요 없습니다)"><button class="copy-btn" data-target="c-setup">복사</button><pre id="c-setup">cat &gt; dbv-setup.sh &lt;&lt;'SH'
 <span class="cm"># db-viewer 연동 — 값 자동 감지 + 자가진단</span>
 <span class="cm"># 변수를 이 터미널에 남겨야 하므로 bash 가 아니라 . (source) 로 실행한다</span>
 ok(){ printf '✅ %s\n' "$1"; }
@@ -571,7 +659,9 @@ SH
         <li><strong>(c)</strong> 정말로 밀린 변경이 있다 — 파일에는 <code>postgres:16</code>인데 실제로는 14가 돌고 있으면 그 순간 메이저 업그레이드가 걸려 DB가 안 뜹니다. 멈추고 db-viewer 담당자와 상의하세요.</li>
       </ul>
     </div>
-    <p><strong>직접 고르기</strong> — 자동 감지가 엉뚱한 컨테이너를 잡았거나(DB가 여럿, 이미지 이름이 특이) 못 찾았을 때. 서비스명으로 고릅니다 (첫 줄이 SERVICE·IMAGE 목록을 보여 줍니다):</p>
+    <details>
+    <summary>직접 고르기 — 자동 감지가 엉뚱한 컨테이너를 잡았거나 못 찾았을 때만</summary>
+    <p>DB가 여럿이거나 이미지 이름이 특이할 때. 서비스명으로 고릅니다 (첫 줄이 SERVICE·IMAGE 목록을 보여 줍니다):</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-pick-service">복사</button><pre id="c-pick-service">docker compose ps --format '{{.Service}}  {{.Image}}'
 export DB_SERVICE='여기에 SERVICE 값'
 unset DB_CONTAINER
@@ -585,7 +675,10 @@ unset DB_SERVICE
     <div class="codeblock"><button class="copy-btn" data-target="c-pick-creds">복사</button><pre id="c-pick-creds">export DB_SUPER='관리자 계정'
 export DB_NAME='DB명'
 . ./dbv-setup.sh</pre></div>
+    </details>
     <div class="tip"><strong>SQLite 서비스라면</strong> DB 컨테이너가 따로 없습니다 — 위 "컨테이너 이름으로" 블록에 <strong>앱 컨테이너</strong> 이름을 넣고, <strong>DB 접속·복도 두 줄의 ❌는 무시</strong>하세요(네트워크도 계정도 쓰지 않습니다). <code>모두 통과</code>가 안 떠도 4단계 볼륨 확인과 7단계 SQLite 회신은 실행됩니다(둘은 통과 표시를 보지 않습니다).</div>
+    <details>
+    <summary>변수 한눈에 — 무엇이 손으로, 무엇이 자동인지 (참고)</summary>
     <table>
       <thead><tr><th>변수</th><th>뜻</th><th>어디서 오나</th></tr></thead>
       <tbody>
@@ -598,11 +691,13 @@ export DB_NAME='DB명'
         <tr><td><code>RO_PASS</code></td><td>새로 만들 읽기 전용 비밀번호</td><td>자동 — <code>openssl</code>이 24바이트로 생성. 다시 실행해도 안 바뀐다</td></tr>
       </tbody>
     </table>
+    </details>
     <div class="tip">변수는 <strong>이 터미널에서만</strong> 삽니다. 창을 닫았다면 값 두 줄과 <code>dbv-setup.sh</code> 블록을 다시 실행하세요 — 비밀번호가 새로 뽑히므로, 계정을 이미 만든 뒤라면 6단계 <code>dbv-grant.sh</code>도 다시 실행해 DB의 비밀번호를 새 값으로 맞춥니다(7단계 회신은 비밀번호가 실제로 맞는지 TCP 접속으로 확인하므로, 안 맞으면 ❌로 드러납니다).</div>
   </li>
 
-  <li data-role="svc">
-    <h3>창고(볼륨) 확인 <span class="badge svc">서비스 담당자</span> <span class="badge both">건너뛰면 안 됨</span></h3>
+  <li data-role="svc" id="s4">
+    <h3><span class="ico"><svg><use href="#i-box"/></svg></span>창고(볼륨) 확인 <span class="badge svc">서비스 담당자</span> <span class="badge both">건너뛰면 안 됨</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 1분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 출력에 이름 붙은 볼륨 한 줄 (5단계에서 DB 방을 다시 짓기 때문)</span></div>
     <div class="figure" aria-label="데이터가 창고(볼륨)에 있으면 DB 방을 다시 지어도 그대로, 방 안에만 있으면 사라진다는 그림">
       <svg class="fig" viewBox="0 0 820 230" role="img">
         <rect x="40" y="25" width="120" height="70" rx="8" class="room-db"/>
@@ -625,19 +720,17 @@ export DB_NAME='DB명'
       </svg>
     </div>
     <div class="codeblock"><button class="copy-btn" data-target="c-vol">복사</button><pre id="c-vol">[ -n "$DB_CONTAINER" ] &amp;&amp; docker inspect -f '{{range .Mounts}}{{.Type}} {{.Name}} -&gt; {{.Destination}}{{"\n"}}{{end}}' "$DB_CONTAINER" | grep . || echo "❌ 볼륨을 못 읽었습니다 — DB_CONTAINER 가 비었거나(위 블록부터) 마운트가 하나도 없습니다(작업 중단)"</pre></div>
-    <table class="wrapcells">
-      <thead><tr><th>출력</th><th>뜻</th></tr></thead>
-      <tbody>
-        <tr><td><code>volume pgdata -&gt; /var/lib/postgresql/data</code><br>— 사람이 읽을 수 있는 이름</td><td>✅ 이름 붙은 창고. 다음 단계로</td></tr>
-        <tr><td><code>volume 1fd6b73f…959cd -&gt; …</code><br>— 64자 16진수 이름</td><td>⚠ <strong>익명 볼륨</strong>입니다. 이번 <code>up -d</code>로는 살아남지만, 누군가 <code>docker compose down -v</code>를 한 번 치면 데이터가 사라지는 상태입니다. 진행은 하되 <strong>이 사실을 회신에 함께 적어 주세요</strong></td></tr>
-        <tr><td>DB 데이터 경로가 아예 안 보임</td><td>❌ <strong>작업 중단.</strong> 연결보다 창고 붙이기가 먼저입니다</td></tr>
-      </tbody>
-    </table>
+    <div class="verdicts">
+      <div class="verdict ok"><span class="mark">✅</span><div><code class="out">volume pgdata -&gt; /var/lib/postgresql/data</code><span class="mean">사람이 읽을 수 있는 이름 = <strong>이름 붙은 창고.</strong> 다음 단계로</span></div></div>
+      <div class="verdict wn"><span class="mark">⚠</span><div><code class="out">volume 1fd6b73f…959cd -&gt; …</code><span class="mean">64자 16진수 이름 = <strong>익명 볼륨</strong>입니다. 이번 <code>up -d</code>로는 살아남지만, 누군가 <code>docker compose down -v</code>를 한 번 치면 데이터가 사라지는 상태입니다. 진행은 하되 <strong>이 사실을 회신에 함께 적어 주세요</strong></span></div></div>
+      <div class="verdict ng"><span class="mark">❌</span><div><code class="out">DB 데이터 경로가 아예 안 보임</code><span class="mean"><strong>작업 중단.</strong> 연결보다 창고 붙이기가 먼저입니다</span></div></div>
+    </div>
     <p class="sub">공식 postgres 이미지는 볼륨을 안 붙여도 익명 볼륨이 자동으로 생깁니다 — 그래서 "출력이 비어 있는" 경우는 드물고, 대신 <strong>64자 해시 이름</strong>이 위험 신호입니다.</p>
   </li>
 
-  <li data-role="svc">
-    <h3>DB 방에 복도 문 하나 <span class="badge svc">서비스 담당자</span></h3>
+  <li data-role="svc" id="s5">
+    <h3><span class="ico"><svg><use href="#i-door"/></svg></span>DB 방에 복도 문 하나 <span class="badge svc">서비스 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 10분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> DB 컨테이너가 <code>$DBV_NET</code>에도 붙고 문패가 <code>[…]</code> 안에 보임</span><span class="pill skip">SQLite면 건너뜀</span></div>
     <div class="figure" aria-label="여러분 서비스 건물 안 DB 방의 오른쪽 벽에 새 문을 내고 문패를 달아 db-viewer 복도로 잇는 그림. 앱과 DB 사이의 기존 문은 그대로">
       <svg class="fig" viewBox="0 0 820 250" role="img">
         <line x1="428" y1="130" x2="520" y2="130" class="stub-o"/>
@@ -660,8 +753,9 @@ export DB_NAME='DB명'
         <text x="270" y="240" text-anchor="middle" class="t t-mute" font-size="13">바꾸는 건 DB 방의 문 하나. 그 컨테이너만 다시 올립니다 (down 금지).</text>
       </svg>
     </div>
-    <p>바꾸는 건 compose 파일뿐(3단계가 찾은 조합 — 여러 개면 그중 하나). 가장 쉬운 길은 <strong>3단계의 그 터미널에서</strong> <code>claude</code>를 실행하고 <a href="#prompt">아래 프롬프트</a>를 통째로 붙여넣는 것 — diff를 먼저 보여주고, 승인하면 적용합니다. 같은 터미널이어야 <code>COMPOSE_FILE</code> 등 export 된 값이 Claude Code의 명령에도 전달됩니다.</p>
-    <p>손으로 한다면 — <strong>붙여넣을 모양을 터미널이 찍어 줍니다.</strong> 내 값이 이미 들어간 채로 나오니 그대로 옮겨 적으면 됩니다. <code>default:</code>는 원래 <code>networks:</code> 키가 없었다면 반드시 함께 적고(아래 함정), <code>aliases</code>는 생략 금지 — 공유 복도에서는 이 이름으로만 구별합니다.</p>
+    <p>바꾸는 건 compose 파일 한 곳(3단계가 찾은 조합 — 여러 개면 그중 하나). 두 길 중 하나를 고릅니다.</p>
+    <p><strong>길 A — Claude Code에 맡기기 (쉬움).</strong> <strong>3단계의 그 터미널에서</strong> <code>claude</code>를 실행하고 <a href="#prompt">아래 프롬프트</a>를 통째로 붙여넣습니다. diff를 먼저 보여주고, 승인하면 적용합니다. 같은 터미널이어야 <code>COMPOSE_FILE</code> 등 export 된 값이 Claude Code의 명령에도 전달됩니다.</p>
+    <p><strong>길 B — 손으로.</strong> 아래 명령이 <strong>내 값이 들어간 붙여넣을 모양</strong>을 찍어 줍니다. <code>default:</code>는 원래 <code>networks:</code> 키가 없었다면 반드시 함께 적고(아래 함정), <code>aliases</code>는 생략 금지 — 공유 복도에서는 이 이름으로만 구별합니다.</p>
     <div class="codeblock"><button class="copy-btn" data-target="c-yaml">복사</button><pre id="c-yaml">[ "$DBV_READY" = 1 ] &amp;&amp; cat &lt;&lt;EOF || echo "❌ 자가진단(dbv-setup.sh)을 ✅로 통과한 뒤 실행하세요"
 services:
   $DB_SERVICE:
@@ -683,10 +777,11 @@ docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{$v.Alias
     <p><strong>SQLite</strong>라면 이 단계는 필요 없습니다 — 창고(볼륨) 이름과 컨테이너 안 파일 경로만 7단계에서 알려 주세요.</p>
   </li>
 
-  <li data-role="svc">
-    <h3>읽기 전용 열쇠 만들기 <span class="badge svc">서비스 담당자</span></h3>
-    <p><strong>PostgreSQL</strong>: <code>$RO_USER</code>에 <code>SELECT</code>만 줍니다. 비밀번호는 3단계에서 <code>openssl</code>이 이미 만들어 뒀습니다 — <strong>손으로 칠 값이 없습니다.</strong> 아래 블록은 <code>dbv-grant.sh</code>를 저장하고 실행합니다: 계정을 만들고(이미 있으면 <code>ALTER ROLE</code>로 비밀번호만 맞춥니다 — 두 번 실행해도 안전), <code>public</code> 스키마에 <code>SELECT</code>를 주고, <strong>읽기는 되고 쓰기는 막히는지</strong>까지 바로 확인해 ✅/⚠️/❌로 찍습니다.</p>
-    <div class="codeblock scroll-tall"><button class="copy-btn" data-target="c-grant">복사</button><pre id="c-grant">cat &gt; dbv-grant.sh &lt;&lt;'SH'
+  <li data-role="svc" id="s6">
+    <h3><span class="ico"><svg><use href="#i-key"/></svg></span>읽기 전용 열쇠 만들기 <span class="badge svc">서비스 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 3분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> <code>✅ 계정</code> · <code>✅ 읽기</code> · <code>✅ 쓰기 — 차단됨</code> 세 줄</span><span class="pill skip">SQLite면 건너뜀</span></div>
+    <p><strong>PostgreSQL</strong>: <code>$RO_USER</code>에 <code>SELECT</code>만 줍니다. 비밀번호는 3단계에서 이미 만들어졌으니 <strong>손으로 칠 값이 없습니다.</strong> 아래 블록은 <code>dbv-grant.sh</code>를 저장하고 실행합니다 — 계정을 만들고(이미 있으면 비밀번호만 맞춥니다 — 두 번 실행해도 안전), <code>public</code> 스키마에 <code>SELECT</code>를 주고, <strong>읽기는 되고 쓰기는 막히는지</strong>까지 바로 확인해 ✅/⚠️/❌로 찍습니다.</p>
+    <div class="codeblock scroll-tall" data-lang="$ 터미널 — 복사해서 붙여넣기만 (안을 읽을 필요 없습니다)"><button class="copy-btn" data-target="c-grant">복사</button><pre id="c-grant">cat &gt; dbv-grant.sh &lt;&lt;'SH'
 <span class="cm"># db-viewer 연동 — 읽기 전용 계정 만들기 + 읽기/쓰기 확인</span>
 [ "$DBV_READY" = 1 ] || { echo "❌ 자가진단(dbv-setup.sh)을 ✅로 통과한 뒤 실행하세요"; exit 1; }
 noise(){ grep -vE '^time=|^WARN'; }
@@ -739,31 +834,35 @@ case "$WRITE_OUT" in
 esac
 SH
 bash dbv-grant.sh</pre></div>
-    <p class="sub">DB가 compose 밖이거나 <code>psql</code>을 직접 쓴다면 <code>psql_super</code>·<code>psql_ro</code> 두 함수의 <code>docker exec … psql</code> 부분만 <code>psql "postgresql://…"</code> 형태로 바꾸면 됩니다.</p>
-    <div class="tip">마지막 <code>ALTER DEFAULT PRIVILEGES</code>는 <strong>그 명령을 실행한 계정(<code>$DB_SUPER</code>)이 앞으로 만들 테이블</strong>에만 걸립니다. 마이그레이션을 다른 롤로 돌린다면 그 롤을 적어 한 번 더 실행하세요 — <code>ALTER DEFAULT PRIVILEGES FOR ROLE &lt;그 롤&gt; IN SCHEMA public GRANT SELECT ON TABLES TO $RO_USER;</code></div>
-    <p><code>public</code> 외의 스키마도 보여 주려면 스키마마다 세 줄을 반복합니다. 민감 테이블은 <code>ALL TABLES</code> 대신 테이블을 열거해도 됩니다 — db-viewer 쪽에도 스키마 단위 허용 목록이 따로 있습니다.</p>
     <p><strong>마지막 세 줄 읽는 법</strong> — 읽기·쓰기 확인은 컨테이너 자기 IP로 TCP 접속하므로 <strong>비밀번호까지 실제로 검증</strong>됩니다(컨테이너 안 소켓 접속은 비밀번호를 묻지 않습니다).</p>
-    <table class="wrapcells">
-      <thead><tr><th>출력</th><th>뜻</th></tr></thead>
-      <tbody>
-        <tr><td><code>✅ 쓰기 — 차단됨 (ERROR: permission denied for schema public)</code></td><td>정상 — 읽기 전용이 제대로 걸렸습니다</td></tr>
-        <tr><td><code>⚠️ 쓰기 — 허용돼 있습니다</code></td><td><strong>PostgreSQL 14 이하</strong>는 <code>public</code> 스키마에 누구나 <code>CREATE</code>할 수 있는 게 기본값이라 흔합니다. <code>ROLLBACK</code>이라 테이블은 남지 않았습니다. 막으려면 DB 소유자 판단으로 <code>REVOKE CREATE ON SCHEMA public FROM PUBLIC;</code> — 다른 앱이 그 권한에 기대고 있지 않은지 먼저 확인하세요. 그대로 두어도 db-viewer는 <code>SELECT</code>만 실행합니다</td></tr>
-        <tr><td><code>❓ 쓰기 — 확인 실패 (… FATAL …)</code> / <code>❌ 읽기 실패</code></td><td>접속 자체가 안 된 것 — 권한 결과가 아닙니다. <code>password authentication failed</code>면 비밀번호가 어긋난 것(3단계 '창을 닫았다면'), 그 외는 계정·DB명·<code>pg_hba.conf</code>를 확인</td></tr>
-        <tr><td><code>⚠️ 읽기 — public 에 테이블이 아직 없어 건너뜀</code></td><td>읽기 확인만 건너뛴 것. 쓰기 확인은 그대로 유효합니다</td></tr>
-      </tbody>
-    </table>
+    <div class="verdicts">
+      <div class="verdict ok"><span class="mark">✅</span><div><code class="out">✅ 쓰기 — 차단됨 (ERROR: permission denied for schema public)</code><span class="mean">정상 — 읽기 전용이 제대로 걸렸습니다</span></div></div>
+      <div class="verdict wn"><span class="mark">⚠️</span><div><code class="out">⚠️ 쓰기 — 허용돼 있습니다</code><span class="mean"><strong>PostgreSQL 14 이하</strong>는 <code>public</code> 스키마에 누구나 <code>CREATE</code>할 수 있는 게 기본값이라 흔합니다. <code>ROLLBACK</code>이라 테이블은 남지 않았습니다. 막으려면 DB 소유자 판단으로 <code>REVOKE CREATE ON SCHEMA public FROM PUBLIC;</code> — 다른 앱이 그 권한에 기대고 있지 않은지 먼저 확인하세요. 그대로 두어도 db-viewer는 <code>SELECT</code>만 실행합니다</span></div></div>
+      <div class="verdict ng"><span class="mark">❌</span><div><code class="out">❓ 쓰기 — 확인 실패 (… FATAL …) / ❌ 읽기 실패</code><span class="mean">접속 자체가 안 된 것 — 권한 결과가 아닙니다. <code>password authentication failed</code>면 비밀번호가 어긋난 것(3단계 '창을 닫았다면'), 그 외는 계정·DB명·<code>pg_hba.conf</code>를 확인</span></div></div>
+      <div class="verdict q"><span class="mark">⚠️</span><div><code class="out">⚠️ 읽기 — public 에 테이블이 아직 없어 건너뜀</code><span class="mean">읽기 확인만 건너뛴 것. 쓰기 확인은 그대로 유효합니다</span></div></div>
+    </div>
+    <details>
+      <summary>다른 롤·다른 스키마·compose 밖 DB라면</summary>
+      <ul>
+        <li>마지막 <code>ALTER DEFAULT PRIVILEGES</code>는 <strong>그 명령을 실행한 계정(<code>$DB_SUPER</code>)이 앞으로 만들 테이블</strong>에만 걸립니다. 마이그레이션을 다른 롤로 돌린다면 그 롤을 적어 한 번 더 실행하세요 — <code>ALTER DEFAULT PRIVILEGES FOR ROLE &lt;그 롤&gt; IN SCHEMA public GRANT SELECT ON TABLES TO $RO_USER;</code></li>
+        <li><code>public</code> 외의 스키마도 보여 주려면 스키마마다 세 줄을 반복합니다. 민감 테이블은 <code>ALL TABLES</code> 대신 테이블을 열거해도 됩니다 — db-viewer 쪽에도 스키마 단위 허용 목록이 따로 있습니다.</li>
+        <li>DB가 compose 밖이거나 <code>psql</code>을 직접 쓴다면 <code>psql_super</code>·<code>psql_ro</code> 두 함수의 <code>docker exec … psql</code> 부분만 <code>psql "postgresql://…"</code> 형태로 바꾸면 됩니다.</li>
+      </ul>
+    </details>
     <p><strong>SQLite</strong>: 열쇠 개념이 없습니다. db-viewer가 창고를 <code>:ro</code>로 마운트하고 파일도 읽기 전용으로 엽니다.</p>
   </li>
 
-  <li data-role="svc">
-    <h3>회신하기 <span class="badge svc">서비스 담당자</span></h3>
+  <li data-role="svc" id="s7">
+    <h3><span class="ico"><svg><use href="#i-mail"/></svg></span>회신하기 <span class="badge svc">서비스 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 2분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 터미널 출력 그대로 붙인 메일 한 통</span></div>
     <p><strong>채울 양식이 없습니다.</strong> <a href="#reply">아래 명령</a>을 붙여넣으면 회신에 필요한 값과 검증 결과가 한 번에 찍힙니다. <strong>터미널에 나온 그대로</strong> 복사해 메일로 보내세요.</p>
     <p>비밀번호도 그 안에 그대로 들어 있습니다 — <code>SELECT</code>만 가능한 계정이라 메일 전달을 전제로 만들었습니다. (걱정되면 그 줄만 빼고 따로 알려 주셔도 됩니다.)</p>
     <p>포트는 <em>컨테이너 안쪽</em> 번호(PostgreSQL 기본 <code>5432</code>)입니다. 호스트에 매핑한 바깥 번호가 아닙니다 — db-viewer는 같은 복도 안에서 붙으므로 <code>ports:</code>에 적힌 바깥 번호와는 무관합니다.</p>
   </li>
 
-  <li data-role="dbv">
-    <h3>db-viewer도 복도에 합류 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">전용일 때만</span></h3>
+  <li data-role="dbv" id="s8">
+    <h3><span class="ico"><svg><use href="#i-join"/></svg></span>db-viewer도 복도에 합류 <span class="badge dbv">db-viewer 담당자</span> <span class="badge both">전용일 때만</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 5분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> backend 컨테이너가 <code>dbv-&lt;서비스키&gt;</code>에 붙어 재기동됨</span><span class="pill skip">공유 복도면 건너뜀 → 9단계</span></div>
     <div class="figure" aria-label="db-viewer 건물에 공유 복도 문은 이미 있고, 전용 복도를 향한 새 문을 하나 더 내는 그림">
       <svg class="fig" viewBox="0 0 820 200" role="img">
         <path d="M246 140 C 330 140, 380 150, 470 150" class="corr-o"/>
@@ -784,7 +883,7 @@ bash dbv-grant.sh</pre></div>
     <p><strong>공유 복도면 이 단계는 없습니다.</strong> backend는 이미 <code>dbv-shared</code>에 있습니다. 9단계로 가세요.</p>
     <p>전용 복도(또는 공유 복도를 방금 처음 지은 경우)면 db-viewer의 <code>docker-compose.yml</code>에서 backend에 문을 내고 backend만 재기동합니다. SQLite 소스면 창고도 읽기 전용으로 마운트합니다.</p>
     <p><code>networks:</code> 목록에 <code>dbv-shared</code>는 한 번, <code>dbv-&lt;서비스키&gt;</code>는 전용 서비스마다 한 항목씩 늘어납니다.</p>
-    <div class="codeblock"><button class="copy-btn" data-target="c-dbv">복사</button><pre id="c-dbv">services:
+    <div class="codeblock" data-lang="db-viewer 의 docker-compose.yml"><button class="copy-btn" data-target="c-dbv">복사</button><pre id="c-dbv">services:
   backend:
     networks: [dbviewer, dbv-shared, dbv-&lt;서비스키&gt;]
 networks:
@@ -795,14 +894,16 @@ networks:
     <div class="warn">backend가 <code>network … not found</code>로 안 뜨면 1단계 복도가 없는 것입니다. 다시 <code>docker network create</code>.</div>
   </li>
 
-  <li data-role="dbv">
-    <h3>관리 콘솔에 등록 <span class="badge dbv">db-viewer 담당자</span></h3>
+  <li data-role="dbv" id="s9">
+    <h3><span class="ico"><svg><use href="#i-form"/></svg></span>관리 콘솔에 등록 <span class="badge dbv">db-viewer 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 3분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 소스 카드 하나 (회신값 그대로)</span></div>
     <p><code>/admin</code> → <strong>소스·수집</strong> 탭. 칸마다 무엇을 넣는지는 <a href="#form">아래 ‘칸마다 무엇을’</a>에 그려 두었습니다.</p>
     <p>비밀번호가 <strong>두 종류</strong>라는 점만 먼저: 칸 상단의 <em>관리 비밀번호</em>는 db-viewer 설정값(<code>PREVIEW_ADMIN_PASSWORD</code>)이고, 폼 안의 <em>접속 비밀번호</em>는 7단계에서 회신받은 <code>dbviewer_ro</code>의 것입니다.</p>
   </li>
 
-  <li data-role="dbv">
-    <h3>연결 테스트 → 수집 → 공개 범위 <span class="badge dbv">db-viewer 담당자</span></h3>
+  <li data-role="dbv" id="s10">
+    <h3><span class="ico"><svg><use href="#i-check"/></svg></span>연결 테스트 → 수집 → 공개 범위 <span class="badge dbv">db-viewer 담당자</span></h3>
+    <div class="meta"><span class="pill"><svg><use href="#i-clock"/></svg>약 5분</span><span class="pill out"><svg><use href="#i-flag"/></svg><b>결과물</b> 사용자 화면 소스 선택기에 새 서비스가 보임</span></div>
     <div class="figure" aria-label="연결 테스트, 카탈로그 수집, 공개 범위 세 단계가 화살표로 이어진 그림">
       <svg class="fig" viewBox="0 0 820 110" role="img">
         <rect x="20" y="15" width="220" height="80" rx="10" class="box"/>
@@ -867,7 +968,9 @@ networks:
   </svg>
 </div>
 
-<table class="wrap" data-role="dbv">
+<details data-role="dbv">
+<summary>회신이 미심쩍을 때 — 값을 직접 확인하는 명령</summary>
+<table class="wrap">
   <thead><tr><th>칸</th><th>값을 어디서 확인하나</th></tr></thead>
   <tbody>
     <tr><td>3 호스트(문패)</td><td>서비스 담당자의 회신 ‘네트워크 별칭’. 직접 보려면 서비스 서버에서
@@ -879,6 +982,7 @@ networks:
     <tr><td>연결 테스트가 맞게 붙었나</td><td>응답 <code>database</code>·<code>version</code> ↔ 회신값·서비스의 <code>SELECT version();</code> 결과가 같은지</td></tr>
   </tbody>
 </table>
+</details>
 
 <!-- ───────────────────────── 6. 끊기·지우기 ───────────────────────── -->
 <h2>연결을 끊거나 지울 때</h2>
@@ -981,7 +1085,7 @@ EOF</pre>
 <!-- ───────────────────────── 9. 회신 (터미널 출력) ───────────────────────── -->
 <h2 id="reply">회신 — 터미널 한 번 <span class="badge svc">서비스 담당자 · 7단계</span></h2>
 <p class="sub">3단계의 그 터미널에 붙여넣으면 <code>dbv-reply.sh</code>가 저장·실행되어 회신 값과 검증 결과(네트워크·별칭·읽기·쓰기 차단·서비스 상태)가 한 번에 찍힙니다. <strong>찍힌 내용을 그대로 복사해</strong> db-viewer 담당자에게 메일로 보내세요. compose가 stderr로 찍는 경고(<code>time=…</code>/<code>WARN…</code>)는 판정에서 걸러 냅니다.</p>
-<div class="codeblock scroll-tall" data-role="svc">
+<div class="codeblock scroll-tall" data-lang="$ 터미널 — 복사해서 붙여넣기만 · 결과를 메일로" data-role="svc">
   <button class="copy-btn" data-target="reply-text">양식 복사</button>
   <pre id="reply-text">cat &gt; dbv-reply.sh &lt;&lt;'SH'
 <span class="cm"># db-viewer 연동 — 회신 내용 + 검증 결과를 한 번에 출력</span>
@@ -1078,13 +1182,23 @@ bash dbv-reply-sqlite.sh</pre>
       });
     });
   });
+  // 인쇄·PDF 저장 때는 접힌 설명도 전부 펼친다 (종이에서는 클릭할 수 없으므로)
+  var folded = [];
+  window.addEventListener("beforeprint", function () {
+    folded = Array.prototype.filter.call(document.querySelectorAll("details"), function (d) { return !d.open; });
+    folded.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener("afterprint", function () {
+    folded.forEach(function (d) { d.open = false; });
+    folded = [];
+  });
   // 복사 버튼 — 코드 블록의 텍스트만(주석 포함) 클립보드로
   document.querySelectorAll(".copy-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var pre = document.getElementById(btn.dataset.target);
       if (!pre || !navigator.clipboard) return;
       var label = btn.textContent;
-      navigator.clipboard.writeText(pre.innerText).then(function () {
+      navigator.clipboard.writeText(pre.textContent).then(function () {
         btn.textContent = "복사됨 ✓";
         setTimeout(function () { btn.textContent = label; }, 1600);
       });
