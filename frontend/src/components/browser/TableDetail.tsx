@@ -47,6 +47,9 @@ interface Props {
     columnId: number,
     target?: { qname: string; columnId: number; column: string },
   ) => void;
+  /** 트리 배치에서만 온다 — 제목 자리에 서는 객체 선택기. 좌측 열이 없는 대신 여기가
+   * "지금 보는 것 + 다음에 고를 것"을 겸한다 / the title doubles as the object picker */
+  objectPicker?: React.ReactNode;
 }
 
 /** 접힌 컬럼 영역 높이 = 칩 2줄. 칩 26px(12px 글자 + py-1 + 테두리) × 2 + gap-2 8px */
@@ -128,7 +131,7 @@ function JoinCheckRow({ item, onSelectTable, onOpenColumn }: {
 
 export function TableDetail({
   detail, loading, previewLoading, previewAllowed, isMssqlSource, onPreview, onOpenErd,
-  canJumpToPreview, onJumpToPreview, onSelectTable, onOpenColumn,
+  canJumpToPreview, onJumpToPreview, onSelectTable, onOpenColumn, objectPicker,
 }: Props) {
   const { t } = useI18n();
   const [checkResults, setCheckResults] = useState<JoinCheckItem[] | null>(null);
@@ -238,11 +241,13 @@ export function TableDetail({
       <div className="sticky top-0 z-20 -mx-7 mb-2 border-b px-7 pb-2 pt-7"
            style={{ background: "var(--surface-card)", borderColor: "var(--hairline)" }}
            data-testid="TableDetail-stickyHeader">
-        <div className="mb-2 flex flex-wrap items-baseline gap-3">
-          <h2 className="font-mono text-2xl font-bold tracking-tight"
-              style={{ color: "var(--ink)" }}>
-            {detail.name}
-          </h2>
+        <div className="mb-2 flex flex-wrap items-center gap-3">
+          {objectPicker ?? (
+            <h2 className="font-mono text-2xl font-bold tracking-tight"
+                style={{ color: "var(--ink)" }}>
+              {detail.name}
+            </h2>
+          )}
           <span className="badge badge--muted"
                 style={detail.type === "view" ? { color: "var(--obj-view)" } : undefined}>
             {detail.type === "view" ? "VIEW" : "TABLE"}

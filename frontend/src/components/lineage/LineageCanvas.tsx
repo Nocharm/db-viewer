@@ -6,19 +6,20 @@
  * 거짓말을 한다. 캔버스 전체를 잡아끄는 팬과 줌만 남긴다.
  * / node dragging is off by design: x-position encodes depth, so moving a node would lie. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background, BackgroundVariant, Controls, ReactFlow, ReactFlowProvider, useReactFlow,
 } from "@xyflow/react";
 import type { Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { LineageEdge } from "@/components/lineage/LineageEdge";
 import { NodePopover, type PopoverAnchor } from "@/components/lineage/NodePopover";
 import { LineageNode, type LineageFlowNode } from "@/components/lineage/LineageNode";
 import type { LineageNodeData } from "@/lib/api";
-import { HOVER_RELEASE_MS, HOVER_SETTLE_MS } from "@/lib/use-deferred-hover";
 
 const nodeTypes = { lineageNode: LineageNode };
+const edgeTypes = { lineageEdge: LineageEdge };
 
 /** SQL 줄 호버로 노드를 찾아갈 때의 줌 배율 — 카드 글자가 읽히는 최소치 */
 const FOCUS_ZOOM = 1.15;
@@ -31,12 +32,13 @@ interface Props {
   /** 이 노드로 카메라를 옮긴다 — SQL 줄 호버가 밀어 넣는다 / camera target from the SQL pane */
   focusKey: string | null;
   onHoverNode: (qname: string | null) => void;
-  /** 노드 카드 클릭 — 미사용 컬럼 펼치기/접기 */
-  onToggleExpand: (qname: string) => void;
   onFocusNode: (node: LineageNodeData) => void;
   onOpenObject: (node: LineageNodeData) => void;
   /** 맵의 기준 객체 qname — 팝오버에서 "중심으로 보기"를 숨길 대상 */
   rootKey: string;
+  /** 노드별 AI 요약 세션 캐시 — 한 번 만든 요약을 다시 만들지 않는다 */
+  summaries: Map<string, { summary: string; mock: boolean }>;
+  onSummary: (qname: string, summary: string, mock: boolean) => void;
   height: number;
 }
 
@@ -49,27 +51,14 @@ export function LineageCanvas(props: Props) {
 }
 
 function LineageCanvasInner({
-  nodes, edges, focusKey, onHoverNode, onToggleExpand, onFocusNode, onOpenObject,
-  rootKey, height,
+  nodes, edges, focusKey, onHoverNode, onFocusNode, onOpenObject,
+  rootKey, summaries, onSummary, height,
 }: Props) {
   const flow = useReactFlow();
   const [anchor, setAnchor] = useState<PopoverAnchor | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearTimers = useCallback(() => {
-    if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
-    if (releaseTimer.current !== null) clearTimeout(releaseTimer.current);
-    hoverTimer.current = null;
-    releaseTimer.current = null;
-  }, []);
-
-  useEffect(() => clearTimers, [clearTimers]);
-
-  // 그래프가 통째로 바뀌면(탭 전환·기준 노드 변경) 떠 있던 팝오버는 남의 것이 된다
-  useEffect(() => {
-    setAnchor((current) => (current?.pinned ? current : null));
-  }, [rootKey]);
+  // 그래프가 통째로 바뀌면(탭 전환·기준 노드 변경) 떠 있던 카드는 남의 것이 된다
+  useEffect(() => { setAnchor(null); }, [rootKey]);
 
   // SQL 줄 호버 → 그 노드로 카메라 이동. 좌표는 배치 결과에서 읽는다(렌더 대기 없음)
   useEffect(() => {
@@ -85,34 +74,26 @@ function LineageCanvasInner({
     );
   }, [focusKey, nodes, flow]);
 
+  // 호버는 SQL 패널 연동 전용이다 — 카드를 띄우지 않는다(맵을 훑기만 해도 시야가 가려졌다)
   const handleNodeEnter = useCallback(
-    (event: React.MouseEvent, node: LineageFlowNode) => {
-      clearTimers();
-      onHoverNode(node.id);
-      const { clientX, clientY } = event;
-      hoverTimer.current = setTimeout(() => {
-        setAnchor((current) => (current?.pinned
-          ? current
-          : { node: node.data.node, x: clientX + 14, y: clientY + 10, pinned: false }));
-      }, HOVER_SETTLE_MS);
-    },
-    [clearTimers, onHoverNode],
+    (_event: React.MouseEvent, node: LineageFlowNode) => onHoverNode(node.id),
+    [onHoverNode],
   );
+  const handleNodeLeave = useCallback(() => onHoverNode(null), [onHoverNode]);
 
-  const handleNodeLeave = useCallback(() => {
-    if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
-    hoverTimer.current = null;
-    onHoverNode(null);
-    releaseTimer.current = setTimeout(() => {
-      setAnchor((current) => (current?.pinned ? current : null));
-    }, HOVER_RELEASE_MS);
-  }, [onHoverNode]);
-
-  // 카드 클릭은 펼침 토글이다(팝오버 고정은 팝오버의 핀 버튼이 맡는다) — 클릭 한 번에
-  // 두 가지가 일어나면 어느 쪽을 의도했는지 화면이 말해 주지 못한다
+  // 카드 클릭 = 정보 카드. 노드의 화면 사각형을 넘겨 팝오버가 그 바깥에 서게 한다
+  // (마우스 좌표만 넘기면 카드가 정작 보려던 노드 위에 앉는다)
   const handleNodeClick = useCallback(
-    (_event: React.MouseEvent, node: LineageFlowNode) => onToggleExpand(node.id),
-    [onToggleExpand],
+    (event: React.MouseEvent, node: LineageFlowNode) => {
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      setAnchor({
+        node: node.data.node,
+        nodeRight: rect.right,
+        nodeLeft: rect.left,
+        pointerY: event.clientY,
+      });
+    },
+    [],
   );
 
   const defaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 0.85 }), []);
@@ -123,6 +104,7 @@ function LineageCanvasInner({
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         defaultViewport={defaultViewport}
         fitView
         fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
@@ -139,7 +121,7 @@ function LineageCanvasInner({
         onNodeMouseEnter={handleNodeEnter}
         onNodeMouseLeave={handleNodeLeave}
         onNodeClick={handleNodeClick}
-        onPaneClick={() => { clearTimers(); setAnchor(null); }}
+        onPaneClick={() => setAnchor(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1}
                     color="var(--hairline)" />
@@ -148,20 +130,17 @@ function LineageCanvasInner({
       {anchor !== null && (
         <NodePopover
           anchor={anchor}
+          isCurrentRoot={anchor.node.qname === rootKey}
+          knownSummary={summaries.get(anchor.node.qname)?.summary ?? null}
+          isMock={summaries.get(anchor.node.qname)?.mock ?? false}
+          onSummary={onSummary}
           onFocusNode={anchor.node.qname === rootKey || anchor.node.id === null
             ? null
             : (node) => { setAnchor(null); onFocusNode(node); }}
           onOpenObject={anchor.node.id === null || anchor.node.hidden
             ? null
             : (node) => { setAnchor(null); onOpenObject(node); }}
-          onPin={() => setAnchor((current) => (current ? { ...current, pinned: true } : null))}
-          onClose={() => { clearTimers(); setAnchor(null); }}
-          onKeepAlive={clearTimers}
-          onRelease={() => {
-            releaseTimer.current = setTimeout(() => {
-              setAnchor((current) => (current?.pinned ? current : null));
-            }, HOVER_RELEASE_MS);
-          }}
+          onClose={() => setAnchor(null)}
         />
       )}
     </div>

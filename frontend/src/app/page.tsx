@@ -11,7 +11,7 @@ import { useI18n } from "@/components/i18n";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
 import { PreviewSection } from "@/components/browser/PreviewSection";
-import { ObjectTree, ObjectTreeFloating } from "@/components/browser/ObjectTree";
+import { ObjectTreePicker } from "@/components/browser/ObjectTree";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import { SourceSelector } from "@/components/SourceSelector";
@@ -297,13 +297,12 @@ function HomeInner() {
   // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
   // 상한: 카테고리는 행 라벨+카운트, 목록은 검색줄+타입 칩이 min을 정하고, max는 상세가
   // 유효 폭을 잃지 않는 선 (상세 자체는 lg:min-w-80으로 최후 방어)
-  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320, tree: 300 });
+  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320 });
   const PANE_LIMITS = {
     rail: { min: 150, max: 300 },
     list: { min: 260, max: 520 },
-    tree: { min: 220, max: 480 },
   } as const;
-  const startPaneResize = (pane: "rail" | "list" | "tree") => (event: React.PointerEvent) => {
+  const startPaneResize = (pane: "rail" | "list") => (event: React.PointerEvent) => {
     event.preventDefault();
     const limits = PANE_LIMITS[pane];
     const startX = event.clientX;
@@ -320,6 +319,26 @@ function HomeInner() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
+
+  // 트리 배치의 선택기 — 상세 제목 자리에 선다. 3열 배치에서는 렌더하지 않는다
+  const objectPicker = layout === "tree" && selected !== null ? (
+    <ObjectTreePicker
+      title={`${selected.schema}.${selected.name}`}
+      items={listItems}
+      selected={selected}
+      query={query}
+      typeFilter={typeFilter}
+      onQuery={setQuery}
+      onTypeFilter={setTypeFilter}
+      onSelect={selectTable}
+      categories={categories}
+      category={category}
+      onSelectCategory={changeCategory}
+      schemas={visibleSchemas}
+      dbFilter={dbFilter}
+      onDbFilter={changeDbFilter}
+    />
+  ) : undefined;
 
   const jumpToPreview = useCallback(() => {
     previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -432,48 +451,10 @@ function HomeInner() {
                      onPointerDown={startPaneResize("list")}
                      data-testid="Home-listResizeHandle" />
               </>
-            ) : (
-              <>
-                {/* 트리 배치 — 넓으면 한 열, 좁으면 선택된 행만 플로팅으로 남는다 */}
-                <aside
-                  className="card hidden min-w-0 lg:flex lg:flex-col"
-                  style={{ width: paneWidths.tree }}
-                  data-testid="Home-treePane"
-                >
-                  <ObjectTree
-                    items={listItems}
-                    selected={selected}
-                    query={query}
-                    typeFilter={typeFilter}
-                    onQuery={setQuery}
-                    onTypeFilter={setTypeFilter}
-                    onSelect={selectTable}
-                    schemas={visibleSchemas}
-                    dbFilter={dbFilter}
-                    onDbFilter={changeDbFilter}
-                  />
-                </aside>
-                <div className="pane-resize hidden lg:block"
-                     onPointerDown={startPaneResize("tree")}
-                     data-testid="Home-treeResizeHandle" />
-                <div className="basis-full lg:hidden" data-testid="Home-treeFloating">
-                  <ObjectTreeFloating
-                    items={listItems}
-                    selected={selected}
-                    query={query}
-                    typeFilter={typeFilter}
-                    onQuery={setQuery}
-                    onTypeFilter={setTypeFilter}
-                    onSelect={selectTable}
-                    schemas={visibleSchemas}
-                    dbFilter={dbFilter}
-                    onDbFilter={changeDbFilter}
-                  />
-                </div>
-              </>
-            )}
+            ) : null}
             <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
               <TableDetail
+                objectPicker={objectPicker}
                 detail={detail}
                 loading={detailLoading}
                 previewLoading={preview.tabs.find((tab) => tab.id === selected?.id)?.loading ?? false}

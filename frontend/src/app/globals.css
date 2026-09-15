@@ -1711,7 +1711,10 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
   .lineage-split > .lineage-sql { flex: 1 1 auto; max-width: 100%; }
 }
 
-.lineage-node { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: var(--surface-card); border-style: solid; border-radius: 10px; padding: 7px 9px; font-size: 12px; transition: opacity 180ms ease, border-color 180ms ease; }
+.lineage-node { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: var(--surface-card); border-style: solid; border-radius: 10px; padding: 7px 9px; font-size: 12px; cursor: pointer; transition: opacity 180ms ease, border-color 180ms ease, background 140ms ease, transform 140ms ease; }
+/* 호버 효과 — 카드가 클릭 가능하다는 유일한 신호다(팝오버가 클릭으로 열리므로) */
+.lineage-node:hover { background: var(--surface-elevated); border-color: var(--hairline-strong); transform: translateY(-1px); }
+.lineage-node:hover .lineage-node__name { color: var(--ink); }
 .lineage-node__header { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lineage-node__name { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lineage-node__meta { display: flex; gap: 8px; margin-top: 3px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); }
@@ -1722,9 +1725,14 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 /* 미사용 컬럼 — 같은 카드 안에서 "이 맥락에서 쓰이지 않는다"를 톤으로 구분한다 */
 .lineage-node__row--unused { color: var(--muted-soft); font-style: italic; }
 .lineage-node__more { display: flex; align-items: center; gap: 5px; width: 100%; margin: 3px 0; padding: 2px 4px; border-top: 1px dashed var(--hairline-strong); border-radius: 0; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.04em; color: var(--muted); background: transparent; text-align: left; }
-.lineage-node__more:hover { color: var(--ink); }
+.lineage-node__more:hover { color: var(--ink); background: var(--surface-card); }
 
-.lineage-popover { position: fixed; z-index: 70; width: 288px; background: var(--surface-card); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; box-shadow: 0 8px 28px color-mix(in srgb, var(--canvas) 55%, transparent); }
+/* 간선 라벨 — HTML이라 줄바꿈된다. 배경을 불투명하게 깔아 지나가는 선·카드와 겹쳐도 읽힌다 */
+.lineage-edge-label { position: absolute; z-index: 5; max-width: 190px; padding: 3px 7px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--surface-card); color: var(--body-text); font-family: var(--font-mono); font-size: 10px; line-height: 1.45; text-align: center; white-space: normal; overflow-wrap: anywhere; pointer-events: all; cursor: pointer; transition: border-color 140ms ease, color 140ms ease; }
+.lineage-edge-label:hover { border-color: var(--primary); color: var(--ink); }
+.lineage-edge-label:focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 1px; }
+
+.lineage-popover { position: fixed; z-index: 70; width: 330px; background: var(--surface-card); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; box-shadow: 0 8px 28px color-mix(in srgb, var(--canvas) 55%, transparent); }
 .lineage-popover__head { display: flex; align-items: center; gap: 7px; }
 .lineage-popover__name { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lineage-popover__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
@@ -1732,7 +1740,10 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 .lineage-popover__stats dd { margin: 0; font-family: var(--font-mono); font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .lineage-popover__summary { font-size: 12px; line-height: 1.6; color: var(--slate); }
 .lineage-popover__summary p { margin: 0; }
-.lineage-popover__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* 두 버튼은 반드시 한 줄 — 「상세 열기」가 오른쪽 끝에 서야 "나가는 동작"으로 읽힌다.
+   폭(330px)은 두 라벨 실측(161 + 110 + gap)에서 나온 값이다 */
+.lineage-popover__actions { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.lineage-popover__actions > * { white-space: nowrap; }
 
 .lineage-sql { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface-soft); overflow: hidden; }
 /* position: relative 는 장식이 아니라 계산의 전제다 — SqlPane이 줄의 offsetTop으로
@@ -1774,12 +1785,30 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 .tree-item__type { margin-left: auto; font-size: 9px; letter-spacing: 0.06em; color: var(--muted); }
 .tree-item[disabled] { opacity: 0.45; cursor: not-allowed; }
 
-.tree-float { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 11px; border: 1px solid var(--hairline-strong); border-radius: 9px; background: var(--surface-card); text-align: left; }
-.tree-float:hover { border-color: var(--primary); }
-.tree-float__schema { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
-.tree-float__name { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-float__caret { margin-left: auto; color: var(--muted); }
-.tree-drop { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; right: 0; max-height: 60vh; display: flex; flex-direction: column; background: var(--surface-card); border: 1px solid var(--hairline-strong); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px color-mix(in srgb, var(--canvas) 55%, transparent); }
+/* 한 줄 선택기 — 상세 제목 자리에 선다. 제목 활자 크기를 그대로 써서 "이름이 곧 트리거"가 읽힌다 */
+.tree-picker { position: relative; min-width: 0; margin-left: -8px; }
+.tree-picker__trigger { display: flex; align-items: center; gap: 9px; max-width: 100%; padding: 2px 8px; border: 1px solid transparent; border-radius: 9px; background: transparent; text-align: left; }
+.tree-picker__trigger:hover { border-color: var(--hairline-strong); background: var(--surface-elevated); }
+.tree-picker__trigger[aria-expanded="true"] { border-color: var(--primary); background: var(--surface-elevated); }
+.tree-picker__name { font-family: var(--font-mono); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-picker__caret { color: var(--muted); flex-shrink: 0; }
+.tree-drop { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; width: min(440px, 88vw); max-height: 62vh; display: flex; flex-direction: column; background: var(--surface-card); border: 1px solid var(--hairline-strong); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px color-mix(in srgb, var(--canvas) 55%, transparent); }
+.tree-drop .tree-pane { max-height: 62vh; }
+
+/* 필터 플라이아웃 — 트리 위로 오른쪽에서 밀려 들어온다(드롭다운이 overflow:hidden이라
+   바깥으로 띄우면 잘린다) */
+.tree-flyout { position: absolute; z-index: 10; inset: 0 0 0 auto; width: min(300px, 100%); display: flex; flex-direction: column; background: var(--surface-card); border-left: 1px solid var(--hairline-strong); animation: tree-flyout-in 160ms ease-out; }
+@keyframes tree-flyout-in { from { transform: translateX(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.tree-flyout__head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--hairline); }
+.tree-flyout__title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.tree-flyout__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 11px; display: flex; flex-direction: column; gap: 14px; }
+.tree-flyout__label { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.tree-flyout__clear { margin-left: auto; font-size: 10px; color: var(--action-blue); background: transparent; text-transform: none; letter-spacing: normal; }
+.tree-flyout__schemas { display: flex; flex-direction: column; }
+.tree-flyout__check { display: flex; align-items: center; gap: 7px; padding: 3px 2px; cursor: pointer; font-size: 12px; border-radius: 5px; }
+.tree-flyout__check:hover { background: var(--surface-elevated); }
+.tree-flyout__foot { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-top: 1px solid var(--hairline); }
+@media (prefers-reduced-motion: reduce) { .tree-flyout { animation: none; } }
 
 .layout-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--hairline-strong); border-radius: 8px; background: var(--surface-card); }
 .layout-toggle button { font-size: 11.5px; padding: 3px 9px; border-radius: 6px; color: var(--muted); background: transparent; }

@@ -150,7 +150,12 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
             <button
               type="button"
               className="lineage-node__more"
-              onClick={(event) => { event.stopPropagation(); onToggleExpand(node.qname); }}
+              onClick={(event) => {
+                // 카드 클릭은 팝오버를 연다 — 이 행에서 멈추지 않으면 둘 다 일어난다
+                event.stopPropagation();
+                onToggleExpand(node.qname);
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
               aria-expanded={expanded}
               data-testid={`LineageNode-expand-${node.qname}`}
             >
