@@ -11,11 +11,13 @@ interface InfoTipProps {
   /** 목록(제외 뷰)은 여러 줄이라 children으로 받는다 — text는 그때도 aria-label로 남는다
    *  / rich bubble content; `text` still carries the accessible label */
   children?: React.ReactNode;
+  /** 말풍선 최대 폭(px) — 표 모양 children은 기본 260px에서 줄이 잘게 찢어진다 */
+  maxWidth?: number;
 }
 
 /** 말풍선은 body로 포털한다 — 스크롤 컨테이너(overflow)의 경계에 잘리지 않게.
  * The bubble is portaled to body so a scrolling ancestor cannot clip it. */
-export function InfoTip({ text, align, children }: InfoTipProps) {
+export function InfoTip({ text, align, children, maxWidth }: InfoTipProps) {
   const iconRef = useRef<HTMLSpanElement>(null);
   const [bubbleStyle, setBubbleStyle] = useState<CSSProperties | null>(null);
 
@@ -24,6 +26,7 @@ export function InfoTip({ text, align, children }: InfoTipProps) {
     if (!rect) return;
     // align = 아이콘 기준 펼침 방향. fixed라 뷰포트 좌표를 그대로 쓴다
     const style: CSSProperties = { top: rect.bottom + 6 };
+    if (maxWidth !== undefined) style.maxWidth = maxWidth;
     if (align === "left") {
       style.right = window.innerWidth - rect.right;
     } else if (align === "right") {

@@ -1694,7 +1694,7 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 
 .lineage-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; border-bottom: 1px solid var(--hairline); background: var(--surface-soft); }
 .lineage-bar__root { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lineage-bar__tabs { display: flex; gap: 2px; margin-left: auto; flex-wrap: wrap; }
+.lineage-bar__tabs { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
 .lineage-tab { font-size: 12px; padding: 4px 11px; border-radius: 7px; border: 1px solid transparent; color: var(--muted); background: transparent; transition: background 120ms ease, color 120ms ease; }
 .lineage-tab:hover { color: var(--body-text); background: var(--surface-elevated); }
 .lineage-tab[aria-selected="true"] { color: var(--ink); background: var(--surface-elevated); border-color: var(--hairline-strong); }
@@ -1748,7 +1748,13 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 
 .lineage-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .lineage-picker__label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
-.lineage-legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
+.lineage-legend { margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
+/* 탭 설명 말풍선 — 탭 이름과 한 줄 설명을 2열로 세워 훑어 읽히게 한다 */
+.lineage-help { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; text-align: left; }
+.lineage-help__row { display: contents; }
+.lineage-help__row b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.lineage-help__row span { color: var(--body-text); }
+.lineage-help__row--foot b, .lineage-help__row--foot span { padding-top: 6px; border-top: 1px solid var(--hairline); }
 
 /* ── 통합 객체 트리 + 좁은 폭 플로팅 선택 (ObjectTree) ── */
 .tree-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

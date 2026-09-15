@@ -952,7 +952,8 @@ export const MESSAGES = {
   "lineage.tabSource": { ko: "소스 흐름", en: "Source flow" },
   "lineage.tabColumns": { ko: "컬럼 계보", en: "Column lineage" },
   "lineage.tabSql": { ko: "SQL 연동", en: "Linked SQL" },
-  "lineage.tabImpact": { ko: "영향도", en: "Impact" },
+  // 「영향도」는 한국어로 점수처럼 읽힌다 — 이 탭이 보여주는 건 점수가 아니라 범위다
+  "lineage.tabImpact": { ko: "영향 범위", en: "Downstream" },
   "lineage.tipSource": {
     ko: "이 뷰가 FROM·JOIN으로 직접 읽는 객체와 조인 조건",
     en: "Objects this view reads directly, with the join conditions",
@@ -966,13 +967,15 @@ export const MESSAGES = {
     en: "Cross-reference the definition SQL and the map; matching is by name",
   },
   "lineage.tipImpact": {
-    ko: "이 객체를 읽는 뷰 — 스키마를 바꿀 때 번지는 범위",
-    en: "Views that read this object — the blast radius of a schema change",
+    ko: "이 객체를 읽는 뷰를 depth 순으로 — 컬럼을 바꾸거나 지울 때 번지는 범위. 간선 라벨이 그 뷰가 실제로 읽는 컬럼이다",
+    en: "Views that read this object, by depth — the blast radius of a column change. Edge labels name the columns each view actually reads",
   },
   "lineage.tipCanvas": {
-    ko: "휠로 확대·축소, 빈 곳을 끌어 이동. 노드에 올리면 정보가 뜨고 클릭하면 고정된다.",
-    en: "Scroll to zoom, drag the canvas to pan. Hover a node for details, click to pin.",
+    ko: "휠로 확대·축소, 빈 곳을 끌어 이동. 노드에 올리면 정보 카드가 뜨고(핀으로 고정), 카드를 클릭하면 미사용 컬럼까지 펼쳐진다.",
+    en: "Scroll to zoom, drag the canvas to pan. Hover a node for its card (pin to keep it); click the card to reveal its unused columns.",
   },
+  "lineage.tabsHelp": { ko: "탭별 설명과 조작법", en: "What each tab shows, and how to navigate" },
+  "lineage.helpControls": { ko: "조작", en: "Controls" },
   "lineage.pickColumn": { ko: "컬럼 고르기", en: "Pick a column" },
   "lineage.allColumns": { ko: "전체", en: "All" },
   "lineage.setLevelOnly": {

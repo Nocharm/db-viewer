@@ -255,6 +255,7 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
     { key: "impact", label: t("lineage.tabImpact"), tip: t("lineage.tipImpact"), enabled: true },
   ];
 
+  const visibleTabs = tabs.filter((item) => item.enabled);
   const sql = diagram?.view.definition ?? null;
 
   return (
@@ -283,20 +284,39 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
             {t("lineage.truncated")}
           </span>
         )}
-        <div className="lineage-bar__tabs" role="tablist" aria-label={t("lineage.title")}>
-          {tabs.filter((item) => item.enabled).map((item) => (
-            <button
-              key={item.key}
-              role="tab"
-              aria-selected={tab === item.key}
-              className="lineage-tab"
-              onClick={() => setTab(item.key)}
-              title={item.tip}
-              data-testid={`LineageSection-tab-${item.key}`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="lineage-bar__tabs">
+          <div role="tablist" aria-label={t("lineage.title")} className="flex gap-0.5">
+            {visibleTabs.map((item) => (
+              <button
+                key={item.key}
+                role="tab"
+                aria-selected={tab === item.key}
+                className="lineage-tab"
+                onClick={() => setTab(item.key)}
+                data-testid={`LineageSection-tab-${item.key}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          {/* 탭 우측 ⓘ — 네 탭이 각각 무엇을 보여주는지와 조작법을 한 자리에 모은다.
+              말풍선은 body로 포털되므로 캔버스 경계에 잘리지 않는다 */}
+          <span data-testid="LineageSection-tabsHelp">
+            <InfoTip text={t("lineage.tabsHelp")} align="left" maxWidth={440}>
+              <span className="lineage-help">
+                {visibleTabs.map((item) => (
+                  <span key={item.key} className="lineage-help__row">
+                    <b>{item.label}</b>
+                    <span>{item.tip}</span>
+                  </span>
+                ))}
+                <span className="lineage-help__row lineage-help__row--foot">
+                  <b>{t("lineage.helpControls")}</b>
+                  <span>{t("lineage.tipCanvas")}</span>
+                </span>
+              </span>
+            </InfoTip>
+          </span>
         </div>
       </div>
 
@@ -368,10 +388,7 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
           </p>
         )}
 
-        <p className="lineage-legend">
-          <span>{graph.hint}</span>
-          <InfoTip text={t("lineage.tipCanvas")} align="left" />
-        </p>
+        <p className="lineage-legend">{graph.hint}</p>
       </div>
     </section>
   );
