@@ -20,6 +20,10 @@ export interface LineageNodePayload extends Record<string, unknown> {
   highlightColumns: string[] | null;
   /** 컬럼 행에 붙일 표시 — derived는 계산식(ƒ), unresolved는 카탈로그 밖 소스(!) */
   columnMarks: Record<string, "derived" | "unresolved"> | null;
+  /** 위에 나열된 컬럼이 무엇인가 — "used"면 이 맥락에서 쓰이는 것만 추린 것이라 나머지는
+   * 「미사용」이고, "all"이면 애초에 추리지 않은 것이라 펼침은 그냥 「전체 컬럼」이다.
+   * 구분하지 않으면 소스 흐름 탭의 뷰 노드가 자기 출력 컬럼을 "미사용"이라 부른다 */
+  columnRole: "used" | "all";
   /** 컬럼 행마다 핸들을 다는가 — 컬럼 계보 탭에서만 참 */
   columnHandles: boolean;
   /** 미사용 컬럼까지 펼쳤는가 */
@@ -51,7 +55,7 @@ function formatCount(value: number | null): string | null {
 
 export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
   const {
-    node, isRoot, emphasis, highlightColumns, columnMarks, columnHandles,
+    node, isRoot, emphasis, highlightColumns, columnMarks, columnHandles, columnRole,
     expanded, unusedColumns, loadingColumns, onToggleExpand,
   } = data;
   const dimmed = emphasis === "off";
@@ -62,7 +66,7 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
   // 미사용 컬럼 수는 카탈로그 전체 컬럼 수에서 뺀다 — 펼치기 전에도 "몇 개가 숨어 있나"를 말한다
   const hiddenCount = node.column_count === null
     ? null
-    : Math.max(0, node.column_count - node.columns.length);
+    : Math.max(0, node.column_count - (columnRole === "used" ? node.columns.length : 0));
   const canExpand = node.id !== null && (hiddenCount === null || hiddenCount > 0);
 
   return (
@@ -155,8 +159,9 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
                 {loadingColumns
                   ? "…"
                   : expanded
-                    ? "미사용 접기"
-                    : `미사용 ${hiddenCount === null ? "" : hiddenCount}`}
+                    ? "접기"
+                    : `${columnRole === "used" ? "미사용" : "전체 컬럼"} `
+                      + `${hiddenCount === null ? "" : hiddenCount}`}
               </span>
             </button>
           )}
@@ -171,7 +176,9 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
           ))}
           {expanded && unusedColumns !== null && unusedColumns.length === 0 && (
             <div className="lineage-node__row lineage-node__row--unused">
-              <span className="truncate">전 컬럼 사용 중</span>
+              <span className="truncate">
+                {columnRole === "used" ? "전 컬럼 사용 중" : "컬럼 없음"}
+              </span>
             </div>
           )}
         </div>

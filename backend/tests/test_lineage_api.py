@@ -118,3 +118,38 @@ def test_impact_depth_cap_shrinks_the_graph(client, load_fixture, migrated_engin
 
     assert max(node["depth"] for node in shallow["nodes"]) <= 1
     assert client.get(f"/api/lineage/objects/{table_id}/impact?max_depth=9").status_code == 422
+
+
+def test_hidden_schema_columns_never_leak_through_a_visible_view(
+    client, load_fixture, migrated_engine, monkeypatch,
+):
+    """감춘 스키마의 테이블을 읽는 뷰의 다이어그램 — 이름은 남고 컬럼은 빠져야 한다.
+
+    숨김 정책은 "이름은 목록에 남되 컬럼과 파생물은 전부 뺀다"이다(`schema_visibility`).
+    다이어그램은 소스 노드의 컬럼과 컬럼 계보를 싣고 나가므로 같은 기준이 걸려야 한다.
+    """
+    _seed(client, load_fixture)
+    view_id = _find_view_with_joins(migrated_engine)
+    objects = Base.metadata.tables["objects"]
+
+    # 뷰 자신은 보이게, 소스 테이블만 감춘 스키마로 옮긴다
+    with migrated_engine.begin() as conn:
+        source_id = conn.execute(sa.text(
+            "SELECT referenced_object_id FROM view_deps "
+            "WHERE view_object_id = :v AND is_resolved = 1 LIMIT 1"
+        ), {"v": view_id}).scalar_one()
+        conn.execute(objects.update().where(objects.c.id == source_id)
+                     .values(schema="secret"))
+    monkeypatch.setattr(get_settings(), "hidden_schemas", "secret")
+
+    body = client.get(f"/api/lineage/views/{view_id}").json()
+
+    hidden_nodes = [n for n in body["nodes"] if n["qname"].startswith("secret.")]
+    assert hidden_nodes, "감춘 스키마도 이름은 그래프에 남는다"
+    for node in hidden_nodes:
+        assert node["hidden"] is True
+        assert node["columns"] == [], "감춘 스키마의 컬럼명이 노드에 실리면 안 된다"
+    for column in body["columns"]:
+        leaked = [s for s in column["sources"]
+                  if s["object"].startswith("secret.") and s["column"] is not None]
+        assert not leaked, f"컬럼 계보로 새어 나감: {leaked}"

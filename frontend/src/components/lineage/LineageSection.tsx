@@ -168,6 +168,8 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
   const getUnusedColumns = useCallback((node: LineageNodeData): string[] | null => {
     const every = allColumns.get(node.qname);
     if (every === undefined) return null;
+    // 이 지도에서 컬럼을 추려 싣지 않은 노드는 뺄 것이 없다 — 전체가 곧 펼침 목록
+    if (node.columns.length === 0) return every;
     const used = new Set(node.columns);
     return every.filter((column) => !used.has(column));
   }, [allColumns]);
@@ -454,6 +456,8 @@ function toFlowNodes(
     rootKey: string;
     emphasisNames: string[] | null;
     columnHandles: boolean;
+    /** 이 지도에서 노드가 컬럼을 추려 싣는가 — 노드별로 다를 수 있다(소스 흐름의 뷰 노드) */
+    columnRole: (node: LineageNodeData) => "used" | "all";
     args: BuildArgs;
     highlightColumns?: Map<string, string[]>;
     columnMarks?: Map<string, Record<string, "derived" | "unresolved">>;
@@ -477,6 +481,7 @@ function toFlowNodes(
         highlightColumns: opts.highlightColumns?.get(node.qname) ?? null,
         columnMarks: opts.columnMarks?.get(node.qname) ?? null,
         columnHandles: opts.columnHandles,
+        columnRole: opts.columnRole(node),
         expanded: opts.args.expanded.has(node.qname),
         unusedColumns: opts.args.expanded.has(node.qname)
           ? opts.args.getUnusedColumns(node)
@@ -504,6 +509,8 @@ function buildSourceFlow(
     assignSourceFlowLanes(ordered, viewNode.qname, args.resolveRows), JOIN_LANE_GAP);
   const nodes = toFlowNodes([...ordered, viewNode], placed, {
     rootKey: root.qname, emphasisNames: args.emphasisNames, columnHandles: false, args,
+    // 뷰 노드는 이 탭에서 출력 컬럼을 싣지 않는다 — 그걸 "미사용"이라 부르면 거짓말이다
+    columnRole: (node) => (node.qname === viewNode.qname ? "all" : "used"),
   });
 
   const edges: Edge[] = ordered.map((node) => ({
@@ -600,6 +607,7 @@ function buildColumnLineage(
     emphasisNames: args.emphasisNames,
     columnHandles: true,
     args,
+    columnRole: () => "used",
     columnMarks: new Map([[viewNode.qname, marks]]),
   });
 
@@ -636,6 +644,8 @@ function buildImpact(args: BuildArgs): BuiltGraph {
   const placed = layoutLanes(assignImpactLanes(impact.nodes, args.resolveRows));
   const nodes = toFlowNodes(impact.nodes, placed, {
     rootKey: root.qname, emphasisNames: args.emphasisNames, columnHandles: false, args,
+    // 영향 범위는 컬럼을 추려 싣지 않는다(읽는 컬럼은 간선 라벨이 말한다)
+    columnRole: () => "all",
   });
   const edges: Edge[] = impact.edges.map((edge, index) => ({
     id: `impact:${index}`,

@@ -1735,7 +1735,10 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 .lineage-popover__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .lineage-sql { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface-soft); overflow: hidden; }
-.lineage-sql__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0; }
+/* position: relative 는 장식이 아니라 계산의 전제다 — SqlPane이 줄의 offsetTop으로
+   스크롤 목표를 잡는데, 이 컨테이너가 static이면 offsetParent가 body로 올라가
+   문서 좌표(패널의 페이지 오프셋만큼 어긋난 값)가 나온다 */
+.lineage-sql__scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0; }
 .lineage-sql__line { display: flex; gap: 8px; padding: 0 10px; line-height: 19px; transition: background 150ms ease; }
 .lineage-sql__line:hover { background: var(--surface-elevated); }
 .lineage-sql__line[data-hit] { background: color-mix(in srgb, var(--primary) 18%, transparent); }

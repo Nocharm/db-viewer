@@ -130,7 +130,8 @@ def get_view_diagram(object_id: int, db: Session = Depends(get_db)) -> dict:
                 continue  # 자기 참조(재귀 뷰) — 그래프에 자기 자신을 그리지 않는다
             resolved_objects[ref.id] = ref
             qname = f"{ref.schema}.{ref.name}"
-            if dep.referenced_column:
+            # 감춘 스키마는 이름만 남고 컬럼은 빠진다 — 뷰를 통해 우회 노출되면 정책이 무의미하다
+            if dep.referenced_column and not is_schema_hidden(ref.schema):
                 used_columns[qname].add(dep.referenced_column)
         else:
             # 크로스 DB·드랍된 객체 — 카탈로그 밖이라 노드 id가 없다
@@ -223,7 +224,10 @@ def get_view_diagram(object_id: int, db: Session = Depends(get_db)) -> dict:
             entry["kind"] = "derived"
         base_qname = f"{base_obj.schema}.{base_obj.name}"
         entry["sources"].append({
-            "object": base_qname, "column": row.base_column, "depth": row.depth,
+            "object": base_qname,
+            # 감춘 스키마의 컬럼명은 계보로도 나가지 않는다 (객체 이름은 남긴다)
+            "column": None if is_schema_hidden(base_obj.schema) else row.base_column,
+            "depth": row.depth,
         })
         base_objects[base_qname] = base_obj
         prior = base_depth.get(base_qname)
