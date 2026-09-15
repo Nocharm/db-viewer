@@ -750,6 +750,93 @@ export function fetchViewDefinition(objectId: number): Promise<ViewDefinition> {
   return getJson(`/api/views/${objectId}/definition`);
 }
 
+/** 계보 맵의 노드 하나 — 세 지도(소스 흐름·컬럼 계보·영향도)가 같은 모양을 쓴다.
+ * id가 null이면 카탈로그 밖 참조(크로스 DB·드랍된 객체)라 열어볼 수 없다. */
+export interface LineageNodeData {
+  id: number | null;
+  qname: string;
+  schema: string | null;
+  type: "table" | "view" | "unresolved";
+  depth: number;
+  /** FROM·JOIN에 직접 쓰이는 소스인가 — false면 중첩 뷰 너머의 계보로만 등장한다 */
+  direct: boolean;
+  row_count: number | null;
+  column_count: number | null;
+  ai_summary: string | null;
+  hidden: boolean;
+  /** 이 맥락에서 실제로 쓰이는 컬럼만 — 테이블의 전체 컬럼이 아니다 */
+  columns: string[];
+}
+
+export interface LineageJoin {
+  left_object: string;
+  left_column: string;
+  right_object: string;
+  right_column: string;
+  join_type: string;
+  occurrence_count: number;
+}
+
+export interface LineageColumnSource {
+  object: string;
+  column: string | null;
+  depth: number;
+}
+
+export interface LineageColumn {
+  name: string;
+  /** set = Phase 1 카탈로그 수준(컬럼 매핑 미확보), derived = 계산식 */
+  kind: "direct" | "derived" | "set";
+  sources: LineageColumnSource[];
+}
+
+export interface ViewDiagram {
+  view: {
+    id: number;
+    qname: string;
+    schema: string;
+    type: "view";
+    parse_status: string | null;
+    parse_error: string | null;
+    row_count: number | null;
+    column_count: number;
+    ai_summary: string | null;
+    definition: string | null;
+  };
+  nodes: LineageNodeData[];
+  joins: LineageJoin[];
+  columns: LineageColumn[];
+  unresolved: { database: string | null; name: string | null; column: string | null; qname: string }[];
+  flags: string[];
+}
+
+export function fetchViewDiagram(objectId: number): Promise<ViewDiagram> {
+  return getJson(`/api/lineage/views/${objectId}`);
+}
+
+export interface ImpactEdge {
+  from: string;
+  to: string;
+  from_id: number;
+  to_id: number;
+  columns: string[];
+}
+
+export interface ImpactGraph {
+  root: {
+    id: number; qname: string; schema: string; type: "table" | "view";
+    row_count: number | null; column_count: number | null; ai_summary: string | null;
+  };
+  nodes: LineageNodeData[];
+  edges: ImpactEdge[];
+  /** 노드 상한에 걸려 잘렸는가 — 화면이 "전부"라고 오해되면 안 된다 */
+  truncated: boolean;
+}
+
+export function fetchImpactGraph(objectId: number, maxDepth = 4): Promise<ImpactGraph> {
+  return getJson(`/api/lineage/objects/${objectId}/impact?max_depth=${maxDepth}`);
+}
+
 export interface AuditEntry {
   id: number;
   action: string;

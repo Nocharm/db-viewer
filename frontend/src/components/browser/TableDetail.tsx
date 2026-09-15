@@ -4,9 +4,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ArrowDownIcon, CodeIcon } from "@/components/icons";
+import { ArrowDownIcon, CodeIcon, SplitIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
+import { LineageSection } from "@/components/lineage/LineageSection";
 import { ViewDefinitionPanel } from "@/components/ViewDefinitionPanel";
 import {
   explainViewAi,
@@ -147,6 +148,9 @@ export function TableDetail({
   const columnsRef = useRef<HTMLDivElement>(null);
   // 뷰 정의 SQL은 기본 접힘 — 수백 줄짜리 뷰가 아래 섹션을 화면 밖으로 밀어낸다
   const [showDefinition, setShowDefinition] = useState(false);
+  const [showDiagram, setShowDiagram] = useState(false);
+  // 한 번 연 뒤에는 접어도 마운트를 유지한다 — 다시 열 때 재조회·재배치가 없다
+  const [diagramMounted, setDiagramMounted] = useState(false);
 
   // 테이블 전환 시 검증·AI 상태 초기화 / reset per-table state on switch
   useEffect(() => {
@@ -339,6 +343,21 @@ export function TableDetail({
             {t("viewdef.button")}
           </button>
         )}
+        {/* 다이어그램 — 값을 보는 두 버튼(미리보기·쿼리 보기) 옆. 아래에서 아코디언으로 열린다 */}
+        <button
+          className="btn-secondary inline-flex items-center gap-1.5"
+          onClick={() => {
+            setDiagramMounted(true);
+            setShowDiagram((current) => !current);
+          }}
+          disabled={detail.hidden}
+          title={detail.hidden ? t("hidden.columns") : t("lineage.tipCanvas")}
+          aria-expanded={showDiagram}
+          data-testid="TableDetail-diagramButton"
+        >
+          <SplitIcon size={12} />
+          {t("lineage.button")}
+        </button>
         {/* 잠금 사유는 왼쪽 그룹 뒤 — 버튼 사이에 끼우면 그룹이 시각적으로 끊긴다
             / the lock reason trails the left group instead of splitting it */}
         {!previewAllowed && (
@@ -363,6 +382,21 @@ export function TableDetail({
                                onClose={() => setShowDefinition(false)} />
         </div>
       )}
+
+      {/* 계보 다이어그램 — grid-rows 트랜지션이라 탭 전환으로 높이가 바뀌어도 잘리지 않는다 */}
+      <div className="accordion" data-open={showDiagram}
+           data-testid="TableDetail-diagramAccordion">
+        <div>
+          {diagramMounted && (
+            <LineageSection
+              objectId={detail.id}
+              qname={detail.name}
+              objectType={detail.type}
+              onSelectTable={onSelectTable}
+            />
+          )}
+        </div>
+      </div>
 
       <div className="flex max-w-4xl flex-col gap-5">
         <section className="panel-section">

@@ -24,6 +24,7 @@ from app.api import (
     join_check,
     join_preview,
     keys,
+    lineage,
     me,
     objects,
     relations,
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(join_check.router, dependencies=user_gate)
     app.include_router(join_preview.router, dependencies=user_gate)
     app.include_router(views.router, dependencies=user_gate)
+    app.include_router(lineage.router, dependencies=user_gate)
     app.include_router(snapshots.router, dependencies=user_gate)
     app.include_router(columns.router, dependencies=user_gate)
     app.include_router(validate.router, dependencies=user_gate)

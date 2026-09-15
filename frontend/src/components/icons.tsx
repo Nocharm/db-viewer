@@ -343,6 +343,16 @@ export function PencilIcon(props: IconProps) {
   );
 }
 
+export function PinIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* 압정 — 호버로 뜬 팝오버를 그 자리에 고정 / pins a hover popover in place */}
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 6 3.5 3.5V15H6.5v-2.5L10 9 9 3z" />
+    </Svg>
+  );
+}
+
 export function SpinnerIcon(props: IconProps) {
   return (
     <Svg {...props}>

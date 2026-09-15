@@ -7,9 +7,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppHeader } from "@/components/AppHeader";
+import { useI18n } from "@/components/i18n";
 import { CategoryList, type CategoryEntry } from "@/components/browser/CategoryList";
 import { JoinKeyBar } from "@/components/browser/JoinKeyBar";
 import { PreviewSection } from "@/components/browser/PreviewSection";
+import { ObjectTree, ObjectTreeFloating } from "@/components/browser/ObjectTree";
 import { TableDetail } from "@/components/browser/TableDetail";
 import { TableList, type TableListItem } from "@/components/browser/TableList";
 import { SourceSelector } from "@/components/SourceSelector";
@@ -24,6 +26,9 @@ import {
   type ObjectDetail,
   type SchemaCategoryItem,
 } from "@/lib/api";
+import {
+  DEFAULT_BROWSER_LAYOUT, loadBrowserLayout, saveBrowserLayout, type BrowserLayout,
+} from "@/lib/browser-layout";
 import { resolveCategory, type SchemaCategoryMap } from "@/lib/category";
 import { loadDbFilter, saveDbFilter } from "@/lib/db-filter";
 import type { PreviewFilterCond } from "@/lib/preview-utils";
@@ -45,6 +50,7 @@ export default function Home() {
 }
 
 function HomeInner() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useSearchParams();
   const tableParam = params.get("table");
@@ -72,6 +78,8 @@ function HomeInner() {
   // DB 필터는 개인 설정 — 브라우저별 유지 (카테고리 매핑은 서버 공용)
   const [dbFilter, setDbFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "table" | "view">("all");
+  // 좌측 목록 배치 — 3열(스키마 레일 + 목록) ↔ 통합 트리. 사용자 설정, 브라우저별 유지
+  const [layout, setLayout] = useState<BrowserLayout>(DEFAULT_BROWSER_LAYOUT);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ObjectSummary | null>(null);
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
@@ -102,9 +110,16 @@ function HomeInner() {
       .catch(() => undefined); // 매핑 실패 시 스키마명이 곧 카테고리 / falls back by design
   }, [sourceId]);
 
-  // DB 필터는 개인 설정 — 마운트 시 1회만 브라우저 저장값을 불러온다(소스 전환과 무관)
+  // DB 필터·좌측 배치는 개인 설정 — 마운트 시 1회만 브라우저 저장값을 불러온다.
+  // SSR에서는 localStorage가 없어 기본값으로 먼저 그린 뒤 여기서 맞춘다(hydration 안전).
   useEffect(() => {
     setDbFilter(loadDbFilter());
+    setLayout(loadBrowserLayout());
+  }, []);
+
+  const changeLayout = useCallback((next: BrowserLayout) => {
+    setLayout(next);
+    saveBrowserLayout(next);
   }, []);
 
   // 소스 전환 — 이전 소스의 선택·미리보기·필터가 새 소스에 없는 객체를 가리킬 수 있어
@@ -282,10 +297,15 @@ function HomeInner() {
   // 3열 리사이즈 — lg(nowrap)에서만 핸들이 보인다. min/max는 섹션이 깨지지 않는 실측 하한·
   // 상한: 카테고리는 행 라벨+카운트, 목록은 검색줄+타입 칩이 min을 정하고, max는 상세가
   // 유효 폭을 잃지 않는 선 (상세 자체는 lg:min-w-80으로 최후 방어)
-  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320 });
-  const startPaneResize = (pane: "rail" | "list") => (event: React.PointerEvent) => {
+  const [paneWidths, setPaneWidths] = useState({ rail: 176, list: 320, tree: 300 });
+  const PANE_LIMITS = {
+    rail: { min: 150, max: 300 },
+    list: { min: 260, max: 520 },
+    tree: { min: 220, max: 480 },
+  } as const;
+  const startPaneResize = (pane: "rail" | "list" | "tree") => (event: React.PointerEvent) => {
     event.preventDefault();
-    const limits = pane === "rail" ? { min: 150, max: 300 } : { min: 260, max: 520 };
+    const limits = PANE_LIMITS[pane];
     const startX = event.clientX;
     const startWidth = paneWidths[pane];
     // PreviewTable 컬럼 리사이즈와 같은 window 리스너 관용구 / same idiom as the column resize
@@ -354,39 +374,104 @@ function HomeInner() {
             items={joinKeys}
             selected={selectedKey}
             onSelect={setSelectedKey}
-            leading={<SourceSelector value={sourceId} onChange={changeSource} />}
+            leading={(
+              <div className="flex items-center gap-2">
+                <SourceSelector value={sourceId} onChange={changeSource} />
+                {/* 좌측 배치 토글 — 목록이 있는 바로 그 바에 둔다 */}
+                <div className="layout-toggle" title={t("layout.toggleTitle")}
+                     data-testid="Home-layoutToggle">
+                  <button
+                    aria-pressed={layout === "classic"}
+                    onClick={() => changeLayout("classic")}
+                    data-testid="Home-layoutClassic"
+                  >
+                    {t("layout.classic")}
+                  </button>
+                  <button
+                    aria-pressed={layout === "tree"}
+                    onClick={() => changeLayout("tree")}
+                    data-testid="Home-layoutTree"
+                  >
+                    {t("layout.tree")}
+                  </button>
+                </div>
+              </div>
+            )}
           />
           {/* 좁은 폭에선 상세가 아래로 wrap — 깨짐 방지 / detail wraps below when narrow */}
           <main className="box-border flex flex-wrap content-start gap-4 p-4 lg:min-h-0 lg:flex-1 lg:flex-nowrap">
-            <CategoryList
-              categories={categories}
-              selected={category}
-              totalCount={typedObjects.length}
-              onSelect={changeCategory}
-              schemas={visibleSchemas}
-              dbFilter={dbFilter}
-              onDbFilter={changeDbFilter}
-              onAssignCategory={assignCategory}
-              previewAllowed={previewAllowed}
-              width={paneWidths.rail}
-            />
-            {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
-            <div className="pane-resize hidden lg:block"
-                 onPointerDown={startPaneResize("rail")}
-                 data-testid="Home-railResizeHandle" />
-            <TableList
-              items={listItems}
-              selectedId={selected?.id ?? null}
-              query={query}
-              typeFilter={typeFilter}
-              onQuery={setQuery}
-              onTypeFilter={setTypeFilter}
-              onSelect={selectTable}
-              width={paneWidths.list}
-            />
-            <div className="pane-resize hidden lg:block"
-                 onPointerDown={startPaneResize("list")}
-                 data-testid="Home-listResizeHandle" />
+            {layout === "classic" ? (
+              <>
+                <CategoryList
+                  categories={categories}
+                  selected={category}
+                  totalCount={typedObjects.length}
+                  onSelect={changeCategory}
+                  schemas={visibleSchemas}
+                  dbFilter={dbFilter}
+                  onDbFilter={changeDbFilter}
+                  onAssignCategory={assignCategory}
+                  previewAllowed={previewAllowed}
+                  width={paneWidths.rail}
+                />
+                {/* 리사이저 — wrap 모드(좁은 화면)에선 열 개념이 없어 숨긴다 */}
+                <div className="pane-resize hidden lg:block"
+                     onPointerDown={startPaneResize("rail")}
+                     data-testid="Home-railResizeHandle" />
+                <TableList
+                  items={listItems}
+                  selectedId={selected?.id ?? null}
+                  query={query}
+                  typeFilter={typeFilter}
+                  onQuery={setQuery}
+                  onTypeFilter={setTypeFilter}
+                  onSelect={selectTable}
+                  width={paneWidths.list}
+                />
+                <div className="pane-resize hidden lg:block"
+                     onPointerDown={startPaneResize("list")}
+                     data-testid="Home-listResizeHandle" />
+              </>
+            ) : (
+              <>
+                {/* 트리 배치 — 넓으면 한 열, 좁으면 선택된 행만 플로팅으로 남는다 */}
+                <aside
+                  className="card hidden min-w-0 lg:flex lg:flex-col"
+                  style={{ width: paneWidths.tree }}
+                  data-testid="Home-treePane"
+                >
+                  <ObjectTree
+                    items={listItems}
+                    selected={selected}
+                    query={query}
+                    typeFilter={typeFilter}
+                    onQuery={setQuery}
+                    onTypeFilter={setTypeFilter}
+                    onSelect={selectTable}
+                    schemas={visibleSchemas}
+                    dbFilter={dbFilter}
+                    onDbFilter={changeDbFilter}
+                  />
+                </aside>
+                <div className="pane-resize hidden lg:block"
+                     onPointerDown={startPaneResize("tree")}
+                     data-testid="Home-treeResizeHandle" />
+                <div className="basis-full lg:hidden" data-testid="Home-treeFloating">
+                  <ObjectTreeFloating
+                    items={listItems}
+                    selected={selected}
+                    query={query}
+                    typeFilter={typeFilter}
+                    onQuery={setQuery}
+                    onTypeFilter={setTypeFilter}
+                    onSelect={selectTable}
+                    schemas={visibleSchemas}
+                    dbFilter={dbFilter}
+                    onDbFilter={changeDbFilter}
+                  />
+                </div>
+              </>
+            )}
             <section className="card h-[70vh] min-w-0 flex-1 basis-full overflow-hidden lg:h-auto lg:basis-0 lg:min-w-80">
               <TableDetail
                 detail={detail}

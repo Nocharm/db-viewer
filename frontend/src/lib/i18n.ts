@@ -942,6 +942,65 @@ export const MESSAGES = {
   "erd.graphLoading": { ko: "그래프 계산 중…", en: "Computing graph…" },
 
   "common.seconds": { ko: "{n}초", en: "{n}s" },
+  // ── 계보 다이어그램 (테이블 상세 아코디언) ─────────────────────────────────
+  "lineage.button": { ko: "다이어그램", en: "Diagram" },
+  "lineage.title": { ko: "계보 다이어그램", en: "Lineage diagram" },
+  "lineage.back": { ko: "돌아가기", en: "Back" },
+  "lineage.truncated": {
+    ko: "일부만 표시", en: "Truncated",
+  },
+  "lineage.tabSource": { ko: "소스 흐름", en: "Source flow" },
+  "lineage.tabColumns": { ko: "컬럼 계보", en: "Column lineage" },
+  "lineage.tabSql": { ko: "SQL 연동", en: "Linked SQL" },
+  "lineage.tabImpact": { ko: "영향도", en: "Impact" },
+  "lineage.tipSource": {
+    ko: "이 뷰가 FROM·JOIN으로 직접 읽는 객체와 조인 조건",
+    en: "Objects this view reads directly, with the join conditions",
+  },
+  "lineage.tipColumns": {
+    ko: "출력 컬럼이 어느 테이블의 어느 컬럼에서 왔는지 — 가로 위치가 depth다",
+    en: "Where each output column comes from; x-position is depth",
+  },
+  "lineage.tipSql": {
+    ko: "정의 SQL과 맵을 양방향으로 짚어 본다 — 강조 근거는 이름 일치다",
+    en: "Cross-reference the definition SQL and the map; matching is by name",
+  },
+  "lineage.tipImpact": {
+    ko: "이 객체를 읽는 뷰 — 스키마를 바꿀 때 번지는 범위",
+    en: "Views that read this object — the blast radius of a schema change",
+  },
+  "lineage.tipCanvas": {
+    ko: "휠로 확대·축소, 빈 곳을 끌어 이동. 노드에 올리면 정보가 뜨고 클릭하면 고정된다.",
+    en: "Scroll to zoom, drag the canvas to pan. Hover a node for details, click to pin.",
+  },
+  "lineage.pickColumn": { ko: "컬럼 고르기", en: "Pick a column" },
+  "lineage.allColumns": { ko: "전체", en: "All" },
+  "lineage.setLevelOnly": {
+    ko: "이 뷰는 컬럼 단위 매핑이 없다 (카탈로그 수준 계보만 확보) — 「소스 흐름」 탭에서 객체 수준으로 볼 수 있다.",
+    en: "No column-level mapping for this view (catalog-level lineage only) — see the Source flow tab.",
+  },
+
+  // ── 좌측 레이아웃 (3열 ↔ 통합 트리) ───────────────────────────────────────
+  "layout.classic": { ko: "3열", en: "Columns" },
+  "layout.tree": { ko: "트리", en: "Tree" },
+  "layout.toggleTitle": {
+    ko: "좌측 목록 배치 — 3열(스키마·목록 분리) ↔ 트리(한 열로 합침)",
+    en: "Left rail layout — three columns or one merged tree",
+  },
+  "tree.searchPlaceholder": {
+    ko: "스키마·테이블·컬럼 검색", en: "Search schemas, tables, columns",
+  },
+  "tree.empty": { ko: "조건에 맞는 객체 없음", en: "No objects match" },
+  "tree.filter": { ko: "필터", en: "Filter" },
+  "tree.filterTitle": { ko: "목록 필터", en: "List filters" },
+  "tree.pick": { ko: "객체 고르기", en: "Pick an object" },
+  "tree.none": { ko: "선택 없음", en: "Nothing selected" },
+  "tree.close": { ko: "닫기", en: "Close" },
+  "tree.typeAll": { ko: "전체", en: "All" },
+  "tree.typeTable": { ko: "테이블", en: "Tables" },
+  "tree.typeView": { ko: "뷰", en: "Views" },
+  "tree.schemaCount": { ko: "스키마", en: "schemas" },
+
   "common.none": { ko: "없음", en: "None" },
   "common.loading": { ko: "불러오는 중…", en: "Loading…" },
   "common.close": { ko: "닫기", en: "Close" },
