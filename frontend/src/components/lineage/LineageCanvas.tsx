@@ -34,8 +34,6 @@ interface Props {
   onHoverNode: (qname: string | null) => void;
   onFocusNode: (node: LineageNodeData) => void;
   onOpenObject: (node: LineageNodeData) => void;
-  /** 노드 클릭 정보 카드가 열릴 때 — 섹션이 컬럼 확인 카드를 닫는다(둘이 동시에 뜨지 않게) */
-  onOpenPopover: () => void;
   /** 맵의 기준 객체 qname — 팝오버에서 "중심으로 보기"를 숨길 대상 */
   rootKey: string;
   /** 노드별 AI 요약 세션 캐시 — 한 번 만든 요약을 다시 만들지 않는다 */
@@ -53,7 +51,7 @@ export function LineageCanvas(props: Props) {
 }
 
 function LineageCanvasInner({
-  nodes, edges, focusKey, onHoverNode, onFocusNode, onOpenObject, onOpenPopover,
+  nodes, edges, focusKey, onHoverNode, onFocusNode, onOpenObject,
   rootKey, summaries, onSummary, height,
 }: Props) {
   const flow = useReactFlow();
@@ -87,10 +85,9 @@ function LineageCanvasInner({
   // 이웃 카드를 덮었다(실측). 포인터 우하단은 카드 안쪽이 아니라 옆이라 노드 자체도 덜 가린다
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: LineageFlowNode) => {
-      onOpenPopover();
       setAnchor({ node: node.data.node, pointerX: event.clientX, pointerY: event.clientY });
     },
-    [onOpenPopover],
+    [],
   );
 
   const defaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 0.85 }), []);

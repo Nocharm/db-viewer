@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { ColumnActionPopover, type ColumnPick } from "@/components/ColumnActionPopover";
 import { ArrowDownIcon, CodeIcon, SplitIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
@@ -148,6 +149,8 @@ export function TableDetail({
   // 컬럼 칩은 기본 2줄만 — 컬럼 수십 개짜리 테이블이 나머지 섹션을 화면 밖으로 밀어낸다
   const [columnsExpanded, setColumnsExpanded] = useState(false);
   const [columnsHeight, setColumnsHeight] = useState(0);
+  // 컬럼 칩 클릭 → 바로 떠나지 않고 조인 검증으로 갈지 묻는다(포인터 옆 확인 카드)
+  const [columnPick, setColumnPick] = useState<(ColumnPick & { columnId: number }) | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
   // 뷰 정의 SQL은 기본 접힘 — 수백 줄짜리 뷰가 아래 섹션을 화면 밖으로 밀어낸다
   const [showDefinition, setShowDefinition] = useState(false);
@@ -403,7 +406,6 @@ export function TableDetail({
               objectId={detail.id}
               qname={detail.name}
               objectType={detail.type}
-              isMssqlSource={isMssqlSource}
               onSelectTable={onSelectTable}
             />
           )}
@@ -440,7 +442,10 @@ export function TableDetail({
                     color: column.is_join_key ? "var(--rel-confirmed)" : "var(--body-text)",
                   }}
                   title={`${column.data_type} — ${t("panel.verify")}`}
-                  onClick={() => onOpenColumn(column.id)}
+                  onClick={(event) => setColumnPick({
+                    columnId: column.id, qname: detail.name, column: column.name,
+                    pointerX: event.clientX, pointerY: event.clientY,
+                  })}
                   data-testid={`TableDetail-column-${column.id}`}
                 >
                   {column.is_pk && <span className="pk-mark">PK</span>}{column.name}
@@ -659,6 +664,19 @@ export function TableDetail({
           </section>
         </div>
       </div>
+
+      {columnPick !== null && (
+        <ColumnActionPopover
+          pick={columnPick}
+          isMssqlSource={isMssqlSource}
+          onConfirm={() => {
+            const { columnId } = columnPick;
+            setColumnPick(null);
+            onOpenColumn(columnId);
+          }}
+          onClose={() => setColumnPick(null)}
+        />
+      )}
     </div>
   );
 }

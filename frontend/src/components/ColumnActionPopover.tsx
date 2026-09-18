@@ -1,12 +1,11 @@
 "use client";
 
-/** 컬럼 클릭 → 조인 검증으로 갈지 묻는 확인 카드. 포인터 옆에 뜨고 가장자리에서 반전한다.
- * 바로 이동하지 않는 이유: 다이어그램의 컬럼 행은 "보는" 요소이기도 해서, 클릭 한 번에
- * 화면을 떠나면 맵 컨텍스트를 잃는다. ERD·계보 맵 공용.
- * / confirm before leaving for /verify; shared by the ERD and the lineage maps. */
+/** 컬럼 칩 클릭 → 조인 검증으로 갈지 묻는 확인 카드. 포인터 옆에 뜨고 가장자리에서 반전한다.
+ * 바로 이동하지 않는 이유: 상세의 컬럼 칩은 "보는" 요소이기도 해서, 클릭 한 번에 화면을
+ * 떠나면 보던 상세를 잃는다. 이동 자체는 호출부(onConfirm)가 맡는다.
+ * / confirm before leaving for /verify; navigation stays with the caller. */
 
 import { useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/components/i18n";
 import { placeAtPointer } from "@/lib/anchor-placement";
@@ -16,7 +15,6 @@ const CARD_WIDTH = 264;
 const CARD_HEIGHT = 150;
 
 export interface ColumnPick {
-  objectId: number;
   qname: string;
   column: string;
   /** 클릭 지점(화면 좌표) */
@@ -28,12 +26,12 @@ interface Props {
   pick: ColumnPick;
   /** /verify는 기본(MSSQL) 소스 전용 — 아니면 잠금 안내만 보인다 */
   isMssqlSource: boolean;
+  onConfirm: () => void;
   onClose: () => void;
 }
 
-export function ColumnActionPopover({ pick, isMssqlSource, onClose }: Props) {
+export function ColumnActionPopover({ pick, isMssqlSource, onConfirm, onClose }: Props) {
   const { t } = useI18n();
-  const router = useRouter();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const placement = useMemo(() => placeAtPointer(
@@ -41,7 +39,7 @@ export function ColumnActionPopover({ pick, isMssqlSource, onClose }: Props) {
     window.innerWidth, window.innerHeight,
   ), [pick.pointerX, pick.pointerY]);
 
-  // Esc·바깥 mousedown(캡처 — React Flow가 노드 위 mousedown 전파를 끊는다)·스크롤로 닫는다
+  // Esc·바깥 mousedown(캡처)·스크롤로 닫는다 — fixed 카드가 칩과 어긋난 채 남지 않게
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     const onDown = (e: MouseEvent) => {
@@ -56,13 +54,6 @@ export function ColumnActionPopover({ pick, isMssqlSource, onClose }: Props) {
       window.removeEventListener("scroll", onClose, true);
     };
   }, [onClose]);
-
-  const go = () => {
-    onClose();
-    router.push(
-      `/verify?src=${pick.objectId}&srcLabel=${encodeURIComponent(pick.qname)}`
-      + `&srcCol=${encodeURIComponent(pick.column)}`);
-  };
 
   return (
     <div
@@ -95,7 +86,7 @@ export function ColumnActionPopover({ pick, isMssqlSource, onClose }: Props) {
           {t("columnpick.cancel")}
         </button>
         {isMssqlSource && (
-          <button className="btn-primary !py-1 text-xs" onClick={go} autoFocus
+          <button className="btn-primary !py-1 text-xs" onClick={onConfirm} autoFocus
                   data-testid="ColumnActionPopover-goButton">
             {t("columnpick.go")}
           </button>

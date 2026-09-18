@@ -34,8 +34,6 @@ export interface LineageNodePayload extends Record<string, unknown> {
   loadingColumns: boolean;
   /** 접힘/펼침 토글 — 카드 클릭이 부른다 */
   onToggleExpand: (qname: string) => void;
-  /** 컬럼 행 클릭 — 조인 검증으로 갈지 묻는 카드를 포인터 옆에 띄운다. 카탈로그 밖 노드는 없음 */
-  onSelectColumn: ((node: LineageNodeData, column: string, pointer: { x: number; y: number }) => void) | null;
 }
 
 export type LineageFlowNode = Node<LineageNodePayload, "lineageNode">;
@@ -58,16 +56,8 @@ function formatCount(value: number | null): string | null {
 export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
   const {
     node, isRoot, emphasis, highlightColumns, columnMarks, columnHandles, columnRole,
-    expanded, unusedColumns, loadingColumns, onToggleExpand, onSelectColumn,
+    expanded, unusedColumns, loadingColumns, onToggleExpand,
   } = data;
-  const pickColumn = node.id === null ? null : onSelectColumn;
-  const rowClass = `lineage-node__row${pickColumn ? " lineage-node__row--pickable" : ""}`;
-  const handleRowClick = (column: string) => (event: React.MouseEvent) => {
-    if (!pickColumn) return;
-    // 카드 클릭(정보 카드)까지 같이 열리지 않게 여기서 멈춘다
-    event.stopPropagation();
-    pickColumn(node, column, { x: event.clientX, y: event.clientY });
-  };
   const dimmed = emphasis === "off";
   const lit = emphasis === "on";
   const accent = TYPE_COLOR[node.type];
@@ -126,9 +116,8 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
             return (
               <div
                 key={column}
-                className={rowClass}
+                className="lineage-node__row"
                 data-on={on || undefined}
-                onClick={handleRowClick(column)}
                 data-testid={`LineageNode-col-${node.qname}-${column}`}
               >
                 {columnHandles && (
@@ -184,8 +173,7 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
           {expanded && unusedColumns !== null && unusedColumns.map((column) => (
             <div
               key={`unused:${column}`}
-              className={`${rowClass} lineage-node__row--unused`}
-              onClick={handleRowClick(column)}
+              className="lineage-node__row lineage-node__row--unused"
               data-testid={`LineageNode-unused-${node.qname}-${column}`}
             >
               <span className="truncate">{column}</span>

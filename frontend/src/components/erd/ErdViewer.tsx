@@ -15,7 +15,6 @@ import "@xyflow/react/dist/style.css";
 
 import { CloseIcon, ResetIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
-import { ColumnActionPopover, type ColumnPick } from "@/components/ColumnActionPopover";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
 import { GhostGraph } from "@/components/GhostGraph";
 import { fetchErdGraph } from "@/lib/api";
@@ -182,9 +181,6 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
   // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
-  // 펼친 노드의 컬럼 행 클릭 → 조인 검증 확인 카드 (포인터 옆)
-  const [columnPick, setColumnPick] = useState<ColumnPick | null>(null);
-  const closeColumnPick = useCallback(() => setColumnPick(null), []);
 
   const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
@@ -236,18 +232,6 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
       return next;
     });
   }, []);
-
-  const pickColumn = useCallback(
-    (_columnId: number, columnName: string, objectQname: string, pointer: { x: number; y: number }) => {
-      // 노드 id는 qname으로 되찾는다 — TableNode 콜백 시그니처는 컬럼 id만 준다
-      const owner = (graph?.nodes ?? []).find((n) => `${n.schema}.${n.name}` === objectQname);
-      if (!owner) return;
-      setNodeMenu(null);
-      setColumnPick({
-        objectId: owner.id, qname: objectQname, column: columnName,
-        pointerX: pointer.x, pointerY: pointer.y,
-      });
-    }, [graph]);
 
   // 메뉴 바깥 클릭이면 닫는다 — **캡처 단계**로 듣는다. React Flow의 노드 드래그(d3-drag)가
   // 노드 위 mousedown에서 stopPropagation을 해버려 버블 단계 리스너까지 오지 않는다:
@@ -424,7 +408,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
             highlightColumns: null,
             onExpandNeighbors: null, // 읽기 전용 — 이웃 확장 없음
             onToggleNode: toggleNode,
-            onSelectColumn: pickColumn,
+            onSelectColumn: () => undefined,
             onVisibleColumnsChange: () => undefined,
           },
         };
@@ -474,7 +458,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
     };
     // highlightedId는 여기서 안 쓴다 — 검색 픽은 displayNodes의 isAnchor만 갈아 끼우고
     // ELK 재레이아웃은 건드리지 않는다 / search picks skip this effect on purpose
-  }, [visibleGraph, expandedNodes, focusId, toggleNode, pickColumn, centerOn, fitViewOnce]);
+  }, [visibleGraph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -599,11 +583,10 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         onPaneClick={() => {
           setSelectedEdgeId(null);
           setNodeMenu(null);
-          setColumnPick(null);
         }}
         onNodeContextMenu={handleNodeContextMenu}
         // 팬·줌이 시작되면 메뉴를 닫는다 — fixed 좌표 메뉴가 노드와 어긋난 채 떠 있지 않게
-        onMoveStart={() => { setNodeMenu(null); setColumnPick(null); }}
+        onMoveStart={() => setNodeMenu(null)}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {
@@ -695,11 +678,6 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
             {nodeMenu.copied ? `✓ ${t("erd.menuCopied")}` : t("erd.menuCopyName")}
           </button>
         </div>
-      )}
-
-      {columnPick && (
-        <ColumnActionPopover pick={columnPick} isMssqlSource={isMssqlSource}
-                             onClose={closeColumnPick} />
       )}
 
       {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다.

@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Edge } from "@xyflow/react";
 
-import { ColumnActionPopover, type ColumnPick } from "@/components/ColumnActionPopover";
 import { GhostGraph } from "@/components/GhostGraph";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
@@ -43,8 +42,6 @@ interface Props {
   objectId: number;
   qname: string;
   objectType: "table" | "view";
-  /** /verify는 기본(MSSQL) 소스 전용 — 컬럼 클릭 카드가 잠금 안내로 바뀐다 */
-  isMssqlSource: boolean;
   /** 노드 팝오버의 「상세 열기」 — 상세 패널의 선택을 바꾼다 */
   onSelectTable: (qname: string) => void;
 }
@@ -55,13 +52,8 @@ interface MapRoot {
   type: "table" | "view";
 }
 
-export function LineageSection({
-  objectId, qname, objectType, isMssqlSource, onSelectTable,
-}: Props) {
+export function LineageSection({ objectId, qname, objectType, onSelectTable }: Props) {
   const { t } = useI18n();
-  // 컬럼 행 클릭 → 조인 검증 확인 카드 (포인터 옆)
-  const [columnPick, setColumnPick] = useState<ColumnPick | null>(null);
-  const closeColumnPick = useCallback(() => setColumnPick(null), []);
   const [root, setRoot] = useState<MapRoot>({ id: objectId, qname, type: objectType });
   // 재루팅 이력 — 「돌아가기」로 되짚는다. 맵 안에서 길을 잃지 않게 하는 유일한 장치
   const [trail, setTrail] = useState<MapRoot[]>([]);
@@ -147,14 +139,6 @@ export function LineageSection({
   const rememberSummary = useCallback((qname: string, summary: string, mock: boolean) => {
     setSummaries((current) => new Map(current).set(qname, { summary, mock }));
   }, []);
-
-  const pickColumn = useCallback(
-    (node: LineageNodeData, column: string, pointer: { x: number; y: number }) => {
-      if (node.id === null) return;
-      setColumnPick({
-        objectId: node.id, qname: node.qname, column, pointerX: pointer.x, pointerY: pointer.y,
-      });
-    }, []);
 
   const focusNode = useCallback((node: LineageNodeData) => {
     if (node.id === null || node.type === "unresolved") return;
@@ -257,10 +241,9 @@ export function LineageSection({
     tab, diagram, impact, viewNodeData, root, pickedColumn, mappedColumns,
     emphasisNames: settledSql, expanded, getUnusedColumns, loadingColumns,
     onToggleExpand: toggleExpand, resolveRows, onOpenEdgeDetail: setEdgeDetail,
-    onSelectColumn: pickColumn,
   }), [
     tab, diagram, impact, viewNodeData, root, pickedColumn, mappedColumns, settledSql,
-    expanded, getUnusedColumns, loadingColumns, toggleExpand, resolveRows, pickColumn,
+    expanded, getUnusedColumns, loadingColumns, toggleExpand, resolveRows,
   ]);
 
   /** SQL 패널이 물들일 이름 — 맵에서 호버한 노드의 qname과 그 노드가 쓰는 컬럼 */
@@ -400,7 +383,6 @@ export function LineageSection({
               nodes={graph.nodes} edges={graph.edges} focusKey={focusKey}
               onHoverNode={setHoverNode} onFocusNode={focusNode}
               onOpenObject={(node) => onSelectTable(node.qname)}
-              onOpenPopover={closeColumnPick}
               rootKey={root.qname} summaries={summaries} onSummary={rememberSummary}
               height={CANVAS_HEIGHT}
             />
@@ -410,7 +392,6 @@ export function LineageSection({
             nodes={graph.nodes} edges={graph.edges} focusKey={null}
             onHoverNode={setHoverNode} onFocusNode={focusNode}
             onOpenObject={(node) => onSelectTable(node.qname)}
-            onOpenPopover={closeColumnPick}
             rootKey={root.qname} summaries={summaries} onSummary={rememberSummary}
             height={CANVAS_HEIGHT}
           />
@@ -454,10 +435,6 @@ export function LineageSection({
       {edgeDetail !== null && (
         <EdgeDetailModal detail={edgeDetail} onClose={() => setEdgeDetail(null)} />
       )}
-      {columnPick !== null && (
-        <ColumnActionPopover pick={columnPick} isMssqlSource={isMssqlSource}
-                             onClose={closeColumnPick} />
-      )}
     </section>
   );
 }
@@ -479,7 +456,6 @@ interface BuildArgs {
   onToggleExpand: (qname: string) => void;
   resolveRows: RowCountResolver;
   onOpenEdgeDetail: (detail: EdgeDetail) => void;
-  onSelectColumn: (node: LineageNodeData, column: string, pointer: { x: number; y: number }) => void;
 }
 
 interface BuiltGraph {
@@ -576,7 +552,6 @@ function toFlowNodes(
           : null,
         loadingColumns: opts.args.loadingColumns.has(node.qname),
         onToggleExpand: opts.args.onToggleExpand,
-        onSelectColumn: opts.args.onSelectColumn,
       },
     }];
   });

@@ -1010,8 +1010,8 @@ export const MESSAGES = {
     en: "Views that read this object, by depth — the blast radius of a column change. Edge labels name the columns each view actually reads",
   },
   "lineage.tipCanvas": {
-    ko: "휠로 확대·축소, 빈 곳을 끌어 이동. 노드를 클릭하면 정보 카드, 컬럼 행을 클릭하면 조인 검증으로 갈지 묻는다. 「미사용 N」을 누르면 나머지 컬럼까지 펼쳐진다.",
-    en: "Scroll to zoom, drag the canvas to pan. Click a node for its card; click a column row to jump to join verification. “Unused N” reveals the remaining columns.",
+    ko: "휠로 확대·축소, 빈 곳을 끌어 이동. 노드를 클릭하면 정보 카드가 클릭 지점 옆에 뜨고, 「미사용 N」을 누르면 나머지 컬럼까지 펼쳐진다.",
+    en: "Scroll to zoom, drag the canvas to pan. Click a node for its card next to the pointer; “Unused N” reveals the remaining columns.",
   },
   "lineage.tabsHelp": { ko: "탭별 설명과 조작법", en: "What each tab shows, and how to navigate" },
   "lineage.helpControls": { ko: "조작", en: "Controls" },
@@ -1042,12 +1042,12 @@ export const MESSAGES = {
   },
   "lineage.loadingMap": { ko: "계보를 불러오는 중", en: "Loading lineage" },
 
-  // 컬럼 클릭 → 조인 검증 확인 카드 (ERD·계보 맵 공용) / column pick confirm card
+  // 상세 컬럼 칩 클릭 → 조인 검증 확인 카드 / column chip confirm card
   "columnpick.title": { ko: "조인 검증으로 이동할까요?", en: "Open join verification?" },
   "columnpick.lockedTitle": { ko: "조인 검증은 잠겨 있습니다", en: "Join verification is locked" },
   "columnpick.hint": {
-    ko: "이 컬럼을 왼쪽 키로 놓고 조인 검증 화면을 연다. 지금 보는 다이어그램은 그대로 남는다.",
-    en: "Opens join verification with this column as the left key. This diagram stays as it is.",
+    ko: "이 컬럼을 왼쪽 키로 놓고 조인 검증 화면을 연다. 지금 보는 상세는 돌아오면 그대로다.",
+    en: "Opens join verification with this column as the left key. This detail is here when you come back.",
   },
   "columnpick.cancel": { ko: "취소", en: "Cancel" },
   "columnpick.go": { ko: "조인 검증 열기 →", en: "Open verification →" },

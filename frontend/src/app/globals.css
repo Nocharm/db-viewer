@@ -1768,9 +1768,6 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 /* 기준 노드 — 2px 옐로 테두리(인라인) + 4px 16% 헤일로 */
 .lineage-node--root { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent); }
 .lineage-node--root:hover { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent), 0 4px 12px rgba(0, 0, 0, 0.28); }
-/* 컬럼 행이 클릭 가능한 카드(컬럼 → 조인 검증) — 행 호버 틴트로 알린다 */
-.lineage-node__row--pickable { cursor: pointer; }
-.lineage-node__row--pickable:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
 .lineage-node:hover .lineage-node__name { color: var(--ink); }
 .lineage-node__header { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lineage-node__name { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
