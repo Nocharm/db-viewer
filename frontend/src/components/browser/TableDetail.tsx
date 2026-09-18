@@ -242,6 +242,9 @@ export function TableDetail({
     );
   }
 
+  // 그릴 계보가 있는가 — 뷰는 늘(정의 SQL·소스 흐름), 테이블은 읽는 뷰가 있을 때만(영향 범위)
+  const hasDiagram = detail.type === "view" || detail.using_views.length > 0;
+
   return (
     <div className="scroll-area h-full min-h-0 px-7 pb-7" data-testid="TableDetail-root">
       {/* 헤더 — 시선 앵커: title-lg 24px/700 / eye anchor per ClickHouse title-lg.
@@ -357,16 +360,18 @@ export function TableDetail({
             {t("viewdef.button")}
           </button>
         )}
-        {/* 다이어그램 — 값을 보는 두 버튼(미리보기·쿼리 보기) 옆. 아래에서 아코디언으로 열린다 */}
+        {/* 다이어그램 — 값을 보는 두 버튼(미리보기·쿼리 보기) 옆. 아래에서 아코디언으로 열린다.
+            읽는 뷰가 없는 테이블은 영향 범위가 빈 맵이라 미리 잠근다(열어 봐야 "없다"만 나온다) */}
         <button
           className="btn-secondary inline-flex items-center gap-1.5"
           onClick={() => {
             setDiagramMounted(true);
             setShowDiagram((current) => !current);
           }}
-          disabled={detail.hidden}
-          title={detail.hidden ? t("hidden.columns") : t("lineage.tipCanvas")}
-          aria-expanded={showDiagram}
+          disabled={detail.hidden || !hasDiagram}
+          title={detail.hidden ? t("hidden.columns")
+            : !hasDiagram ? t("lineage.noDiagram") : t("lineage.tipCanvas")}
+          aria-expanded={showDiagram && hasDiagram}
           data-testid="TableDetail-diagramButton"
         >
           <SplitIcon size={12} />
@@ -397,11 +402,13 @@ export function TableDetail({
         </div>
       )}
 
-      {/* 계보 다이어그램 — grid-rows 트랜지션이라 탭 전환으로 높이가 바뀌어도 잘리지 않는다 */}
-      <div className="accordion" data-open={showDiagram}
+      {/* 계보 다이어그램 — grid-rows 트랜지션이라 탭 전환으로 높이가 바뀌어도 잘리지 않는다.
+          열림 상태는 객체를 옮겨도 남지만(같은 흐름으로 여러 객체를 훑는다), 그릴 게 없는 객체에서는
+          섹션 자체를 접는다 — 빈 맵을 열어 두면 "없다"는 문장이 화면을 차지한다 */}
+      <div className="accordion" data-open={showDiagram && hasDiagram}
            data-testid="TableDetail-diagramAccordion">
         <div>
-          {diagramMounted && (
+          {diagramMounted && hasDiagram && (
             <LineageSection
               objectId={detail.id}
               qname={detail.name}

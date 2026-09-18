@@ -1041,6 +1041,10 @@ export const MESSAGES = {
     en: "No column-level mapping for this view (catalog-level lineage only) — see the Source flow tab.",
   },
   "lineage.loadingMap": { ko: "계보를 불러오는 중", en: "Loading lineage" },
+  "lineage.noDiagram": {
+    ko: "이 테이블을 읽는 뷰가 없어 그릴 계보가 없습니다",
+    en: "No view reads this table, so there is no lineage to draw",
+  },
 
   // 상세 컬럼 칩 클릭 → 조인 검증 확인 카드 / column chip confirm card
   "columnpick.title": { ko: "조인 검증으로 이동할까요?", en: "Open join verification?" },
