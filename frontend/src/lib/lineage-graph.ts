@@ -8,8 +8,13 @@
 
 import type { LineageNodeData } from "@/lib/api";
 
-/** 레인 사이 간격(px) — 간선 라벨(조인 조건)이 들어갈 폭 */
-export const LANE_GAP = 150;
+/** 간선 라벨 최대폭(px) — globals.css .edge-label max-width와 같은 값 */
+export const EDGE_LABEL_MAX_WIDTH = 150;
+/** 라벨 양옆 여백(px) — 라벨이 카드에 닿지 않는 최소 거리 */
+const LABEL_MARGIN = 24;
+/** 레인 사이 간격(px) — 라벨 폭에서 역산한다. 예전 150px은 라벨(190px)보다 좁아 라벨이
+ * 구조적으로 카드를 덮었다 / derived from the label width so a label can never cover a card */
+export const LANE_GAP = EDGE_LABEL_MAX_WIDTH + LABEL_MARGIN * 2;
 export const NODE_WIDTH = 236;
 /** 같은 레인 안 노드 세로 간격(px) */
 export const NODE_GAP = 20;

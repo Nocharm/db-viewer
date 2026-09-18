@@ -121,7 +121,7 @@ h1, h2, h3 {
   width: 260px;
   overflow: hidden;
   color: var(--body-text);
-  transition: border-color 0.18s ease-in-out;
+  transition: border-color 0.18s ease-in-out, transform 0.12s ease-in-out, box-shadow 0.12s ease-in-out;
 }
 .erd-node--view {
   background: var(--surface-elevated);
@@ -144,11 +144,19 @@ h1, h2, h3 {
   color: var(--obj-view);
 }
 .erd-node--selected {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
+  /* 2px 링 + 4px 16% 헤일로 (bpm 선택 링 문법) — outline은 헤일로가 안 된다 */
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary), 0 0 0 5px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 .erd-node:hover {
   border-color: var(--hairline-strong);
+  /* 살짝 들리는 카드 — 그림자는 다크에서만 보이므로 잉크 기반이 아니라 검정 고정 */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+.erd-node--selected:hover {
+  box-shadow: 0 0 0 1px var(--primary), 0 0 0 5px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.28);
 }
 .erd-node__header {
   display: flex;
@@ -1754,9 +1762,15 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
   .lineage-split > .lineage-sql { flex: 1 1 auto; max-width: 100%; }
 }
 
-.lineage-node { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: var(--surface-card); border-style: solid; border-radius: 10px; padding: 7px 9px; font-size: 12px; cursor: pointer; transition: opacity 180ms ease, border-color 180ms ease, background 140ms ease, transform 140ms ease; }
+.lineage-node { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: var(--surface-card); border-style: solid; border-radius: 10px; padding: 7px 9px; font-size: 12px; cursor: pointer; transition: opacity 180ms ease, border-color 180ms ease, background 140ms ease, transform 140ms ease, box-shadow 140ms ease; }
 /* 호버 효과 — 카드가 클릭 가능하다는 유일한 신호다(팝오버가 클릭으로 열리므로) */
-.lineage-node:hover { background: var(--surface-elevated); border-color: var(--hairline-strong); transform: translateY(-1px); }
+.lineage-node:hover { background: var(--surface-elevated); border-color: var(--hairline-strong); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28); }
+/* 기준 노드 — 2px 옐로 테두리(인라인) + 4px 16% 헤일로 */
+.lineage-node--root { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent); }
+.lineage-node--root:hover { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent), 0 4px 12px rgba(0, 0, 0, 0.28); }
+/* 컬럼 행이 클릭 가능한 카드(컬럼 → 조인 검증) — 행 호버 틴트로 알린다 */
+.lineage-node__row--pickable { cursor: pointer; }
+.lineage-node__row--pickable:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
 .lineage-node:hover .lineage-node__name { color: var(--ink); }
 .lineage-node__header { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lineage-node__name { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1771,9 +1785,13 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 .lineage-node__more:hover { color: var(--ink); background: var(--surface-card); }
 
 /* 간선 라벨 — HTML이라 줄바꿈된다. 배경을 불투명하게 깔아 지나가는 선·카드와 겹쳐도 읽힌다 */
-.lineage-edge-label { position: absolute; z-index: 5; max-width: 190px; padding: 3px 7px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--surface-card); color: var(--body-text); font-family: var(--font-mono); font-size: 10px; line-height: 1.45; text-align: center; white-space: normal; overflow-wrap: anywhere; pointer-events: all; cursor: pointer; transition: border-color 140ms ease, color 140ms ease; }
-.lineage-edge-label:hover { border-color: var(--primary); color: var(--ink); }
-.lineage-edge-label:focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 1px; }
+/* 간선 라벨 필 — ERD 호버 라벨과 계보 라벨이 같은 문법(bpm 11px/600, 6px 라운드). 최대폭 150px는
+   계보 레인 간격(lineage-graph.ts LANE_GAP)의 입력이다 — 넓히면 레인도 같이 벌려야 카드를 안 덮는다 */
+.edge-label { position: absolute; z-index: 5; max-width: 150px; padding: 2px 7px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--surface-card); color: var(--ink); font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; line-height: 1.45; text-align: center; white-space: normal; overflow-wrap: anywhere; pointer-events: all; cursor: pointer; transition: border-color 140ms ease, color 140ms ease; }
+.edge-label--wide { max-width: 260px; white-space: nowrap; }
+.edge-label:hover, .edge-label--hot { border-color: var(--primary); }
+.edge-label--hot { pointer-events: none; }
+.edge-label:focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 1px; }
 
 .lineage-popover { position: fixed; z-index: 70; width: 330px; background: var(--surface-card); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; box-shadow: 0 8px 28px color-mix(in srgb, var(--canvas) 55%, transparent); }
 .lineage-popover__head { display: flex; align-items: center; gap: 7px; }
@@ -1812,6 +1830,28 @@ details.disclosure[open] > summary { border-bottom: 1px solid var(--hairline); }
 .lineage-help__row b { color: var(--ink); font-weight: 600; white-space: nowrap; }
 .lineage-help__row span { color: var(--body-text); }
 .lineage-help__row--foot b, .lineage-help__row--foot span { padding-top: 6px; border-top: 1px solid var(--hairline); }
+
+/* ── 다이어그램 로딩 고스트 (GhostGraph) — 카드·점선·시머. 캔버스 컨테이너를 채운다 ── */
+.ghost-graph { position: absolute; inset: 0; z-index: 15; overflow: hidden; background-color: var(--surface-soft); background-image: radial-gradient(var(--hairline) 1.1px, transparent 1.1px); background-size: 22px 22px; border-radius: inherit; }
+.ghost-graph__lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ghost-graph__lines line { stroke: color-mix(in srgb, var(--ink) 26%, transparent); stroke-width: 1.5; stroke-dasharray: 6 6; animation: ghost-dash 1.2s linear infinite; }
+.ghost-graph__card { position: absolute; border-radius: 10px; background: var(--surface-elevated); border: 1px solid var(--hairline-strong); overflow: hidden; }
+.ghost-graph__card::before { content: ""; position: absolute; left: 10px; top: 12px; width: 70%; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.ghost-graph__card::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(100deg, transparent 25%, color-mix(in srgb, var(--ink) 9%, transparent) 50%, transparent 75%); transform: translateX(-100%); animation: ghost-shimmer 1.5s cubic-bezier(0.25, 1, 0.5, 1) infinite; }
+.ghost-graph__caption { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--hairline-strong); background: var(--surface-card); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ghost-graph__caption i { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: ghost-pulse 1.1s ease-in-out infinite; }
+@keyframes ghost-shimmer { to { transform: translateX(100%); } }
+@keyframes ghost-dash { to { stroke-dashoffset: -24; } }
+@keyframes ghost-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+
+/* ── 포인터 기준 확인 카드 (ColumnActionPopover) — 가장자리에서 반전해 뜬다 ── */
+.confirm-card { position: fixed; z-index: 70; width: 264px; display: grid; gap: 9px; padding: 11px 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: var(--surface-card); box-shadow: 0 8px 28px color-mix(in srgb, var(--canvas) 55%, transparent); transform-origin: var(--origin-x, left) var(--origin-y, top); animation: confirm-pop 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+.confirm-card__title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.confirm-card__chip { justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: var(--surface-elevated); font-family: var(--font-mono); font-size: 11px; color: var(--ink); max-width: 100%; overflow: hidden; }
+.confirm-card__chip small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confirm-card__hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.confirm-card__actions { display: flex; gap: 6px; justify-content: flex-end; }
+@keyframes confirm-pop { from { opacity: 0; transform: scale(0.96); } }
 
 /* ── 통합 객체 트리 + 좁은 폭 플로팅 선택 (ObjectTree) ── */
 .tree-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

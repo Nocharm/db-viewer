@@ -7,17 +7,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  applyNodeChanges, Background, ControlButton, Controls, ReactFlow, ReactFlowProvider,
-  useReactFlow,
+  applyNodeChanges, Background, BackgroundVariant, ControlButton, Controls, ReactFlow,
+  ReactFlowProvider, useReactFlow,
 } from "@xyflow/react";
 import type { Edge, NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { CloseIcon, ResetIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
+import { ColumnActionPopover, type ColumnPick } from "@/components/ColumnActionPopover";
 import { CardinalityMarkerDefs } from "@/components/erd/CardinalityMarkers";
+import { GhostGraph } from "@/components/GhostGraph";
 import { fetchErdGraph } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
+import { pickLabelAnchor, type Point, type Rect } from "@/lib/edge-route";
 import {
   getCardinalityEnds, getEdgeGrade, getEdgeVisual, MARKER_ID, type EdgeGrade,
 } from "@/lib/edge-style";
@@ -31,11 +34,13 @@ import type { MessageKey } from "@/lib/i18n";
 import { estimateNodeSize, layoutGraph } from "@/lib/layout";
 import { withSourceQuery } from "@/lib/source-param";
 import type { ErdResponse, GraphEdge, GraphNode } from "@/lib/types";
+import { ErdEdge, type ErdEdgeData } from "./ErdEdge";
 import { ErdSearch } from "./ErdSearch";
 import { Legend } from "./Legend";
 import { TableNode, type TableFlowNode } from "./TableNode";
 
 const nodeTypes = { tableNode: TableNode };
+const edgeTypes = { erdEdge: ErdEdge };
 
 /** 연결요소 사이 간격(px, 가로·세로 공통) — 그룹 경계를 알아보게 하는 유일한 단서라 여백이 넉넉해야 한다 */
 const GROUP_GAP = 120;
@@ -43,12 +48,11 @@ const GROUP_GAP = 120;
 /** 호버 세션 중 나머지 엣지 투명도 — 등급별 기본 톤(0.5~1.0)보다 확실히 낮아야 대비가 선다 */
 const HOVER_DIM_OPACITY = 0.25;
 
-/** 호버 라벨 필 — 새 색 없이 카드 표면·hairline 테두리 재사용 / surface + hairline, no new hues */
-const EDGE_LABEL_STYLE = { fontSize: 11, fill: "var(--ink)" } as const;
-const EDGE_LABEL_BG_STYLE = {
-  fill: "var(--surface-card)", stroke: "var(--hairline-strong)", strokeWidth: 1,
-} as const;
-const EDGE_LABEL_BG_PADDING: [number, number] = [6, 3];
+/** 호버 간선 글로우 — bpm 캔버스의 2px 70% / 5px 35% 이중 drop-shadow, 색은 등급 stroke */
+function glowFilter(stroke: string): string {
+  return `drop-shadow(0 0 2px color-mix(in srgb, ${stroke} 70%, transparent))`
+    + ` drop-shadow(0 0 5px color-mix(in srgb, ${stroke} 35%, transparent))`;
+}
 
 /** 우클릭 메뉴 추정 크기(px) — 뷰포트 클램프용. 렌더 전이라 실측 대신 여유 있는 상한 */
 const NODE_MENU_WIDTH = 230;
@@ -96,7 +100,7 @@ async function layoutGroups(
   groups: GraphNode[][],
   edges: GraphEdge[],
   expandedNodes: Set<number>,
-): Promise<Map<number, PlacedNode>> {
+): Promise<{ placed: Map<number, PlacedNode>; routes: Map<string, Point[]> }> {
   const laid = await Promise.all(groups.map(async (group) => {
     const ids = new Set(group.map((n) => n.id));
     const sized = group.map((n) => ({
@@ -105,7 +109,8 @@ async function layoutGroups(
     }));
     const groupEdges = edges.filter(
       (e) => ids.has(e.src_object_id) && ids.has(e.tgt_object_id));
-    return { sized, positions: await layoutGraph(sized, groupEdges) };
+    const result = await layoutGraph(sized, groupEdges);
+    return { sized, positions: result.nodes, routes: result.routes };
   }));
 
   const boxes = laid.map(({ sized, positions }) => {
@@ -123,7 +128,8 @@ async function layoutGroups(
   const offsets = packGroupRows(boxes, GROUP_GAP);
 
   const placed = new Map<number, PlacedNode>();
-  laid.forEach(({ sized, positions }, groupIndex) => {
+  const routes = new Map<string, Point[]>();
+  laid.forEach(({ sized, positions, routes: groupRoutes }, groupIndex) => {
     const sizeById = new Map(sized.map((s) => [s.id, s]));
     const offset = offsets[groupIndex];
     for (const position of positions) {
@@ -134,8 +140,12 @@ async function layoutGroups(
         width: size.width, height: size.height,
       });
     }
+    // 간선 경로도 그룹 원점만큼 옮긴다 — 노드와 같은 좌표계여야 끝점이 노드 테두리에 닿는다
+    for (const route of groupRoutes) {
+      routes.set(route.id, route.points.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })));
+    }
   });
-  return placed;
+  return { placed, routes };
 }
 
 interface Props {
@@ -172,6 +182,9 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
   const [schemaFilter, setSchemaFilter] = useState<string | null>(null);
   // 노드 우클릭 메뉴 — PreviewTable 헤더 메뉴와 같은 관용구(fixed 좌표 + 바깥 mousedown 닫기)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  // 펼친 노드의 컬럼 행 클릭 → 조인 검증 확인 카드 (포인터 옆)
+  const [columnPick, setColumnPick] = useState<ColumnPick | null>(null);
+  const closeColumnPick = useCallback(() => setColumnPick(null), []);
 
   const nodeMenuRef = useRef<HTMLDivElement | null>(null);
   // 모든 노드 기본 접힘 — 보고 싶은 것만 펼친다 / everything folds to its header
@@ -181,6 +194,8 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [flowNodes, setFlowNodes] = useState<TableFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
+  // ELK가 도는 동안 참 — 큰 그래프에선 수백 ms라 빈 캔버스 대신 고스트를 세운다
+  const [layoutPending, setLayoutPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // isAnchor 하이라이트의 일반화 상태 — 초기값은 URL ?focus=, 이후 맵 검색 픽으로 갱신된다.
   // focusMissing 배너는 이 state가 아니라 URL 원본 focusId를 계속 참조한다(검색 픽이 배너를 띄우면 안 됨).
@@ -221,6 +236,18 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
       return next;
     });
   }, []);
+
+  const pickColumn = useCallback(
+    (_columnId: number, columnName: string, objectQname: string, pointer: { x: number; y: number }) => {
+      // 노드 id는 qname으로 되찾는다 — TableNode 콜백 시그니처는 컬럼 id만 준다
+      const owner = (graph?.nodes ?? []).find((n) => `${n.schema}.${n.name}` === objectQname);
+      if (!owner) return;
+      setNodeMenu(null);
+      setColumnPick({
+        objectId: owner.id, qname: objectQname, column: columnName,
+        pointerX: pointer.x, pointerY: pointer.y,
+      });
+    }, [graph]);
 
   // 메뉴 바깥 클릭이면 닫는다 — **캡처 단계**로 듣는다. React Flow의 노드 드래그(d3-drag)가
   // 노드 위 mousedown에서 stopPropagation을 해버려 버블 단계 리스너까지 오지 않는다:
@@ -366,9 +393,11 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
   useEffect(() => {
     if (!visibleGraph) return;
     let cancelled = false;
+    setLayoutPending(true);
     const groups = groupConnectedComponents(visibleGraph.nodes, visibleGraph.edges);
-    void layoutGroups(groups, visibleGraph.edges, expandedNodes).then((elkPlaced) => {
+    void layoutGroups(groups, visibleGraph.edges, expandedNodes).then(({ placed: elkPlaced, routes }) => {
       if (cancelled) return;
+      setLayoutPending(false);
       elkPlacedRef.current = elkPlaced;
       // 수동 이동 좌표를 ELK 결과 위에 덮어쓴다 — 재레이아웃(펼침/접힘)에도 배치가 유지된다
       const placed = applyManualPositions(elkPlaced, movedRef.current);
@@ -395,7 +424,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
             highlightColumns: null,
             onExpandNeighbors: null, // 읽기 전용 — 이웃 확장 없음
             onToggleNode: toggleNode,
-            onSelectColumn: () => undefined,
+            onSelectColumn: pickColumn,
             onVisibleColumnsChange: () => undefined,
           },
         };
@@ -405,14 +434,15 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         const ends = getCardinalityEnds(e.cardinality);
         return {
           id: e.id,
-          // 꺾은선 — layout.ts의 엣지 간격 확보와 짝을 이뤄 노드 관통을 줄인다
-          type: "smoothstep",
+          // ELK 직교 경로를 그대로 그린다 — 간선마다 자기 회랑 (ErdEdge)
+          type: "erdEdge",
           source: String(e.src_object_id),
           target: String(e.tgt_object_id),
           style: visual,
           markerStart: ends.source ? `url(#${MARKER_ID[ends.source]})` : undefined,
           markerEnd: ends.target ? `url(#${MARKER_ID[ends.target]})` : undefined,
           // 라벨은 호버 중인 엣지에만 — 전량 표시는 선 위 글자가 그래프를 덮는다(아래 displayEdges)
+          data: { route: routes.get(e.id) } satisfies ErdEdgeData,
           "data-testid": `ErdViewer-edge-${e.id}`,
         } as Edge;
       }));
@@ -444,7 +474,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
     };
     // highlightedId는 여기서 안 쓴다 — 검색 픽은 displayNodes의 isAnchor만 갈아 끼우고
     // ELK 재레이아웃은 건드리지 않는다 / search picks skip this effect on purpose
-  }, [visibleGraph, expandedNodes, focusId, toggleNode, centerOn, fitViewOnce]);
+  }, [visibleGraph, expandedNodes, focusId, toggleNode, pickColumn, centerOn, fitViewOnce]);
 
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((n) => [n.id, n])),
@@ -491,30 +521,41 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
   }, [flowNodes, hoveredEdge, highlightedId]);
 
   const displayEdges = useMemo(() => {
-    if (!hoveredEdge) return flowEdges;
+    // 손으로 옮긴 노드에 붙은 간선은 ELK 경로가 더는 노드에 닿지 않는다 — smoothstep 폴백
+    // / a dragged end invalidates the ELK route; that edge falls back to smoothstep
+    const moved = movedRef.current;
+    const withRoutes = movedCount === 0 ? flowEdges : flowEdges.map((e) => {
+      const stale = moved.has(Number(e.source)) || moved.has(Number(e.target));
+      return stale ? { ...e, data: { ...e.data, route: undefined } } : e;
+    });
+    if (!hoveredEdge) return withRoutes;
+    // 라벨 충돌 판정용 장애물 — 배치된 모든 노드 사각형
+    const obstacles: Rect[] = [...placedRef.current.values()];
     const dimmed: Edge[] = [];
     let emphasized: Edge | null = null;
-    for (const e of flowEdges) {
+    for (const e of withRoutes) {
       if (e.id !== hoveredEdge.id) {
         dimmed.push({ ...e, style: { ...e.style, opacity: HOVER_DIM_OPACITY } });
         continue;
       }
-      const width = typeof e.style?.strokeWidth === "number" ? e.style.strokeWidth : 2;
+      const width = typeof e.style?.strokeWidth === "number" ? e.style.strokeWidth : 1.5;
+      const stroke = typeof e.style?.stroke === "string" ? e.style.stroke : "var(--ink)";
+      const route = (e.data as ErdEdgeData | undefined)?.route;
       emphasized = {
         ...e,
-        style: { ...e.style, strokeWidth: width + 1, opacity: 1 },
-        label: formatColumnPairLabel(hoveredEdge),
-        labelShowBg: true,
-        labelStyle: EDGE_LABEL_STYLE,
-        labelBgStyle: EDGE_LABEL_BG_STYLE,
-        labelBgPadding: EDGE_LABEL_BG_PADDING,
-        labelBgBorderRadius: 6,
+        style: { ...e.style, strokeWidth: width + 1, opacity: 1, filter: glowFilter(stroke) },
+        data: {
+          ...e.data,
+          hot: true,
+          label: formatColumnPairLabel(hoveredEdge),
+          labelAnchor: route ? pickLabelAnchor(route, obstacles) : undefined,
+        } satisfies ErdEdgeData,
       };
     }
     // 배열 맨 뒤 = 다른 엣지 위. zIndex를 올리면 엣지 레이어가 노드 레이어까지 넘어서
     // 긴 엣지가 카드를 관통해 보인다 / last in the array, not raised out of the edge layer
     return emphasized ? [...dimmed, emphasized] : dimmed;
-  }, [flowEdges, hoveredEdge]);
+  }, [flowEdges, hoveredEdge, movedCount]);
 
   const getQname = (id: number): string => {
     const node = nodeById.get(id);
@@ -531,6 +572,7 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         nodes={displayNodes}
         edges={displayEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         nodesConnectable={false}
         onNodesChange={handleNodesChange}
         onNodeDragStop={handleNodeDragStop}
@@ -557,10 +599,11 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         onPaneClick={() => {
           setSelectedEdgeId(null);
           setNodeMenu(null);
+          setColumnPick(null);
         }}
         onNodeContextMenu={handleNodeContextMenu}
         // 팬·줌이 시작되면 메뉴를 닫는다 — fixed 좌표 메뉴가 노드와 어긋난 채 떠 있지 않게
-        onMoveStart={() => setNodeMenu(null)}
+        onMoveStart={() => { setNodeMenu(null); setColumnPick(null); }}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         onInit={() => {
@@ -576,7 +619,8 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
           }
         }}
       >
-        <Background color="var(--hairline)" />
+        {/* 22px 도트 격자 — 계보 맵과 같은 바탕 (bpm 캔버스 22px / 1.1px) */}
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="var(--hairline)" />
         <Controls>
           <ControlButton
             onClick={handleResetPositions}
@@ -653,6 +697,11 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         </div>
       )}
 
+      {columnPick && (
+        <ColumnActionPopover pick={columnPick} isMssqlSource={isMssqlSource}
+                             onClose={closeColumnPick} />
+      )}
+
       {/* 우하단 스택 — 엣지 상세 카드(있으면 위) + 범례(항상 아래) — 같은 앵커라 겹치지 않게 세로로 쌓는다.
           컨테이너는 클릭을 통과시키고(폭이 다른 두 자식 사이 빈 여백이 캔버스 pan/zoom을 가로채지 않도록),
           카드·Legend 각각에만 복원 — isEmpty 오버레이와 같은 패턴 */}
@@ -697,15 +746,10 @@ function ErdViewerInner({ focusId, focusLabel, sourceId, sourceEngine, onPreview
         <Legend />
       </div>
 
-      {graph === null && !error && (
-        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2
-                        rounded-lg border px-3 py-1.5 text-xs"
-             style={{ borderColor: "var(--hairline-strong)", background: "var(--surface-card)",
-                      color: "var(--body-text)" }}
-             data-testid="ErdViewer-loading">
-          <span className="skeleton h-2 w-16" />
-          {t("erd.graphLoading")}
-        </div>
+      {/* fetch 중 + ELK 계산 중 고스트 — 빈 캔버스는 "실패"로 읽힌다. 배치가 끝난 그래프가
+          이미 떠 있으면(펼침 토글 재배치) 덮지 않는다 */}
+      {!error && !isEmpty && (graph === null || (layoutPending && flowNodes.length === 0)) && (
+        <GhostGraph caption={t("erd.graphLoading")} testId="ErdViewer-loading" />
       )}
 
       {isFocusMissing && (

@@ -403,6 +403,7 @@ export function TableDetail({
               objectId={detail.id}
               qname={detail.name}
               objectType={detail.type}
+              isMssqlSource={isMssqlSource}
               onSelectTable={onSelectTable}
             />
           )}

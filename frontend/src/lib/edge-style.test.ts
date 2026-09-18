@@ -43,7 +43,7 @@ describe("getEdgeVisual", () => {
   it("uses 2px strokes everywhere", () => {
     for (const kind of
       ["fk", "confirmed", "inferred", "ai_suggested", "view_lineage", "unresolved"] as const) {
-      expect(getEdgeVisual(kind).strokeWidth).toBe(2);
+      expect(getEdgeVisual(kind).strokeWidth).toBe(1.5);
     }
   });
 

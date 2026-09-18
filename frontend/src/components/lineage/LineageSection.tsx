@@ -10,6 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Edge } from "@xyflow/react";
 
+import { ColumnActionPopover, type ColumnPick } from "@/components/ColumnActionPopover";
+import { GhostGraph } from "@/components/GhostGraph";
 import { useI18n } from "@/components/i18n";
 import { InfoTip } from "@/components/InfoTip";
 import { EdgeDetailModal } from "@/components/lineage/EdgeDetailModal";
@@ -21,9 +23,10 @@ import {
   fetchImpactGraph, fetchObjectDetail, fetchViewDiagram,
   type ImpactGraph, type LineageNodeData, type ViewDiagram,
 } from "@/lib/api";
+import { placeEdgeLabels, type LabelEdge } from "@/lib/edge-route";
 import {
   assignColumnLineageLanes, assignImpactLanes, assignSourceFlowLanes, JOIN_LANE_GAP,
-  layoutLanes, type RowCountResolver,
+  layoutLanes, type PlacedNode, type RowCountResolver,
 } from "@/lib/lineage-graph";
 import { useDeferredHover } from "@/lib/use-deferred-hover";
 
@@ -40,6 +43,8 @@ interface Props {
   objectId: number;
   qname: string;
   objectType: "table" | "view";
+  /** /verify는 기본(MSSQL) 소스 전용 — 컬럼 클릭 카드가 잠금 안내로 바뀐다 */
+  isMssqlSource: boolean;
   /** 노드 팝오버의 「상세 열기」 — 상세 패널의 선택을 바꾼다 */
   onSelectTable: (qname: string) => void;
 }
@@ -50,8 +55,13 @@ interface MapRoot {
   type: "table" | "view";
 }
 
-export function LineageSection({ objectId, qname, objectType, onSelectTable }: Props) {
+export function LineageSection({
+  objectId, qname, objectType, isMssqlSource, onSelectTable,
+}: Props) {
   const { t } = useI18n();
+  // 컬럼 행 클릭 → 조인 검증 확인 카드 (포인터 옆)
+  const [columnPick, setColumnPick] = useState<ColumnPick | null>(null);
+  const closeColumnPick = useCallback(() => setColumnPick(null), []);
   const [root, setRoot] = useState<MapRoot>({ id: objectId, qname, type: objectType });
   // 재루팅 이력 — 「돌아가기」로 되짚는다. 맵 안에서 길을 잃지 않게 하는 유일한 장치
   const [trail, setTrail] = useState<MapRoot[]>([]);
@@ -109,8 +119,11 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
   }, [root.id, root.type]);
 
   // 영향 범위는 그 탭을 처음 열 때 받는다 — 뷰를 열자마자 쓰지도 않을 BFS를 돌리지 않는다
+  // impactLoading은 deps에 넣지 않는다 — 넣으면 setImpactLoading(true)가 이 이펙트를 다시 돌려
+  // 첫 요청의 cleanup(alive=false)이 응답을 버리고, 두 번째 실행은 "이미 로딩 중"으로 빠져
+  // 고스트가 영원히 남았다(실측) / impactLoading in deps re-ran the effect and orphaned the fetch
   useEffect(() => {
-    if (tab !== "impact" || impact !== null || impactLoading) return;
+    if (tab !== "impact" || impact !== null) return;
     let alive = true;
     setImpactLoading(true);
     fetchImpactGraph(root.id)
@@ -120,7 +133,7 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
       })
       .finally(() => { if (alive) setImpactLoading(false); });
     return () => { alive = false; };
-  }, [tab, impact, impactLoading, root.id]);
+  }, [tab, impact, root.id]);
 
   const toggleExpand = useCallback((nodeQname: string) => {
     setExpanded((current) => {
@@ -134,6 +147,14 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
   const rememberSummary = useCallback((qname: string, summary: string, mock: boolean) => {
     setSummaries((current) => new Map(current).set(qname, { summary, mock }));
   }, []);
+
+  const pickColumn = useCallback(
+    (node: LineageNodeData, column: string, pointer: { x: number; y: number }) => {
+      if (node.id === null) return;
+      setColumnPick({
+        objectId: node.id, qname: node.qname, column, pointerX: pointer.x, pointerY: pointer.y,
+      });
+    }, []);
 
   const focusNode = useCallback((node: LineageNodeData) => {
     if (node.id === null || node.type === "unresolved") return;
@@ -236,9 +257,10 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
     tab, diagram, impact, viewNodeData, root, pickedColumn, mappedColumns,
     emphasisNames: settledSql, expanded, getUnusedColumns, loadingColumns,
     onToggleExpand: toggleExpand, resolveRows, onOpenEdgeDetail: setEdgeDetail,
+    onSelectColumn: pickColumn,
   }), [
     tab, diagram, impact, viewNodeData, root, pickedColumn, mappedColumns, settledSql,
-    expanded, getUnusedColumns, loadingColumns, toggleExpand, resolveRows,
+    expanded, getUnusedColumns, loadingColumns, toggleExpand, resolveRows, pickColumn,
   ]);
 
   /** SQL 패널이 물들일 이름 — 맵에서 호버한 노드의 qname과 그 노드가 쓰는 컬럼 */
@@ -360,8 +382,9 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
           <p className="text-sm" style={{ color: "var(--error)" }}
              data-testid="LineageSection-error">{error}</p>
         ) : (tab === "impact" ? impactLoading : loading) ? (
-          <div className="skeleton" style={{ height: CANVAS_HEIGHT }} role="status"
-               aria-label={t("common.loading")} data-testid="LineageSection-loading" />
+          <div className="lineage-canvas" style={{ height: CANVAS_HEIGHT }}>
+            <GhostGraph caption={t("lineage.loadingMap")} testId="LineageSection-loading" />
+          </div>
         ) : graph.nodes.length === 0 ? (
           <p className="hint-pill" data-testid="LineageSection-empty">{graph.emptyHint}</p>
         ) : tab === "sql" && sql !== null ? (
@@ -377,6 +400,7 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
               nodes={graph.nodes} edges={graph.edges} focusKey={focusKey}
               onHoverNode={setHoverNode} onFocusNode={focusNode}
               onOpenObject={(node) => onSelectTable(node.qname)}
+              onOpenPopover={closeColumnPick}
               rootKey={root.qname} summaries={summaries} onSummary={rememberSummary}
               height={CANVAS_HEIGHT}
             />
@@ -386,6 +410,7 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
             nodes={graph.nodes} edges={graph.edges} focusKey={null}
             onHoverNode={setHoverNode} onFocusNode={focusNode}
             onOpenObject={(node) => onSelectTable(node.qname)}
+            onOpenPopover={closeColumnPick}
             rootKey={root.qname} summaries={summaries} onSummary={rememberSummary}
             height={CANVAS_HEIGHT}
           />
@@ -429,6 +454,10 @@ export function LineageSection({ objectId, qname, objectType, onSelectTable }: P
       {edgeDetail !== null && (
         <EdgeDetailModal detail={edgeDetail} onClose={() => setEdgeDetail(null)} />
       )}
+      {columnPick !== null && (
+        <ColumnActionPopover pick={columnPick} isMssqlSource={isMssqlSource}
+                             onClose={closeColumnPick} />
+      )}
     </section>
   );
 }
@@ -450,6 +479,7 @@ interface BuildArgs {
   onToggleExpand: (qname: string) => void;
   resolveRows: RowCountResolver;
   onOpenEdgeDetail: (detail: EdgeDetail) => void;
+  onSelectColumn: (node: LineageNodeData, column: string, pointer: { x: number; y: number }) => void;
 }
 
 interface BuiltGraph {
@@ -546,8 +576,39 @@ function toFlowNodes(
           : null,
         loadingColumns: opts.args.loadingColumns.has(node.qname),
         onToggleExpand: opts.args.onToggleExpand,
+        onSelectColumn: opts.args.onSelectColumn,
       },
     }];
+  });
+}
+
+/** 노드 수준 간선의 라벨 좌표 — 좌우 핸들(카드 세로 중앙)을 잇는 베지에 위 "덜 붐비는 끝".
+ * fan-in(소스 흐름)은 소스 쪽, fan-out(영향 범위)은 목표 쪽. 같은 x 근방에서 붙는 라벨은
+ * 세로로 분리된다(edge-route.ts placeEdgeLabels). */
+function placeNodeEdgeLabels(
+  edges: Edge[], placed: PlacedNode[], near: LabelEdge["near"],
+): Map<string, { x: number; y: number }> {
+  const byKey = new Map(placed.map((item) => [item.key, item]));
+  const items: LabelEdge[] = edges.flatMap((edge) => {
+    const source = byKey.get(edge.source);
+    const target = byKey.get(edge.target);
+    if (!source || !target) return [];
+    return [{
+      id: edge.id,
+      sx: source.x + source.width, sy: source.y + source.height / 2,
+      tx: target.x, ty: target.y + target.height / 2,
+      near,
+    }];
+  });
+  return placeEdgeLabels(items);
+}
+
+function withLabelAnchors(
+  edges: Edge[], anchors: Map<string, { x: number; y: number }>,
+): Edge[] {
+  return edges.map((edge) => {
+    const anchor = anchors.get(edge.id);
+    return anchor ? { ...edge, data: { ...edge.data, labelAnchor: anchor } } : edge;
   });
 }
 
@@ -571,7 +632,7 @@ function buildSourceFlow(
     columnRole: (node) => (node.qname === viewNode.qname ? "all" : "used"),
   });
 
-  const edges: Edge[] = ordered.map((node) => makeEdge(
+  const sourceEdges: Edge[] = ordered.map((node) => makeEdge(
     `src:${node.qname}`, node.qname, viewNode.qname,
     node.type === "unresolved" ? EDGE_BAD : EDGE_VIEW, args,
     {
@@ -591,6 +652,8 @@ function buildSourceFlow(
       },
     },
   ));
+  // 여러 소스 → 뷰 하나(fan-in): 라벨은 소스 쪽. 중점은 뷰 앞에서 전부 겹친다
+  const edges = withLabelAnchors(sourceEdges, placeNodeEdgeLabels(sourceEdges, placed, "source"));
 
   const present = new Set(ordered.map((node) => node.qname));
   diagram.joins.forEach((join, index) => {
@@ -601,6 +664,8 @@ function buildSourceFlow(
         sourceHandle: "bottom",
         targetHandle: "top",
         routing: "smoothstep",
+        // 카드 사이 세로 갭에 앉는 라벨 — 제약은 폭이 아니라 높이라 한 줄로 넓게 둔다
+        wide: true,
         label: `${join.join_type.toUpperCase()} · ${join.left_column} = ${join.right_column}`,
         detail: {
           kind: "join",
@@ -721,7 +786,7 @@ function buildImpact(args: BuildArgs): BuiltGraph {
     // 영향 범위는 컬럼을 추려 싣지 않는다(읽는 컬럼은 간선 라벨이 말한다)
     columnRole: () => "all",
   });
-  const edges: Edge[] = impact.edges.map((edge, index) => makeEdge(
+  const impactEdges: Edge[] = impact.edges.map((edge, index) => makeEdge(
     `impact:${index}`, edge.from, edge.to, EDGE_VIEW, args,
     {
       label: edge.columns.length > 0
@@ -742,6 +807,8 @@ function buildImpact(args: BuildArgs): BuiltGraph {
       },
     },
   ));
+  // 루트 하나 → 소비 뷰 여럿(fan-out): 라벨은 읽는 쪽(목표) 앞 — "이 뷰가 읽는 컬럼"으로 읽힌다
+  const edges = withLabelAnchors(impactEdges, placeNodeEdgeLabels(impactEdges, placed, "target"));
   const consumers = impact.nodes.filter((node) => node.depth > 0).length;
   // 소비자가 없으면 루트 하나만 덩그러니 남는다 — 빈 화면으로 취급해 이유를 글로 말한다
   if (consumers === 0) {

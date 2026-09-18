@@ -52,7 +52,8 @@ export function getEdgeVisual(kind: EdgeKind, confidence?: number): EdgeVisual {
   const style = GRADE_STYLE[grade];
   return {
     stroke: style.stroke,
-    strokeWidth: 2,
+    // 1.5px 기본(bpm 캔버스와 동일) — 호버·선택이 +1로 올라가 대비가 선다
+    strokeWidth: 1.5,
     strokeDasharray: style.dash,
     // 추정 등급 안에서만 confidence로 단계 구분 / confidence steps within the inferred grade
     opacity: grade === "inferred" && confidence !== undefined
