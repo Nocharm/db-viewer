@@ -5,12 +5,18 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { ChatIcon, CloseIcon } from "@/components/icons";
+import { ChatIcon, CloseIcon, LockIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { chatAi, searchObjects } from "@/lib/api";
 import { buildChatHistory, loadChatSession, saveChatSession, type ChatMessage } from "@/lib/chat-utils";
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  /** 비-MSSQL 소스 — 챗은 사내 MSSQL 카탈로그만 안다. 헤더 메뉴처럼 자리는 지키고
+   * 잠근다(숨기면 "기능이 사라졌다"로 읽힌다) / locked, not hidden, on other sources */
+  locked?: boolean;
+}
+
+export function ChatPanel({ locked = false }: ChatPanelProps) {
   const { t } = useI18n();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -60,6 +66,16 @@ export function ChatPanel() {
       })
       .catch((e) => setError(e.message));
   };
+
+  if (locked) {
+    // 헤더 잠금 링크와 같은 문법 — 핸들러 없음·탭 순서 제외·이유는 툴팁
+    return (
+      <button className="icon-button icon-button--locked" aria-disabled="true" tabIndex={-1}
+              title={t("nav.mssqlOnly")} data-locked="true" data-testid="ChatPanel-toggleButton">
+        <ChatIcon /><LockIcon size={11} />
+      </button>
+    );
+  }
 
   return (
     <>

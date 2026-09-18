@@ -148,7 +148,7 @@ export function getNavItems(
 
 export interface AppHeaderProps {
   children?: React.ReactNode;
-  /** 선택된 소스 엔진 — "mssql"이 아니면 검증·파싱 링크를 잠그고 AI 챗 진입점을 숨긴다.
+  /** 선택된 소스 엔진 — "mssql"이 아니면 검증·파싱 링크와 AI 챗 버튼을 잠근다.
    * 소스 선택을 추적하지 않는 화면(로그인·관리 등)은 생략해 기존 동작(전부 열림)을
    * 유지한다 / omit on pages that don't track source selection to keep everything open. */
   sourceEngine?: string | null;
@@ -226,7 +226,7 @@ export function AppHeader({ children, sourceEngine, sourceId }: AppHeaderProps) 
       </nav>
       <div className="ml-auto flex items-center gap-2">
         {children}
-        {isMssqlSource && <ChatPanel />}
+        <ChatPanel locked={!isMssqlSource} />
         {/* 사용 안내서 — 정적 HTML을 내려받는다(연동 안내서와 같은 배포 파생물 위치)
             / static user guide, same handoff location as the integration guide */}
         <a

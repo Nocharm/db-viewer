@@ -301,6 +301,19 @@ header .icon-button {
   border-color: var(--hairline-strong);
   color: var(--body-text);
 }
+/* 소스 때문에 잠긴 아이콘 버튼 — 헤더 잠금 링크(.nav-link--locked)와 같은 표정 */
+.icon-button--locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted-soft);
+  cursor: not-allowed;
+}
+.icon-button--locked:hover {
+  background: var(--surface-card);
+  border-color: var(--hairline-strong);
+  color: var(--muted-soft);
+}
 
 /* 관리 표의 행 액션 버튼 — 좁은 열에서 라벨("허용 해제")이 줄바꿈되며 버튼과 행 높이를
    밀어 올렸다. nowrap으로 높이를 고정하고, 평소엔 감췄다가 행 hover에서만 드러낸다.
