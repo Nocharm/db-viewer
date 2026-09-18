@@ -3,31 +3,27 @@
 /** 노드 정보 카드 — 노드를 **클릭**하면 열린다.
  *
  * 호버로 열던 것을 클릭으로 바꾼 이유: 맵을 훑기만 해도 카드가 따라 떠서 시야를 가렸다.
- * 위치는 클릭한 노드의 **오른쪽 바깥**이라 정작 보려던 노드를 덮지 않고, 세로는 마우스
- * 높이에 맞춰 시선이 멀리 가지 않는다.
- * / click-opened, anchored to the node's right edge so it never covers the node itself.
+ * 위치는 **클릭 지점 기준**(포인터 우하단, 가장자리에서 반전 — anchor-placement.ts). 예전의
+ * "노드 오른쪽 바깥"은 이웃 카드를 통째로 덮었다.
+ * / click-opened, placed at the pointer with edge flipping (anchor-placement.ts).
  */
 
 import { useEffect, useState } from "react";
 
 import { CloseIcon, ResetIcon, SparklesIcon } from "@/components/icons";
 import { useI18n } from "@/components/i18n";
+import { placeAtPointer } from "@/lib/anchor-placement";
 import type { LineageNodeData } from "@/lib/api";
 import { generateAiSummary } from "@/lib/api";
 
-/** 팝오버 크기(px) — 렌더 전 뷰포트 클램프용 상한(ErdViewer 우클릭 메뉴와 같은 관용구) */
+/** 팝오버 크기(px) — 렌더 전 뷰포트 판정용 상한(ErdViewer 우클릭 메뉴와 같은 관용구) */
 const POPOVER_WIDTH = 330;
 const POPOVER_HEIGHT = 230;
-const EDGE_MARGIN = 12;
-/** 노드 모서리에서 띄우는 간격(px) */
-const NODE_OFFSET = 12;
 
 export interface PopoverAnchor {
   node: LineageNodeData;
-  /** 클릭한 노드의 화면 좌표 — 오른쪽 바깥에 붙인다 */
-  nodeRight: number;
-  nodeLeft: number;
-  /** 마우스 높이 — 세로 기준 */
+  /** 클릭 지점(화면 좌표) */
+  pointerX: number;
   pointerY: number;
 }
 
@@ -73,21 +69,17 @@ export function NodePopover({
       .finally(() => setBusy(false));
   };
 
-  // 오른쪽에 자리가 없으면 왼쪽 바깥으로 넘긴다 — 어느 쪽이든 노드를 덮지 않는 것이 규칙
-  const fitsRight = anchor.nodeRight + NODE_OFFSET + POPOVER_WIDTH
-    <= window.innerWidth - EDGE_MARGIN;
-  const left = fitsRight
-    ? anchor.nodeRight + NODE_OFFSET
-    : Math.max(EDGE_MARGIN, anchor.nodeLeft - NODE_OFFSET - POPOVER_WIDTH);
-  const top = Math.min(
-    Math.max(EDGE_MARGIN, anchor.pointerY - 40),
-    window.innerHeight - POPOVER_HEIGHT - EDGE_MARGIN,
+  const placement = placeAtPointer(
+    anchor.pointerX, anchor.pointerY, POPOVER_WIDTH, POPOVER_HEIGHT,
+    window.innerWidth, window.innerHeight,
   );
 
   return (
     <div
       className="lineage-popover"
-      style={{ left, top: Math.max(EDGE_MARGIN, top) }}
+      style={{ left: placement.left, top: placement.top }}
+      data-flipped-x={placement.flippedX || undefined}
+      data-flipped-y={placement.flippedY || undefined}
       role="dialog"
       aria-label={`${node.qname} ${t("lineage.nodeInfo")}`}
       data-testid="NodePopover-root"

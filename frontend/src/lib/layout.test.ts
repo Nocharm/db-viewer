@@ -52,7 +52,51 @@ describe("layoutGraph", () => {
     const a = await layoutGraph(nodes, edges);
     const b = await layoutGraph(nodes, edges);
     expect(a).toEqual(b); // 결정적 배치 — ELK 선정 근거 / deterministic placement
-    const byId = new Map(a.map((p) => [p.id, p]));
+    const byId = new Map(a.nodes.map((p) => [p.id, p]));
     expect(byId.get(2)!.x).toBeGreaterThan(byId.get(1)!.x); // RIGHT 방향 계층
+  });
+
+  it("returns one orthogonal route per edge, and fan-in edges get separate corridors", async () => {
+    // 리프 4개 → 허브 1개. 예전 smoothstep은 전부 같은 x에서 꺾여 트렁크가 됐다
+    const nodes = [1, 2, 3, 4, 5].map((id) => ({ id, width: 260, height: 36 }));
+    const edges = [1, 2, 3, 4].map((src) => ({
+      id: `fk-${src}`, kind: "fk" as const, src_object_id: src, tgt_object_id: 5, columns: [],
+    }));
+    const { routes } = await layoutGraph(nodes, edges);
+    expect(routes.map((r) => r.id).sort()).toEqual(["fk-1", "fk-2", "fk-3", "fk-4"]);
+    for (const route of routes) {
+      expect(route.points.length).toBeGreaterThanOrEqual(2);
+      // 직교: 이웃 점은 x 또는 y가 같다 / orthogonal legs
+      for (let i = 1; i < route.points.length; i++) {
+        const a = route.points[i - 1];
+        const b = route.points[i];
+        expect(a.x === b.x || a.y === b.y).toBe(true);
+      }
+    }
+    // 세로 구간을 가진 간선끼리 y 범위가 겹치면 x가 달라야 한다 (회랑 분리)
+    const verticals = routes.flatMap((r) => {
+      const legs: { x: number; y0: number; y1: number }[] = [];
+      for (let i = 1; i < r.points.length; i++) {
+        const a = r.points[i - 1];
+        const b = r.points[i];
+        if (a.x === b.x) legs.push({ x: a.x, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) });
+      }
+      return legs;
+    });
+    for (let i = 0; i < verticals.length; i++) {
+      for (let j = i + 1; j < verticals.length; j++) {
+        const overlap = verticals[i].y0 < verticals[j].y1 && verticals[j].y0 < verticals[i].y1;
+        if (overlap) expect(verticals[i].x).not.toBe(verticals[j].x);
+      }
+    }
+  });
+
+  it("skips self-loops instead of asking ELK to route them", async () => {
+    const nodes = [{ id: 1, width: 260, height: 36 }];
+    const edges = [{
+      id: "self", kind: "fk" as const, src_object_id: 1, tgt_object_id: 1, columns: [],
+    }];
+    const { routes } = await layoutGraph(nodes, edges);
+    expect(routes).toEqual([]);
   });
 });

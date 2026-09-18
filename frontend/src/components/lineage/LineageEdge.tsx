@@ -28,6 +28,11 @@ export interface LineageEdgeData extends Record<string, unknown> {
   onOpenDetail?: (detail: EdgeDetail) => void;
   /** 조인 간선은 같은 레인의 위아래를 잇는다 — 베지에면 카드 위를 되감아 지나간다 */
   routing?: "bezier" | "smoothstep";
+  /** 라벨 좌표(flow 좌표계) — 없으면 경로 중점. fan-in/out에서는 중점이 가장 붐비는 곳이라
+   * LineageSection이 placeEdgeLabels로 "덜 붐비는 끝" 쪽 좌표를 넣어 준다 */
+  labelAnchor?: { x: number; y: number };
+  /** 세로 갭에 앉는 라벨(JOIN) — 폭 제한을 풀어 한 줄로 둔다. 두 줄이면 아래 카드 머리를 덮는다 */
+  wide?: boolean;
 }
 
 export function LineageEdge({
@@ -38,9 +43,11 @@ export function LineageEdge({
   const params = {
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   };
-  const [path, labelX, labelY] = edgeData.routing === "smoothstep"
-    ? getSmoothStepPath({ ...params, borderRadius: 10 })
+  const [path, midX, midY] = edgeData.routing === "smoothstep"
+    ? getSmoothStepPath({ ...params, borderRadius: 6 })
     : getBezierPath(params);
+  const labelX = edgeData.labelAnchor?.x ?? midX;
+  const labelY = edgeData.labelAnchor?.y ?? midY;
 
   return (
     <>
@@ -49,7 +56,7 @@ export function LineageEdge({
         <EdgeLabelRenderer>
           <button
             type="button"
-            className="lineage-edge-label nodrag nopan"
+            className={`edge-label${edgeData.wide ? " edge-label--wide" : ""} nodrag nopan`}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
             onClick={(event) => {
               event.stopPropagation();

@@ -20,7 +20,11 @@ export interface TableNodeData extends Record<string, unknown> {
   /** null이면 읽기 전용 — 이웃 확장 버튼 자체를 렌더하지 않는다 / null hides the expand button */
   onExpandNeighbors: ((id: number) => void) | null;
   onToggleNode: (id: number) => void;
-  onSelectColumn: (columnId: number, columnName: string, objectQname: string) => void;
+  /** 컬럼 행 클릭 — 포인터 좌표를 함께 넘겨 확인 카드가 그 옆에 뜬다 */
+  onSelectColumn: (
+    columnId: number, columnName: string, objectQname: string,
+    pointer: { x: number; y: number },
+  ) => void;
   /** 스크롤 뷰포트 안의 컬럼 보고 — 엣지 앵커 해석에 쓰인다 */
   onVisibleColumnsChange: (nodeId: number, columns: string[]) => void;
 }
@@ -222,8 +226,9 @@ export function TableNode({ id, data }: NodeProps<TableFlowNode>) {
                   col.is_pk ? "erd-node__row--pk" : "",
                   highlight?.has(col.name) ? "erd-node__row--hl" : "",
                 ].join(" ")}
-                onClick={() =>
-                  data.onSelectColumn(col.id, col.name, `${node.schema}.${node.name}`)}
+                onClick={(event) => data.onSelectColumn(
+                  col.id, col.name, `${node.schema}.${node.name}`,
+                  { x: event.clientX, y: event.clientY })}
                 data-testid={`ErdNode-columnRow-${col.id}`}
               >
                 {/* 컬럼 행이 조인 드래그의 출발·도착점 — .erd-handle이 행 hover 시 그립 바를
