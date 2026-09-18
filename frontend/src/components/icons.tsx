@@ -266,6 +266,16 @@ export function CheckCircleIcon(props: IconProps) {
   );
 }
 
+/** 상세 열기 — 원 안의 i / details */
+export function InfoIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </Svg>
+  );
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <Svg {...props}>

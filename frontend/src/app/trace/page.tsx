@@ -167,7 +167,7 @@ function TracePageInner() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden" data-testid="ValueProbePage-root">
-      <AppHeader sourceEngine={sourceEngine}>
+      <AppHeader sourceEngine={sourceEngine} sourceId={sourceId}>
         <SourceSelector value={sourceId} onChange={changeSource} />
       </AppHeader>
       {/* 조인 검증과 같은 2열 — 왼쪽은 제목·진행 순서(스크롤해도 붙어 있다), 오른쪽은 단계 카드

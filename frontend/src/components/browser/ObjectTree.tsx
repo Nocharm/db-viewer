@@ -366,8 +366,10 @@ function FilterFlyout({
   );
 }
 
-/** 한 줄 선택기 — 상세 패널의 객체 이름 자리에 선다. 누르면 트리가 아래로 내려온다. */
-export function ObjectTreePicker(props: ObjectTreeProps & { title: string }) {
+/** 한 줄 선택기 — 상세 패널의 객체 이름 자리에 선다. 누르면 트리가 아래로 내려온다.
+ * 미선택이면 자리표시 문구로 서 있다 — 트리 배치는 이 선택기가 유일한 진입점이라 비어 있어도
+ * 보여야 한다 / stands with a placeholder when nothing is selected: it is the only way in. */
+export function ObjectTreePicker(props: ObjectTreeProps & { title?: string }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -399,7 +401,14 @@ export function ObjectTreePicker(props: ObjectTreeProps & { title: string }) {
         title={t("tree.pick")}
         data-testid="ObjectTreePicker-toggle"
       >
-        <span className="tree-picker__name">{title}</span>
+        {title ? (
+          <span className="tree-picker__name">{title}</span>
+        ) : (
+          <span className="tree-picker__name tree-picker__name--placeholder"
+                data-testid="ObjectTreePicker-placeholder">
+            {t("tree.placeholder")}
+          </span>
+        )}
         {activeFilters > 0 && (
           <span className="badge badge--muted" data-testid="ObjectTreePicker-filterBadge">
             {t("tree.filter")} {activeFilters}

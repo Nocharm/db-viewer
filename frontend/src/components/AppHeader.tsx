@@ -7,10 +7,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatPanel } from "@/components/ChatPanel";
-import { CaretDownIcon, DownloadIcon, LogoMark, MoonIcon, SunIcon } from "@/components/icons";
+import {
+  CaretDownIcon, DownloadIcon, LockIcon, LogoMark, MoonIcon, SunIcon,
+} from "@/components/icons";
 import { useI18n } from "@/components/i18n";
 import { LogoutButton } from "@/components/logout-button";
 import { useMe } from "@/components/providers";
+import { withSourceQuery } from "@/lib/source-param";
 
 function ThemeToggle() {
   const { t } = useI18n();
@@ -112,27 +115,54 @@ const LINKS = [
   { href: "/parsing", key: "nav.parsing" as const },
 ];
 
-// 비-MSSQL 소스에서 숨기는 링크 — 뷰 lineage 역추적·관계 온디맨드 발견은 MSSQL 전용
+// 비-MSSQL 소스에서 잠그는 링크 — 뷰 lineage 역추적·관계 온디맨드 발견은 MSSQL 전용
 // (스펙 명시적 비목표). 백엔드도 검증·파싱 엔드포인트는 소스를 무시하고 항상 기본
-// 소스를 본다 — 숨기지 않으면 엉뚱한 소스의 데이터를 보고 버그로 오해한다.
+// 소스를 본다. 숨기는 대신 잠근다 — 메뉴 자리가 소스마다 바뀌면 "기능이 사라졌다"로
+// 읽히고, 잠금은 "이 소스에선 안 된다"를 그 자리에서 말해 준다.
 const MSSQL_ONLY_HREFS = new Set(["/verify", "/parsing"]);
+
+export interface NavItem {
+  /** 원래 경로 — 활성 판정·testid에 쓴다 / bare path for active state and testid */
+  path: string;
+  /** 실제 이동 경로 — 선택된 소스가 실린다 / navigation href carrying the source */
+  href: string;
+  key: (typeof LINKS)[number]["key"];
+  locked: boolean;
+}
+
+/** 헤더 링크 목록 — 소스를 href에 실어 화면을 오가도 선택이 유지되고, 비-MSSQL 소스에서는
+ * MSSQL 전용 항목을 잠근다 / nav items: source carried in href, MSSQL-only items locked. */
+export function getNavItems(
+  sourceEngine: string | null | undefined, sourceId: number | null | undefined,
+): NavItem[] {
+  // undefined(생략)·null(기본 소스)·"mssql" 전부 열림 — 다른 엔진일 때만 잠근다
+  const isMssqlSource = sourceEngine === undefined || sourceEngine === null
+    || sourceEngine === "mssql";
+  return LINKS.map(({ href, key }) => ({
+    path: href,
+    href: withSourceQuery(href, sourceId ?? null),
+    key,
+    locked: !isMssqlSource && MSSQL_ONLY_HREFS.has(href),
+  }));
+}
 
 export interface AppHeaderProps {
   children?: React.ReactNode;
-  /** 선택된 소스 엔진 — "mssql"이 아니면 검증·파싱·AI 챗 진입점을 숨긴다.
-   * 소스 선택을 추적하지 않는 화면(로그인·관리 등)은 생략해 기존 동작(전부 노출)을
-   * 유지한다 / omit on pages that don't track source selection to keep everything visible. */
+  /** 선택된 소스 엔진 — "mssql"이 아니면 검증·파싱 링크를 잠그고 AI 챗 진입점을 숨긴다.
+   * 소스 선택을 추적하지 않는 화면(로그인·관리 등)은 생략해 기존 동작(전부 열림)을
+   * 유지한다 / omit on pages that don't track source selection to keep everything open. */
   sourceEngine?: string | null;
+  /** 선택된 소스 id — 링크에 `?source=`로 실어 화면을 오가도 선택이 유지된다 */
+  sourceId?: number | null;
 }
 
-export function AppHeader({ children, sourceEngine }: AppHeaderProps) {
+export function AppHeader({ children, sourceEngine, sourceId }: AppHeaderProps) {
   const me = useMe();
   const { t } = useI18n();
   const pathname = usePathname();
-  // undefined(생략)·null(기본 소스)·"mssql" 전부 노출 — 다른 엔진일 때만 숨긴다
   const isMssqlSource = sourceEngine === undefined || sourceEngine === null
     || sourceEngine === "mssql";
-  const links = isMssqlSource ? LINKS : LINKS.filter((l) => !MSSQL_ONLY_HREFS.has(l.href));
+  const links = getNavItems(sourceEngine, sourceId);
 
   return (
     <header
@@ -151,17 +181,34 @@ export function AppHeader({ children, sourceEngine }: AppHeaderProps) {
         DB-viewer
       </a>
       <nav className="flex items-center gap-1">
-        {links.map(({ href, key }) => {
-          const active = pathname === href;
+        {links.map(({ path, href, key, locked }) => {
+          const active = pathname === path;
+          const testId = `AppHeader-link-${path === "/" ? "browser" : path.slice(1)}`;
+          if (locked) {
+            // 링크가 아니라 span — 클릭·탭 포커스 모두 막고, 이유는 툴팁으로
+            return (
+              <span
+                key={path}
+                className="nav-link--locked rounded px-2.5 py-1 text-sm"
+                aria-disabled="true"
+                title={t("nav.mssqlOnly")}
+                data-locked="true"
+                data-testid={testId}
+              >
+                <LockIcon size={11} />
+                {t(key)}
+              </span>
+            );
+          }
           return (
             <Link
-              key={href}
+              key={path}
               href={href}
               className="pressable rounded px-2.5 py-1 text-sm"
               style={active
                 ? { background: "var(--soft-stone)", fontWeight: 500 }
                 : { color: "var(--slate)" }}
-              data-testid={`AppHeader-link-${href === "/" ? "browser" : href.slice(1)}`}
+              data-testid={testId}
             >
               {t(key)}
             </Link>

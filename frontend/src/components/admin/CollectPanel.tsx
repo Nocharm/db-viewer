@@ -5,9 +5,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CollectDetailModal, getCountLabel } from "@/components/admin/CollectDetailModal";
 import { useI18n } from "@/components/i18n";
 import {
   CheckIcon,
+  InfoIcon,
   PlayIcon,
   StopIcon,
   WarningIcon,
@@ -20,6 +22,9 @@ import {
   triggerCollectViewDeps,
   type CollectJob,
 } from "@/lib/api";
+import {
+  type CountEntry, groupCounts, STEP_SUMMARY_KEYS, summarizeCounts,
+} from "@/lib/collect-counts";
 import { formatRelativeTime } from "@/lib/relative-time";
 
 // 진행 폴링 간격(ms) — 실행 중일 때만 돈다 / poll only while a job is running
@@ -64,6 +69,9 @@ export function CollectPanel() {
   const [jobs, setJobs] = useState<CollectJob[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 「자세히 보기」로 연 잡 — 현재 잡이든 목록의 옛 잡이든 같은 모달 / job opened in the modal
+  const [detailJob, setDetailJob] = useState<CollectJob | null>(null);
+  const closeDetail = useCallback(() => setDetailJob(null), []);
   const current = jobs[0] ?? null;
   const running = isRunning(current);
 
@@ -92,11 +100,21 @@ export function CollectPanel() {
   };
 
   const counts = current?.counts ?? {};
-  // 청크 카운터는 진행 바가 담당 — 숫자 나열에서 제외 / chunk counters render as the bar
-  const countText = Object.entries(counts)
-    .filter(([key]) => !key.endsWith("_chunks_done") && !key.endsWith("_chunks_total"))
-    .map(([key, value]) => `${key} ${value.toLocaleString()}`)
-    .join(" · ");
+  // 카드·요약 줄엔 핵심 숫자만 — 전체 집계(14항목)는 「자세히 보기」 모달의 표가 맡는다
+  // / cards and the summary row carry headline numbers only; the modal table has all of them
+  const catalogSummary = summarizeCounts(counts, STEP_SUMMARY_KEYS.catalog);
+  const depsSummary = summarizeCounts(counts, STEP_SUMMARY_KEYS.deps);
+  const hasCounts = groupCounts(counts).length > 0;
+  const countPills = (items: CountEntry[], testId: string) => (
+    <span className="count-row" data-testid={testId}>
+      {items.map(({ key, value }) => (
+        <span className="count-row__item" key={key}>
+          {getCountLabel(key, t)}
+          <span className="cnt-pill">{value.toLocaleString()}</span>
+        </span>
+      ))}
+    </span>
+  );
   const chunkProgress = current?.stage === "catalog_running"
     ? { done: counts.catalog_chunks_done ?? 0, total: counts.catalog_chunks_total ?? 0 }
     : current?.stage === "deps_running"
@@ -141,15 +159,16 @@ export function CollectPanel() {
           {stepNumber(steps[0], 1)}
           <span className="step__title">{t("collect.step1")}{stepBadge(steps[0])}</span>
           <span className="step__sub">
-            {steps[0] === "active" ? chunkText || t("collect.stageCatalogRunning") : countText || " "}
+            {steps[0] === "active" ? chunkText || t("collect.stageCatalogRunning")
+              : catalogSummary.length > 0 ? countPills(catalogSummary, "CollectPanel-step1Counts") : " "}
           </span>
         </div>
         <div className={`card step step--${steps[1]}`} data-testid="CollectPanel-step-2">
           {stepNumber(steps[1], 2)}
           <span className="step__title">{t("collect.step2")}{stepBadge(steps[1])}</span>
           <span className="step__sub">
-            {steps[1] === "active" ? [chunkText, snapshotText].filter(Boolean).join(" · ") || t("collect.stageDepsRunning")
-              : snapshotText || " "}
+            {steps[1] === "active" ? chunkText || t("collect.stageDepsRunning")
+              : depsSummary.length > 0 ? countPills(depsSummary, "CollectPanel-step2Counts") : " "}
           </span>
         </div>
         <div className={`card step step--${steps[2]}`} data-testid="CollectPanel-step-3">
@@ -214,11 +233,22 @@ export function CollectPanel() {
           </div>
         </div>
       )}
-      {countText && (
-        <p className="mb-3 font-mono text-xs" style={{ color: "var(--slate)" }}
-           data-testid="CollectPanel-counts">
-          {countText}
-        </p>
+      {current && hasCounts && (
+        <div className="count-row mb-3" data-testid="CollectPanel-counts">
+          {snapshotText && (
+            <span className="count-row__item">
+              <span className="cnt-pill">{snapshotText}</span>
+            </span>
+          )}
+          {countPills([...catalogSummary, ...depsSummary], "CollectPanel-countsSummary")}
+          <button
+            className="icon-button count-row__more"
+            onClick={() => setDetailJob(current)}
+            data-testid="CollectPanel-detailsButton"
+          >
+            {t("collect.details")}
+          </button>
+        </div>
       )}
 
       {jobs.length > 0 ? (
@@ -245,6 +275,14 @@ export function CollectPanel() {
                   </span>
                   <span className="job-row__who">{job.triggered_by}</span>
                   <span className="job-row__when">{formatRelativeTime(job.updated_at)}</span>
+                  <button
+                    className="icon-button"
+                    onClick={() => setDetailJob(job)}
+                    title={t("collect.details")}
+                    data-testid={`CollectPanel-jobDetails-${job.job_id}`}
+                  >
+                    <InfoIcon size={13} />
+                  </button>
                 </div>
               );
             })}
@@ -258,6 +296,12 @@ export function CollectPanel() {
           <WarningIcon size={15} /><span>{error}</span>
         </div>
       )}
+      <CollectDetailModal
+        job={detailJob}
+        statusLabel={detailJob ? statusLabel[getJobStatus(detailJob)] : ""}
+        badgeClass={detailJob ? STATUS_BADGE[getJobStatus(detailJob)] : ""}
+        onClose={closeDetail}
+      />
     </section>
   );
 }

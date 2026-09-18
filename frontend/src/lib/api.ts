@@ -895,6 +895,12 @@ export function setHiddenSchemaRender(
   });
 }
 
+/** 관리 잠금 바의 비밀번호 검증 — 틀리면 `ok:false`(401이 아니라 로그인으로 튕기지 않는다),
+ * 서버에 비밀번호가 없으면 503으로 throw. / lock-bar check; wrong → ok:false, unset → 503. */
+export function verifyAdminPassword(password: string): Promise<{ ok: boolean }> {
+  return postJson("/api/admin/lock/verify", {}, { "X-Preview-Password": password });
+}
+
 export interface PreviewAllowEntry {
   schema: string;
   note: string | null;

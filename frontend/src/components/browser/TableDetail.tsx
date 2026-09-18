@@ -223,12 +223,18 @@ export function TableDetail({
       );
     }
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2"
-           data-testid="TableDetail-emptyState">
-        <span className="text-2xl" aria-hidden style={{ color: "var(--muted-soft)" }}>⌗</span>
-        <p className="text-sm" style={{ color: "var(--muted)" }}>
-          {t("detail.empty")}
-        </p>
+      <div className="flex h-full flex-col" data-testid="TableDetail-emptyState">
+        {/* 트리 배치는 선택기가 유일한 진입점 — 빈 상태에서도 제목 자리에 세운다
+            / in the tree layout the picker is the only way in, so it stands even when empty */}
+        {objectPicker && (
+          <div className="px-7 pt-7" data-testid="TableDetail-emptyPicker">{objectPicker}</div>
+        )}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2">
+          <span className="text-2xl" aria-hidden style={{ color: "var(--muted-soft)" }}>⌗</span>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            {objectPicker ? t("detail.emptyTree") : t("detail.empty")}
+          </p>
+        </div>
       </div>
     );
   }

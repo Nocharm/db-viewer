@@ -32,6 +32,7 @@ import {
   WarningIcon,
 } from "@/components/icons";
 import { useMe } from "@/components/providers";
+import { readStoredAdminPassword, storeAdminPassword } from "@/lib/admin-lock";
 import { buildAdminTabUrl, parseAdminTab, type AdminTabId } from "@/lib/admin-tabs";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 import {
@@ -89,9 +90,19 @@ function AdminConsole() {
   // 미리보기 허용 목록은 소스별(PK가 (data_source_id, schema)) — 여기서 고른 소스를 따른다.
   // null은 사내 MSSQL(기본 소스), 소스가 하나뿐이면 SourceChips가 스스로 숨는다.
   const [previewSourceId, setPreviewSourceId] = useState<number | null>(null);
-  // 관리 비밀번호(X-Preview-Password) — 잠금 바 하나가 쥐고 소스·공개 범위 패널이 같이 쓴다
-  const [adminPassword, setAdminPassword] = useState("");
+  // 관리 비밀번호(X-Preview-Password) — 잠금 바 하나가 쥐고 소스·공개 범위 패널이 같이 쓴다.
+  // 검증된 값은 세션 저장소에도 두어 탭 전환·새로고침에 다시 묻지 않는다(브라우저 세션까지만)
+  const [adminPassword, setAdminPasswordState] = useState("");
   const [passwordConfigured, setPasswordConfigured] = useState(true);
+  useEffect(() => {
+    // 서버 렌더에는 sessionStorage가 없다 — 마운트 후 복원 / restore after mount (SSR has no storage)
+    const stored = readStoredAdminPassword();
+    if (stored) setAdminPasswordState(stored);
+  }, []);
+  const setAdminPassword = (value: string) => {
+    setAdminPasswordState(value);
+    storeAdminPassword(value);
+  };
   // 탭 카운트 pill — 각 패널이 목록을 읽을 때 알려 준다
   const [sourceCount, setSourceCount] = useState<number | undefined>(undefined);
   const [allowCount, setAllowCount] = useState<number | undefined>(undefined);

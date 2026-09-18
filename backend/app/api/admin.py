@@ -3,12 +3,12 @@
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.auth import require_preview_admin, require_sysadmin
+from app.auth import is_preview_password_valid, require_preview_admin, require_sysadmin
 from app.config import get_settings
 from app.db import get_db
 from app.models import (
@@ -129,6 +129,28 @@ def list_users(
         "total": total,
         "has_more": offset + len(users) < total,
     }
+
+
+@router.post("/lock/verify")
+def verify_admin_lock(
+    x_preview_password: str | None = Header(default=None, alias="X-Preview-Password"),
+) -> dict:
+    """관리 잠금 바의 비밀번호 검증 — 부수효과 없이 일치 여부만 돌려준다.
+
+    잠금 바가 "열림"을 실제 검증 결과로 표시하려면 아무것도 바꾸지 않는 진입점이 필요하다
+    (이전에는 글자만 있으면 열림으로 보였고, 틀린 비밀번호는 첫 수정 요청에서야 드러났다).
+    틀린 비밀번호를 401 대신 `ok: false`로 답하는 이유: 프론트의 공통 응답 처리는 401을
+    "세션 만료"로 보고 로그인 화면으로 보낸다 — 오타 한 번에 로그아웃되면 안 된다.
+    미설정은 게이트와 같은 503 — 잠금 바가 "설정 필요"를 띄운다.
+    / a wrong password answers ok:false, not 401 — the shared fetch funnel treats 401 as
+      an expired session and bounces to /login; a typo must not log the admin out.
+    """
+    if not get_settings().preview_admin_password:
+        raise HTTPException(status_code=503, detail={
+            "message": "PREVIEW_ADMIN_PASSWORD is not configured — set it in .env and "
+                       "restart the backend to unlock admin edits",
+        })
+    return {"ok": is_preview_password_valid(x_preview_password)}
 
 
 @router.get("/preview-allowlist")

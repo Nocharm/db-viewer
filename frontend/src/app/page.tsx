@@ -320,10 +320,11 @@ function HomeInner() {
     window.addEventListener("pointerup", onUp);
   };
 
-  // 트리 배치의 선택기 — 상세 제목 자리에 선다. 3열 배치에서는 렌더하지 않는다
-  const objectPicker = layout === "tree" && selected !== null ? (
+  // 트리 배치의 선택기 — 상세 제목 자리에 선다. 3열 배치에서는 렌더하지 않는다.
+  // 미선택이어도 만든다 — 트리 배치에선 이 선택기 말고는 객체를 고를 길이 없다
+  const objectPicker = layout === "tree" ? (
     <ObjectTreePicker
-      title={`${selected.schema}.${selected.name}`}
+      title={selected ? `${selected.schema}.${selected.name}` : undefined}
       items={listItems}
       selected={selected}
       query={query}
@@ -372,7 +373,7 @@ function HomeInner() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <AppHeader sourceEngine={sourceEngine}>
+      <AppHeader sourceEngine={sourceEngine} sourceId={sourceId}>
         {error && (
           <span className="text-sm" style={{ color: "var(--error)" }}
                 data-testid="Home-errorText">

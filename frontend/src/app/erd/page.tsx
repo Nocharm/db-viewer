@@ -72,7 +72,7 @@ function ErdPageInner() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <AppHeader sourceEngine={sourceEngine}>
+      <AppHeader sourceEngine={sourceEngine} sourceId={sourceId}>
         <SourceSelector value={sourceId} onChange={changeSource} />
       </AppHeader>
       <div ref={scrollRef} className="scroll-area min-h-0 flex-1">
